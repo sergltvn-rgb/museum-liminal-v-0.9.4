@@ -1,0 +1,15 @@
+# Godot 4: per-machine cache, never commit or archive this directory.
+# It is rebuilt automatically and was 142 MB of the 175 MB museum-liminal.rar.
+.godot/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Archives and temporary exports
+*.rar
+*.zip
+*.tmp
+export/
+build/
+*.pck

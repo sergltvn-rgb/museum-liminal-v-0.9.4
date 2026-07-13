@@ -1,0 +1,38 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/FirstMuseumMap.gd" id="1_first_map"]
+[ext_resource type="Script" path="res://game/SecurityCameraTablet.gd" id="3_v8l2n"]
+[ext_resource type="Script" path="res://game/GameManager.gd" id="3_whfqq"]
+[ext_resource type="Script" path="res://game/AudioManager.gd" id="4_audio"]
+[ext_resource type="Script" path="res://game/MenuManager.gd" id="5_menu"]
+[ext_resource type="Script" path="res://game/GameplayEnhancements.gd" id="6_enhance"]
+[ext_resource type="Script" path="res://game/InputBootstrap.gd" id="7_input"]
+[ext_resource type="Script" path="res://game/SettingsManager.gd" id="8_settings"]
+[ext_resource type="Script" path="res://game/ExhibitPuzzleController.gd" id="9_puzzles"]
+
+[node name="FirstMuseumMap" type="Node3D" unique_id=1881433151]
+script = ExtResource("1_first_map")
+
+[node name="InputBootstrap" type="Node" parent="."]
+script = ExtResource("7_input")
+
+[node name="AudioManager" type="Node" parent="."]
+script = ExtResource("4_audio")
+
+[node name="SecurityCameraTablet" type="Node" parent="." unique_id=877943592]
+script = ExtResource("3_v8l2n")
+
+[node name="GameManager" type="Node" parent="." unique_id=896965748]
+script = ExtResource("3_whfqq")
+
+[node name="GameplayEnhancements" type="Node" parent="."]
+script = ExtResource("6_enhance")
+
+[node name="ExhibitPuzzleController" type="Node" parent="."]
+script = ExtResource("9_puzzles")
+
+[node name="SettingsManager" type="Node" parent="."]
+script = ExtResource("8_settings")
+
+[node name="MenuManager" type="Node" parent="."]
+script = ExtResource("5_menu")
