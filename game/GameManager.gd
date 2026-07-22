@@ -190,6 +190,7 @@ var _pre_test_calm := 0.0
 var _pre_test_anomaly := ""
 var _message_time := 0.0
 var _fail_overlay: ColorRect = null
+var _fail_label: Label = null
 var _win_overlay: ColorRect = null
 var _objective_entries: Dictionary = {}
 var _objective_priorities: Dictionary = {}
@@ -413,6 +414,13 @@ func _fail() -> void:
 			am.play_sfx("fail")
 	if _fail_overlay != null:
 		_fail_overlay.visible = true
+	if _fail_label != null:
+		var anomaly_title := "НЕИЗВЕСТНАЯ АНОМАЛИЯ"
+		if ANOMALIES.has(_anomaly_id): anomaly_title = str(ANOMALIES[_anomaly_id]["title"])
+		var tip := "Сверьте показания терминала с маркировкой прибора до контакта с разломом."
+		if _trial_manager != null and _trial_manager.has_method("trial_fail_tip"):
+			tip = str(_trial_manager.call("trial_fail_tip"))
+		_fail_label.text = "СМЕНА ПРЕРВАНА\n\nПРИЧИНА: %s вышла из-под контроля\nПРОГРЕСС: ночь %d · осталось аномалий: %d\n\nСОВЕТ: %s\n\nENTER — повторить ночь" % [anomaly_title, _night, _anomalies_left, tip]
 	if _timer_label != null:
 		_timer_label.visible = false
 
@@ -922,15 +930,18 @@ func _build_hud() -> void:
 	_fail_overlay.anchor_bottom = 1.0
 	_fail_overlay.visible = false
 	_hud.add_child(_fail_overlay)
-	var fail_label := Label.new()
-	fail_label.text = "АНОМАЛИЯ ПОГЛОТИЛА МУЗЕЙ\n\nENTER - начать ночь заново"
-	fail_label.anchor_right = 1.0
-	fail_label.anchor_bottom = 1.0
-	fail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	fail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	fail_label.add_theme_font_size_override("font_size", 26)
-	fail_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.4))
-	_fail_overlay.add_child(fail_label)
+	_fail_label = Label.new()
+	_fail_label.text = "СМЕНА ПРЕРВАНА\n\nENTER — повторить ночь"
+	_fail_label.anchor_left = 0.12
+	_fail_label.anchor_top = 0.18
+	_fail_label.anchor_right = 0.88
+	_fail_label.anchor_bottom = 0.82
+	_fail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_fail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fail_label.add_theme_font_size_override("font_size", 24)
+	_fail_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.62))
+	_fail_overlay.add_child(_fail_label)
 	_win_overlay = ColorRect.new()
 	_win_overlay.color = Color(0.0, 0.05, 0.03, 0.85)
 	_win_overlay.anchor_right = 1.0

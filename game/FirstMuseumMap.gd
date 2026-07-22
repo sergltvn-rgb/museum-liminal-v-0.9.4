@@ -1126,6 +1126,32 @@ func _add_exhibits(parent: Node) -> void:
 		l.omni_range = 6.0
 		l.light_color = Color(0.95, 0.7, 0.45)
 		parent.add_child(l)
+	_add_model_archive(parent)
+
+
+func _add_model_archive(parent: Node) -> void:
+	# Collection-storage dressing: every supplied source model is represented,
+	# while authored exhibits above retain their procedural safety fallbacks.
+	var placements := [
+		["basic_pc_monitors", Vector3(-27.0, 1.25, -0.8), 0.75, 180.0],
+		["fancy_marble_coffee_table", Vector3(-20.0, 0.0, 5.0), 0.75, 0.0],
+		["wooden_bookcases_with_books", Vector3(-31.0, 0.0, -4.2), 0.8, 90.0],
+		["elderly_woman_bust_on_pedestal", Vector3(38.0, 0.0, -13.0), 0.85, 180.0],
+		["vents", Vector3(-18.0, 2.8, -5.5), 0.65, 0.0],
+		["tactical_flashlight", Vector3(-23.0, 1.2, -0.8), 0.55, 25.0],
+		["лавочки", Vector3(8.0, 0.0, -8.0), 0.75, 90.0],
+		["уличная лампа", Vector3(12.0, 0.0, -10.0), 0.7, 0.0],
+		["арка дверь", Vector3(0.0, 0.0, -15.5), 0.85, 0.0],
+		["тумбочка", Vector3(-21.0, 0.0, 1.5), 0.7, 0.0],
+		["отсановка", Vector3(46.0, 0.0, -12.0), 0.6, 90.0],
+		["dumpsters_glb", Vector3(-34.0, 0.0, 7.0), 0.65, 0.0],
+		["gallery_bare_concrete_wall", Vector3(60.0, 0.0, -8.0), 0.7, 90.0],
+		["modern_grey_stone_tile_texture", Vector3(52.0, 0.02, -8.0), 0.7, 0.0],
+		["часы", Vector3(-12.0, 1.5, -18.0), 0.6, 0.0],
+		["наблюдатель", Vector3(61.0, 0.0, 6.0), 0.7, 180.0],
+	]
+	for entry in placements:
+		MuseumModels.place(parent, str(entry[0]), entry[1] as Vector3, float(entry[2]), float(entry[3]))
 
 
 func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,

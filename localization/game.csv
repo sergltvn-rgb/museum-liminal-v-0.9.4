@@ -1,0 +1,18 @@
+keys,en,ru
+MENU_START,Start shift,Начать смену
+MENU_TUTORIAL,Tutorial,Обучение
+MENU_SETTINGS,Settings,Настройки
+MENU_QUIT,Quit,Выход
+FAIL_TITLE,SHIFT INTERRUPTED,СМЕНА ПРЕРВАНА
+FAIL_RETRY,ENTER — retry night,ENTER — повторить ночь
+TUTORIAL_TITLE,ORIENTATION SECTOR,СЕКТОР ОРИЕНТАЦИИ
+TUTORIAL_SKIP,Hold ESC — skip tutorial,Удерживайте ESC — пропустить обучение
+TUTORIAL_COMPLETE,ORIENTATION COMPLETE,ОРИЕНТАЦИЯ ЗАВЕРШЕНА
+ACCESS_LANGUAGE,Language,Язык
+ACCESS_SUBTITLES,Subtitles,Субтитры
+ACCESS_REDUCED_FLASHES,Reduce flashes,Уменьшить мерцание
+ACCESS_REDUCED_MOTION,Reduce motion,Уменьшить движение
+ACCESS_HIGH_CONTRAST,High contrast,Высокий контраст
+ACCESS_LARGE_UI,Large interface,Крупный интерфейс
+STORY_PROLOGUE,The museum remembers every night shift. The rifts remember every mistake.,Музей помнит каждую ночную смену. Разломы помнят каждую ошибку.
+STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.

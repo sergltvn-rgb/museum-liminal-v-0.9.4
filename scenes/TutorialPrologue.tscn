@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://game/TutorialPrologue.gd" id="1_prologue"]
+[ext_resource type="Script" path="res://game/AudioManager.gd" id="2_audio"]
+
+[node name="TutorialPrologue" type="Node3D"]
+script = ExtResource("1_prologue")
+
+[node name="AudioManager" type="Node" parent="."]
+script = ExtResource("2_audio")

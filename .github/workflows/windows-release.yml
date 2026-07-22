@@ -1,0 +1,50 @@
+name: Windows Release
+
+on:
+  push:
+    branches: [main, "v0/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GODOT_VERSION: "4.7"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and Windows templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -d /tmp/godot-templates
+          mv /tmp/godot-templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+      - name: Import project
+        run: godot --headless --editor --path . --quit
+      - name: Integration smoke test
+        run: godot --headless --path . --script res://game/test_project_integration.gd
+      - name: Map verification
+        run: godot --headless --path . --script res://game/test_map_verification.gd
+      - name: Incident catalog
+        run: godot --headless --path . --script res://game/test_incident_catalog.gd
+      - name: Full game cycle
+        run: godot --headless --path . --script res://game/test_full_game_cycle.gd
+      - name: Export Windows release
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-release "Windows Desktop" build/windows/MuseumLiminal.exe
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuseumLiminal-Windows
+          path: build/windows/MuseumLiminal.exe
+          if-no-files-found: error
