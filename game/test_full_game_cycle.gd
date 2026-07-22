@@ -32,7 +32,8 @@ func _run() -> void:
 		manager.call("setup", game)
 		for kind in ["gravity_surge", "temporal_drift", "radiation_bloom", "void_rift", "echo_chamber", "glass_bridge", "mirror_maze", "yellow_halls", "scrap_run", "ascent"]:
 			manager.call("begin", kind, player)
-			await process_frame
+			# begin() deliberately waits for the portal fade before teleporting.
+			await create_timer(1.0).timeout
 			_check(bool(manager.call("is_active")), "%s starts" % kind)
 			manager.call("abort")
 			await process_frame
