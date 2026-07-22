@@ -8,6 +8,8 @@ extends Node
 ##   user://museum_save.cfg; the menu only reads it.
 
 const SAVE_PATH := "user://museum_save.cfg"
+const TUTORIAL_PROGRESS_PATH := "user://museum_progress.cfg"
+const TUTORIAL_SCENE := "res://scenes/TutorialPrologue.tscn"
 const SettingsPanelScript := preload("res://game/SettingsPanel.gd")
 const TITLE_TEXT := "ПЕРВЫЙ МУЗЕЙ"
 const SUBTITLE_TEXT := "ночная смена"
@@ -98,8 +100,24 @@ func _resume() -> void:
 
 
 func _start_game() -> void:
+	if not _tutorial_done():
+		_open_tutorial()
+		return
 	_in_main_menu = false
 	_resume()
+
+
+func _open_tutorial() -> void:
+	_sfx("menu_select")
+	get_tree().paused = false
+	get_tree().change_scene_to_file(TUTORIAL_SCENE)
+
+
+func _tutorial_done() -> bool:
+	var config := ConfigFile.new()
+	if config.load(TUTORIAL_PROGRESS_PATH) != OK:
+		return false
+	return bool(config.get_value("tutorial", "done", false))
 
 
 func _reset_progress() -> void:
@@ -246,6 +264,7 @@ func _build_ui() -> void:
 
 	_main_box = _make_box()
 	_start_button = _add_button(_main_box, "Начать смену", _start_game)
+	_add_button(_main_box, "Обучение", _open_tutorial)
 	_add_button(_main_box, "Настройки", _open_settings)
 	_add_button(_main_box, "Обратная связь (Notion)", _open_feedback_menu)
 	_add_button(_main_box, "Сбросить прогресс", _reset_progress)

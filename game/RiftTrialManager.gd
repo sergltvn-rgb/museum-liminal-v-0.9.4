@@ -5,6 +5,19 @@ extends Node
 const ORIGIN := Vector3(0, 72, -260)
 const USE_DISTANCE := 2.8
 const LOOP_DURATION := 18.0
+const TRIAL_SCENES := {
+	"gravity_surge": preload("res://scenes/trials/GravityArchiveTrial.tscn"),
+	"temporal_drift": preload("res://scenes/trials/MissingMinuteTrial.tscn"),
+	"radiation_bloom": preload("res://scenes/trials/CriticalMassTrial.tscn"),
+	"void_rift": preload("res://scenes/trials/NegativeSpaceTrial.tscn"),
+	"echo_chamber": preload("res://scenes/trials/EchoChamberTrial.tscn"),
+	"glass_bridge": preload("res://scenes/trials/GlassBridgeTrial.tscn"),
+	"mirror_maze": preload("res://scenes/trials/MirrorMazeTrial.tscn"),
+	"yellow_halls": preload("res://scenes/trials/YellowHallsTrial.tscn"),
+	"scrap_run": preload("res://scenes/trials/ScrapRunTrial.tscn"),
+	"ascent": preload("res://scenes/trials/AscentTrial.tscn"),
+}
+const TrialRegistry := preload("res://game/trials/RiftTrialRegistry.gd")
 var _game: Node
 var _player: CharacterBody3D
 var _world: Node3D
@@ -14,6 +27,9 @@ var _saved := Transform3D.IDENTITY
 var _layer: CanvasLayer
 var _title: Label
 var _status: Label
+var _active_trial: RiftTrial
+var last_fail_reason := ""
+var last_fail_detail := ""
 var _targets: Array[StaticBody3D] = []
 var _step := 0
 
@@ -109,6 +125,10 @@ func is_active() -> bool: return _active
 func begin(kind: String, player: CharacterBody3D) -> void:
 	if _active or player == null: return
 	_active = true; _kind = kind; _player = player; _saved = player.global_transform; _step = 0
+	last_fail_reason = ""; last_fail_detail = ""
+	var trial_scene: PackedScene = TRIAL_SCENES.get(kind, TRIAL_SCENES["void_rift"])
+	_active_trial = trial_scene.instantiate() as RiftTrial
+	add_child(_active_trial)
 	_player.controls_enabled = false
 	_build_world()
 	await get_tree().physics_frame
@@ -127,16 +147,25 @@ func abort() -> void:
 func _input(event: InputEvent) -> void:
 	if not _active: return
 	if event.is_action_pressed("interact"):
-		_interact(); get_viewport().set_input_as_handled()
-	elif _kind == "radiation_bloom" and event.is_action_pressed("drop_item"):
-		_tune_nearest(); get_viewport().set_input_as_handled()
-	elif _kind=="void_rift" and event.is_action_pressed("radar_scan"):
-		_lidar_scan(); get_viewport().set_input_as_handled()
+		if is_instance_valid(_active_trial): _active_trial.interact(self)
+		else: _interact()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("drop_item") or event.is_action_pressed("radar_scan"):
+		var action: StringName = &"drop_item" if event.is_action_pressed("drop_item") else &"radar_scan"
+		if _secondary_action_legacy(_kind, action): get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
 	if not _active or not is_instance_valid(_player):
 		return
-	match _kind:
+	if is_instance_valid(_active_trial): _active_trial.process_trial(self, delta)
+	else: _process_trial_legacy(_kind, delta)
+	if not _active or not is_instance_valid(_player):
+		return
+	if _player.global_position.y < ORIGIN.y - 14.0:
+		_reset_after_fall()
+
+func _process_trial_legacy(kind: String, delta: float) -> void:
+	match kind:
 		"temporal_drift": _update_time_loop(delta)
 		"radiation_bloom": _update_radiation(delta)
 		"void_rift": _update_negative_space(delta)
@@ -146,15 +175,38 @@ func _process(delta: float) -> void:
 		"yellow_halls": _update_yellow(delta)
 		"scrap_run": _update_scrap(delta)
 		"ascent": _update_ascent(delta)
-	if not _active or not is_instance_valid(_player):
-		return
-	if _player.global_position.y < ORIGIN.y - 14.0:
-		_reset_after_fall()
+
+func _interact_trial_legacy() -> void:
+	_interact()
+
+func _secondary_action_legacy(kind: String, action: StringName) -> bool:
+	if kind == "radiation_bloom" and action == &"drop_item":
+		_tune_nearest(); return true
+	if kind == "void_rift" and action == &"radar_scan":
+		_lidar_scan(); return true
+	return false
+
+func trial_definition() -> Dictionary:
+	return TrialRegistry.find(_kind)
+
+func trial_fail_tip() -> String:
+	return TrialRegistry.fail_tip_for(_kind, TranslationServer.get_locale().begins_with("en"))
 
 func _build_world() -> void:
 	_world = Node3D.new(); _world.name = "Pocket Dimension — %s" % _kind
 	get_tree().current_scene.add_child(_world)
-	match _kind:
+	if is_instance_valid(_active_trial): _active_trial.build(self)
+	else: _build_trial_legacy(_kind)
+	_add_bounds()
+	if _kind in ["void_rift", "scrap_run", "yellow_halls"]:
+		return
+	for i in range(12):
+		var lamp := OmniLight3D.new(); var a := TAU * float(i) / 12.0
+		lamp.position = ORIGIN + Vector3(cos(a)*15, 4+i%3, sin(a)*15-5)
+		lamp.light_color = Color(.32,.44,.72); lamp.light_energy=.35; lamp.omni_range=9; _world.add_child(lamp)
+
+func _build_trial_legacy(kind: String) -> void:
+	match kind:
 		"gravity_surge": _build_gravity_archive()
 		"temporal_drift": _build_missing_minute()
 		"radiation_bloom": _build_critical_mass()
@@ -165,13 +217,6 @@ func _build_world() -> void:
 		"scrap_run": _build_scrap_run()
 		"ascent": _build_ascent()
 		_: _build_negative_space()
-	_add_bounds()
-	if _kind in ["void_rift", "scrap_run", "yellow_halls"]:
-		return
-	for i in range(12):
-		var lamp := OmniLight3D.new(); var a := TAU * float(i) / 12.0
-		lamp.position = ORIGIN + Vector3(cos(a)*15, 4+i%3, sin(a)*15-5)
-		lamp.light_color = Color(.32,.44,.72); lamp.light_energy=.35; lamp.omni_range=9; _world.add_child(lamp)
 
 func _spawn_position() -> Vector3:
 	return ORIGIN + Vector3(0, 1.2, 8)
@@ -573,7 +618,7 @@ func _mirror_interact(body:StaticBody3D,index:int)->void:
 			_reshuffle_mirrors()
 			_status.text="Три ошибки — зал перестроился, дефекты сместились!"
 		else:
-			_status.text="Это отражение стабильно (ошибка %d/3). Ищите дрожащий силуэт"%_mirror_errors
+			_status.text="Это отражение стабильно (ошибка %d/3). Ищите дрожа��ий силуэт"%_mirror_errors
 
 # --- Жёлтые залы (Backrooms Level 0) --------------------------------------
 func _build_yellow_halls()->void:
@@ -865,6 +910,10 @@ func _return_player()->void:
 
 func _cleanup()->void:
 	_active=false; _layer.visible=false
+	if is_instance_valid(_active_trial):
+		_active_trial.cleanup(self)
+		_active_trial.queue_free()
+	_active_trial=null
 	for echo in _echoes:
 		if is_instance_valid(echo): echo.queue_free()
 	_echoes.clear(); _echo_recordings.clear(); _targets.clear(); _light_bridges.clear(); _bridge_requires_light.clear(); _monoliths.clear(); _void_nodes.clear(); _echo_pads.clear(); _bridge_tiles.clear(); _bridge_fake.clear(); _bridge_done.clear()

@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://game/trials/RiftTrial.gd" type="Script" id="1"]
+
+[node name="AscentTrial" type="Node"]
+script = ExtResource("1")
+kind = &"ascent"
+title_key = &"TRIAL_ASCENT_TITLE"
