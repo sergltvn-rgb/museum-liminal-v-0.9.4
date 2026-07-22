@@ -30,8 +30,8 @@ func send_feedback(player_name: String, comment: String, version: String = "0.9.
 	var http := HTTPRequest.new()
 	add_child(http)
 	
-	http.request_completed.connect(func(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
-		_on_request_completed(http, result, response_code, headers, body)
+	http.request_completed.connect(func(result: int, response_code: int, response_headers: PackedStringArray, body: PackedByteArray):
+		_on_request_completed(http, result, response_code, response_headers, body)
 	)
 
 	var headers := ["Content-Type: application/json"]

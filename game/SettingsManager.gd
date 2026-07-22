@@ -176,7 +176,13 @@ func _apply_quality() -> void:
 
 func _apply_ui_scale() -> void:
 	get_tree().root.content_scale_factor = 1.12 if large_text else 1.0
-	get_tree().root.modulate = Color(1.08, 1.08, 1.08) if high_contrast else Color.WHITE
+	var museum := get_tree().get_first_node_in_group("museum_map")
+	if museum == null:
+		return
+	var env: Variant = museum.get("_environment")
+	if env is Environment:
+		env.adjustment_enabled = high_contrast
+		env.adjustment_contrast = 1.18 if high_contrast else 1.0
 
 
 func _load_settings() -> void:
