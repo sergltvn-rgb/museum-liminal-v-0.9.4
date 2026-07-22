@@ -219,8 +219,17 @@ func _build_controls() -> void:
 
 func _build_accessibility() -> void:
 	_section_title("Доступность", "Снизьте визуальную нагрузку и улучшите читаемость")
+	_option_row("Язык / Language", "Язык интерфейса и субтитров", ["Русский", "English"],
+		1 if _settings.language == "en" else 0,
+		func(index: int) -> void: _settings.set_language("en" if index == 1 else "ru"))
+	_toggle_row("Субтитры", "Показывает текст для речи и важных звуков", _settings.subtitles,
+		func(value: bool) -> void: _settings.set_subtitles(value))
 	_toggle_row("Уменьшить мерцание", "Смягчает аварийный свет и эффект пустоты", _settings.reduced_flashes,
 		func(value: bool) -> void: _settings.set_reduced_flashes(value))
+	_toggle_row("Уменьшить движение", "Отключает тряску камеры и резкие переходы", _settings.reduced_motion,
+		func(value: bool) -> void: _settings.set_reduced_motion(value))
+	_toggle_row("Высокий контраст", "Усиливает различимость интерфейса и целей", _settings.high_contrast,
+		func(value: bool) -> void: _settings.set_high_contrast(value))
 	_toggle_row("Крупный интерфейс", "Увеличивает масштаб текста и элементов", _settings.large_text,
 		func(value: bool) -> void: _settings.set_large_text(value))
 	var reset := Button.new()

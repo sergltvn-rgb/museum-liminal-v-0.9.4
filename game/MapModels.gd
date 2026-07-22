@@ -10,19 +10,19 @@
 ## primitive the next time the map is (re)built.
 
 static var _cache: Dictionary = {}
+const MODEL_PATHS := {
+	"camera": "res://models/camera.fbx",
+	"security_camera": "res://models/camera.fbx",
+}
+const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashlight", "modern_grey_stone_tile_texture"]
 
 
 static func place(parent: Node, model_name: String, world_position: Vector3,
 		scale_factor := 1.0, rotation_y_deg := 0.0) -> Node3D:
-	# A stale archive may leave the old fox file behind under this misleading
-	# name. Never load it: the procedural Newton statue has correct scale and
-	# collision. This also protects projects updated by extracting over v0.2.2.
-	# The supplied archive contains sample assets under incorrect exhibit names
-	# (fox, avocado, lantern, helmet and oversized demo meshes). Only the verified
-	# office chair is accepted; every other slot uses its authored fallback.
-	if model_name != "office_chair":
-		return null
-	var path := "res://models/%s.glb" % model_name
+	# Every supplied museum asset is eligible. Authored call-site scale and
+	# rotation keep inconsistent source units under control; procedural geometry
+	# remains the fallback whenever import or instantiation fails.
+	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
 	if not ResourceLoader.exists(path):
 		return null
 
@@ -43,7 +43,7 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 	# Imported museum pieces are static. Generate collision for visible exhibit
 	# meshes when the source GLB did not provide one; wall-mounted CCTV stays
 	# non-blocking so it cannot snag the player near doorways.
-	if model_name != "security_camera":
+	if model_name not in NON_BLOCKING:
 		_ensure_collisions(instance)
 	return instance
 
@@ -58,4 +58,5 @@ static func _ensure_collisions(root: Node3D) -> void:
 
 
 static func has_model(model_name: String) -> bool:
-	return ResourceLoader.exists("res://models/%s.glb" % model_name)
+	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
+	return ResourceLoader.exists(path)

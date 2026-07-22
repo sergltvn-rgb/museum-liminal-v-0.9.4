@@ -14,6 +14,10 @@ var quality_preset := 2 # 0 low, 1 medium, 2 high
 var resolution_index := 1
 var reduced_flashes := false
 var large_text := false
+var subtitles := true
+var high_contrast := false
+var reduced_motion := false
+var language := "ru"
 
 
 func _ready() -> void:
@@ -70,6 +74,29 @@ func set_large_text(value: bool) -> void:
 	_commit()
 
 
+func set_subtitles(value: bool) -> void:
+	subtitles = value
+	_commit()
+
+
+func set_high_contrast(value: bool) -> void:
+	high_contrast = value
+	_apply_ui_scale()
+	_commit()
+
+
+func set_reduced_motion(value: bool) -> void:
+	reduced_motion = value
+	_commit()
+
+
+func set_language(value: String) -> void:
+	language = "en" if value == "en" else "ru"
+	TranslationServer.set_locale(language)
+	get_tree().root.propagate_notification(NOTIFICATION_TRANSLATION_CHANGED)
+	_commit()
+
+
 func reset_defaults() -> void:
 	master_volume = 0.82
 	mouse_sensitivity = 0.0025
@@ -79,6 +106,11 @@ func reset_defaults() -> void:
 	resolution_index = 1
 	reduced_flashes = false
 	large_text = false
+	subtitles = true
+	high_contrast = false
+	reduced_motion = false
+	language = "ru"
+	TranslationServer.set_locale(language)
 	_apply_all()
 	_commit()
 
@@ -93,6 +125,7 @@ func _commit() -> void:
 
 
 func _apply_all() -> void:
+	TranslationServer.set_locale(language)
 	_apply_volume()
 	_apply_sensitivity()
 	_apply_window()
@@ -143,6 +176,7 @@ func _apply_quality() -> void:
 
 func _apply_ui_scale() -> void:
 	get_tree().root.content_scale_factor = 1.12 if large_text else 1.0
+	get_tree().root.modulate = Color(1.08, 1.08, 1.08) if high_contrast else Color.WHITE
 
 
 func _load_settings() -> void:
@@ -157,6 +191,10 @@ func _load_settings() -> void:
 	resolution_index = clampi(int(config.get_value("display", "resolution", 1)), 0, RESOLUTIONS.size() - 1)
 	reduced_flashes = bool(config.get_value("accessibility", "reduced_flashes", false))
 	large_text = bool(config.get_value("accessibility", "large_text", false))
+	subtitles = bool(config.get_value("accessibility", "subtitles", true))
+	high_contrast = bool(config.get_value("accessibility", "high_contrast", false))
+	reduced_motion = bool(config.get_value("accessibility", "reduced_motion", false))
+	language = str(config.get_value("localization", "language", "ru"))
 
 
 func _save_settings() -> void:
@@ -169,4 +207,8 @@ func _save_settings() -> void:
 	config.set_value("display", "resolution", resolution_index)
 	config.set_value("accessibility", "reduced_flashes", reduced_flashes)
 	config.set_value("accessibility", "large_text", large_text)
+	config.set_value("accessibility", "subtitles", subtitles)
+	config.set_value("accessibility", "high_contrast", high_contrast)
+	config.set_value("accessibility", "reduced_motion", reduced_motion)
+	config.set_value("localization", "language", language)
 	config.save(PATH)
