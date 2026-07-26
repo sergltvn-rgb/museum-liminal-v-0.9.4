@@ -159,6 +159,68 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 	return instance
 
 
+## Hulls, cached per Mesh. Deriving them was essentially the entire synchronous
+## cost of building the museum: measured headless with _cache already warm, the
+## sixteen archive models spent ~2.6 s of a ~2.7 s build inside
+## create_convex_collision(), while the four names in NON_BLOCKING -- the branch
+## that skips collision altogether -- cost 0.0-0.1 ms each. Instantiating meshes
+## is NOT the cost: dressing the museum with the game/props/ libraries took the
+## mesh count from 1173 to 3127 and moved the total by under 60 ms.
+##
+## The waste was re-derivation. _cache already shares one PackedScene per path,
+## and instantiate() hands every instance the SAME Mesh resource, yet each
+## placement re-hulled it -- and the hull for a given mesh never varies. Shape3D
+## is shareable between bodies, so one hull per Mesh now serves every placement.
+##
+## Keyed by the Mesh object rather than by model path: one GLB carries several
+## meshes, and nothing stops two GLBs sharing one.
+static var _convex_shapes: Dictionary = {}
+static var _trimesh_shapes: Dictionary = {}
+
+
+static func _shape_for(mesh: Mesh, use_trimesh: bool) -> Shape3D:
+	var cache: Dictionary = _trimesh_shapes if use_trimesh else _convex_shapes
+	if cache.has(mesh):
+		return cache[mesh]
+	# Exact concave collider for the hollow architecture in TRIMESH_COLLISION;
+	# a cleaned hull for everything else.
+	#
+	# simplify is deliberately FALSE, and it is where the build time went. It
+	# runs a convex DECOMPOSITION to reduce the hull's plane count, which is
+	# both expensive and pointless when the goal is a single hull. Measured per
+	# model, clean+simplify vs clean alone:
+	#   wooden_bookcases_with_books   10,284 verts   511.0 ms  ->   4.1 ms
+	#   наблюдатель                  524,772 verts   780.9 ms  -> 183.0 ms
+	#   dumpsters_glb                 23,914 verts   231.0 ms  ->   9.0 ms
+	#   уличная лампа                119,929 verts   321.9 ms  ->  40.5 ms
+	#   gallery_bare_concrete_wall    80,485 verts   280.6 ms  ->  45.7 ms
+	# Note the cost barely tracks vertex count: a 10 k mesh paid 511 ms, 125x
+	# what the same mesh costs without the flag.
+	#
+	# The resulting hull has more planes, so a contact test against it is a
+	# little dearer -- but it is also the EXACT convex hull rather than an
+	# approximation of one, so it is tighter, never looser. That matters here:
+	# test_blocker_regressions asserts the Atrium -> Time Wing B doorway still
+	# admits the player capsule, and a looser hull is what would break it.
+	var shape: Shape3D = mesh.create_trimesh_shape() if use_trimesh \
+		else mesh.create_convex_shape(true, false)
+	cache[mesh] = shape
+	return shape
+
+
+## Reproduces exactly what create_convex_collision()/create_trimesh_collision()
+## build -- a StaticBody3D named "<mesh>_col" parented to the MeshInstance3D,
+## carrying one CollisionShape3D -- so node counts, node paths and the
+## "*Collision*" re-entrancy guard above all behave as before.
+static func _attach_collision(mesh_instance: MeshInstance3D, shape: Shape3D) -> void:
+	var body := StaticBody3D.new()
+	body.name = "%s_col" % mesh_instance.name
+	var collision := CollisionShape3D.new()
+	collision.shape = shape
+	body.add_child(collision)
+	mesh_instance.add_child(body)
+
+
 static func _ensure_collisions(root: Node3D, use_trimesh := false) -> void:
 	if root.find_child("*Collision*", true, false) != null:
 		return
@@ -166,12 +228,14 @@ static func _ensure_collisions(root: Node3D, use_trimesh := false) -> void:
 		var mesh_instance := child as MeshInstance3D
 		if mesh_instance == null or mesh_instance.mesh == null:
 			continue
-		if use_trimesh:
-			# Exact concave collider: follows the real surface instead of the
-			# oversized solid hull a large hollow mesh would otherwise get.
-			mesh_instance.create_trimesh_collision()
-		else:
-			mesh_instance.create_convex_collision(true, true)
+		var shape := _shape_for(mesh_instance.mesh, use_trimesh)
+		if shape == null:
+			# QuickHull cannot build a polyhedron from coplanar points, so flat
+			# decal planes and needle meshes yield nothing. The engine helpers
+			# produced an empty collider for these; skipping is the same thing
+			# without the dead node.
+			continue
+		_attach_collision(mesh_instance, shape)
 
 
 ## True when place() would return a model for this name. Placeholders answer
