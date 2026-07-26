@@ -11,11 +11,13 @@ extends Node
 ##   A  jump + confirm         B  drop_item
 ##   X  interact               Y  tablet
 ##   LB radar_scan             RB flashlight
+##   LT cam_prev               RT cam_next
 ##   L3 sprint                 START pause
-##   Free: BACK/SELECT, R3, both triggers, D-pad.
+##   Free: BACK/SELECT, R3, D-pad.
 ## The engine keeps its own ui_* actions on A (ui_accept), B (ui_cancel),
 ## Y (ui_select), the D-pad and the left stick; those are UI-only and are left
-## alone on purpose.
+## alone on purpose. The D-pad is deliberately left free of game actions: it is
+## the only way to drive focus navigation, which the CCTV mini-map now needs.
 
 
 func _ready() -> void:
@@ -46,6 +48,15 @@ func _ready() -> void:
 	_add_action("camera_pan_right", [_key(KEY_RIGHT), _joy_axis(JOY_AXIS_RIGHT_X, 1.0)])
 	_add_action("camera_tilt_up", [_key(KEY_UP), _joy_axis(JOY_AXIS_RIGHT_Y, -1.0)])
 	_add_action("camera_tilt_down", [_key(KEY_DOWN), _joy_axis(JOY_AXIS_RIGHT_Y, 1.0)])
+	# CCTV feed cycling. Clicking a mini-map button used to be the only way to
+	# change feed, which made the game unfinishable on a pad: from night 2 the
+	# incident cannot be resolved until the source is confirmed on a specific
+	# camera. Both shoulder buttons are taken (LB radar_scan, RB flashlight), so
+	# the feeds sit on the triggers — the only free pair left in that cluster,
+	# and the one every player already reaches for to cycle something.
+	# Keyboard uses the physical "<" / ">" keys, which nothing else claims.
+	_add_action("cam_prev", [_key(KEY_COMMA), _joy_axis(JOY_AXIS_TRIGGER_LEFT, 1.0)])
+	_add_action("cam_next", [_key(KEY_PERIOD), _joy_axis(JOY_AXIS_TRIGGER_RIGHT, 1.0)])
 
 
 func _add_action(action: StringName, events: Array) -> void:

@@ -1121,7 +1121,10 @@ func _build_hud() -> void:
 	_win_overlay.visible = false
 	_hud.add_child(_win_overlay)
 	var win_label := Label.new()
-	win_label.text = tr("HUD_WIN")
+	# HUD_WIN is the scoreboard ("three nights done") and ends with the ENTER
+	# prompt; STORY_ENDING is the closing line of the story and follows it,
+	# separated by a blank line. Same shape as _fail_label above.
+	win_label.text = "%s\n\n%s" % [tr("HUD_WIN"), tr("STORY_ENDING")]
 	win_label.anchor_right = 1.0
 	win_label.anchor_bottom = 1.0
 	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

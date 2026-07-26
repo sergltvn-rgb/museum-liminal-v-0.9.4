@@ -47,7 +47,7 @@ CAM_ATRIUM_EAST,Atrium — East,Атриум — восток
 CAM_ATRIUM_WEST,Atrium — West,Атриум — запад
 CAM_BASEMENT_LIFT,Basement Lift,Лифт в подвал
 CAM_ENTRANCE,Entrance,Вход
-CAM_HINT_CONTROLS,TAB / Y — exit  |  WASD / right stick — camera  |  F / RB — floodlight,TAB / Y — выйти  |  WASD / правый стик — камера  |  F / RB — прожектор
+CAM_HINT_CONTROLS,"TAB / Y — exit  |  arrows / right stick — camera  |  , . / LT / RT — switch feed  |  F / RB — floodlight","TAB / Y — выйти  |  стрелки / правый стик — камера  |  , . / LT / RT — смена камеры  |  F / RB — прожектор"
 CAM_PLANETARIUM,Planetarium,Планетарий
 CAM_RESTORATION,Restoration Room,Реставрационная
 CAM_ROOM_ARCHIVE,Archive,Архив
@@ -59,7 +59,7 @@ CAM_ROOM_WING_A,Wing A,Крыло A
 CAM_ROOM_WING_B,Wing B,Крыло B
 CAM_ROOM_WING_C,Wing C,Крыло C
 CAM_ROOM_WING_D,Wing D,Крыло D
-CAM_WATCH_POST,Watcher Post,Пост наблюдателя
+CAM_WATCH_POST,Observer Post,Пост наблюдателя
 CAM_WING_A_GRAVITY,Wing A — Gravity,Крыло A — гравитация
 CAM_WING_B_TIME,Wing B — Time,Крыло B — время
 CAM_WING_C_DOOR,Wing C Door,Дверь крыла C
@@ -108,7 +108,7 @@ HUD_ANOMALY_CLEARED,ANOMALY CLEARED. THE CORE IS STILL UNSTABLE,АНОМАЛИЯ
 HUD_CONFIRM_SOURCE_FIRST,Confirm the source via %s first — %.1f sec. to go.,Сначала подтвердите источник через %s — ещё %.1f сек.
 HUD_CONTAINMENT_BREACHED,CONTAINMENT BREACHED,СДЕРЖИВАНИЕ НАРУШЕНО
 HUD_CRITICAL_DOSE,CRITICAL RADIATION DOSE,КРИТИЧЕСКАЯ ДОЗА ОБЛУЧЕНИЯ
-HUD_CURATOR_CAUGHT,THE WATCHER CAUGHT YOU,НАБЛЮДАТЕЛЬ ДОГНАЛ ВАС
+HUD_CURATOR_CAUGHT,THE CURATOR CAUGHT YOU,КУРАТОР ДОГНАЛ ВАС
 HUD_EFFECT_ASCENT,THE FOG IS RISING,ТУМАН ПОДНИМАЕТСЯ
 HUD_EFFECT_DOSE,DOSE: %.0f%%,ДОЗА: %.0f%%
 HUD_EFFECT_ECHO,RESONANCE RISING,РЕЗОНАНС НАРАСТАЕТ
@@ -128,7 +128,7 @@ HUD_HINT_TAKE,E - take: %s,E - взять: %s
 HUD_HINT_TERMINAL,E - read the terminal,E - показания терминала
 HUD_INTRO_CHECK_HALLS,Check the halls before dark,Проверьте залы до наступления темноты
 HUD_INTRO_FIRST_NIGHT,First night on duty,Первая ночь дежурства
-HUD_INTRO_MUSEUM,MUSEUM OF NATURAL PHILOSOPHY,МУЗЕЙ ЕСТЕСТВЕННОЙ ФИЛОСОФИИ
+HUD_INTRO_MUSEUM,THE FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
 HUD_INTRO_SKIP,SPACE / ENTER / A — skip,ПРОБЕЛ / ENTER / A — пропустить
 HUD_MEMORY_REEL_BONUS,MEMORY REEL: +45 SECONDS ON THE TIMER,КАТУШКА ПАМЯТИ: +45 СЕКУНД К ТАЙМЕРУ
 HUD_NIGHT,NIGHT %d,НОЧЬ %d
@@ -146,7 +146,7 @@ HUD_STAMINA_EXHAUSTED,EXHAUSTED — CATCH YOUR BREATH,ИСТОЩЕНИЕ — П�
 HUD_TERMINAL_BREACH,!! CONTAINMENT BREACH !!\n%s\n%s,!! НАРУШЕНИЕ СДЕРЖИВАНИЯ !!\n%s\n%s
 HUD_TERMINAL_IDLE,SYSTEM NOMINAL\nALL EXHIBITS STABLE,СИСТЕМА В НОРМЕ\nВСЕ ЭКСПОНАТЫ СТАБИЛЬНЫ
 HUD_TERMINAL_RESTORED,"SYSTEM: CONTAINMENT RESTORED\nGOOD NIGHT, OBSERVER","СИСТЕМА: СДЕРЖИВАНИЕ ВОССТАНОВЛЕНО\nДОБРОЙ НОЧИ, НАБЛЮДАТЕЛЬ"
-HUD_TOOL_LANTERN,NULL LANTERN: the Watcher is slowed near you,НУЛЬ-ФОНАРЬ: Наблюдатель замедлен рядом с вами
+HUD_TOOL_LANTERN,NULL LANTERN: the Curator is slowed near you,НУЛЬ-ФОНАРЬ: Куратор замедлен рядом с вами
 HUD_TOOL_LENS,LENS: rift %d m away,ЛИНЗА: разрыв в %d м
 HUD_TOOL_PRISM,PRISM: anomaly influence weakened,ПРИЗМА: влияние аномалии ослаблено
 HUD_TOOL_TAKEN,Device taken: %s,Взят прибор: %s
@@ -179,7 +179,7 @@ MENU_SETTINGS,Settings,Настройки
 MENU_START,Start shift,Начать смену
 MENU_SUBTITLE_FMT,%s · RELEASE 1.0 · PROLOGUE AND 10 DIMENSIONS,%s · RELEASE 1.0 · ПРОЛОГ И 10 ИЗМЕРЕНИЙ
 MENU_SUBTITLE_SHIFT,night shift,ночная смена
-MENU_TITLE,FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
+MENU_TITLE,THE FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
 MENU_TUTORIAL,Tutorial,Обучение
 OBJ_BLACKOUT,The power is out. Something is happening in the atrium...,Питание пропало. Что-то происходит в атриуме...
 OBJ_CCTV_CONFIRM,%s: confirm the source via %s in the security office (%.1f sec.).,%s: подтвердите источник через %s в офисе охраны (%.1f сек.).
@@ -353,7 +353,7 @@ TRIAL_VOID_FAILTIP,Scan more often and skirt the red dots along the edges.,Ск�
 TRIAL_VOID_HUD,LMB — scan · NODES: %d/3 · red dots mean danger,ЛКМ — скан · УЗЛЫ: %d/3 · красные точки — опасность
 TRIAL_VOID_OBJECTIVE,LMB - lidar pulse. Activate 3 nodes and find the exit.,ЛКМ — импульс лидара · активируйте 3 узла и найдите выход.
 TRIAL_VOID_TITLE,NEGATIVE SPACE,ТЁМНЫЙ СЕКТОР
-TRIAL_VOID_TUTORIAL,"The sector is pitch black - fire the lidar (LMB) to see.\nRed dots are the Watcher, stay away from it.","Сектор чёрный — стреляйте лидаром (ЛКМ), чтобы видеть.\nКрасные точки — Наблюдатель, держитесь от него."
+TRIAL_VOID_TUTORIAL,"The sector is pitch black - fire the lidar (LMB) to see.\nRed dots are the Curator, stay away from it.","Сектор чёрный — стреляйте лидаром (ЛКМ), чтобы видеть.\nКрасные точки — Куратор, держитесь от него."
 TRIAL_YELLOW_CAUGHT,The Wanderer threw you back to the entrance. Keep your distance!,Блуждающий выбросил вас ко входу. Держите дистанцию!
 TRIAL_YELLOW_EXIT_LOCKED,The stripes are inactive: collect the tapes (%d/3),Разметка не активна: соберите плёнки (%d/3)
 TRIAL_YELLOW_FAILTIP,Don't rush the Wanderer - lure it away and loop around.,Не идите на Блуждающего в лоб — уводите его и петляйте.

@@ -1,10 +1,12 @@
 extends Node
 ## FNAF-style security tablet.
 ##
-## TAB        -- open / close the camera feed
-## CAM button -- switch camera (click on the mini-map)
-## A/D or arrows -- pan the active camera, W/S or up/down -- tilt
-## F          -- toggle the camera's IR floodlight
+## TAB / Y            -- open / close the camera feed
+## "," / "." or LT/RT -- previous / next feed (works without a mouse)
+## CAM button         -- jump straight to a feed: click it, or move the focus
+##                       ring onto it with the D-pad and press A
+## Arrows / right stick -- pan and tilt the active camera
+## F / RB             -- toggle the camera's IR floodlight
 ##
 ## Setup: add a plain Node to the main scene and attach this script.
 ## It finds the player through the "player" group and builds its own
@@ -16,6 +18,12 @@ const MAP_ORIGIN := Vector2(35.0, 49.0)  # world offset -> map pixels
 const GREEN := Color(0.2, 0.78, 0.42)
 const PAN_SPEED := 55.0
 const TILT_SPEED := 40.0
+# Tilt travel around each camera's mounted pitch. The mounts already aim down:
+# the steepest are CAM 07 (-20.8 deg) and CAM 08 (-20.6 deg), so anything under
+# 21 leaves those two feeds permanently staring at the floor with the horizon
+# out of reach. 28 clears the worst mount by 7 deg and is applied symmetrically,
+# which still gives every feed at least 34 deg of downward travel for detail.
+const TILT_LIMIT := 28.0
 
 const CAMS: Array = [
 	{"id": "CAM 01", "label": "CAM_ENTRANCE",
@@ -42,19 +50,23 @@ const CAMS: Array = [
 		"pos": Vector3(42.2, 2.9, -6.8), "target": Vector3(52, 1.0, 0)},
 ]
 
-# Mini-map rooms: [name, world center (x,z), size (w,d), locked].
+# Mini-map rooms: [name, world center (x,z), size (w,d), open from night N].
+# The last field replaces a hard-coded "locked" flag: wings C and D are sealed
+# behind blast doors that GameManager removes on nights 2 and 3, so a constant
+# made the map keep painting them red in rooms the player had already walked
+# through. 1 == open from the first shift.
 const ROOMS: Array = [
-	["CAM_ENTRANCE", Vector2(0, 25), Vector2(22, 20), false],
-	["CAM_ROOM_ATRIUM", Vector2(0, 0), Vector2(30, 30), false],
-	["CAM_ROOM_OFFICE", Vector2(-25, 0), Vector2(20, 14), false],
-	["CAM_ROOM_STORAGE", Vector2(-25, 12), Vector2(20, 10), false],
-	["CAM_ROOM_ARCHIVE", Vector2(-25, -12), Vector2(20, 10), false],
-	["CAM_ROOM_LAB", Vector2(-25, 22), Vector2(20, 10), false],
-	["CAM_ROOM_WING_A", Vector2(28, 0), Vector2(26, 18), false],
-	["CAM_ROOM_WING_B", Vector2(0, -24), Vector2(26, 18), false],
-	["CAM_PLANETARIUM", Vector2(0, -41), Vector2(20, 16), false],
-	["CAM_ROOM_WING_C", Vector2(24, -24), Vector2(22, 16), true],
-	["CAM_ROOM_WING_D", Vector2(52, 0), Vector2(22, 16), true],
+	["CAM_ENTRANCE", Vector2(0, 25), Vector2(22, 20), 1],
+	["CAM_ROOM_ATRIUM", Vector2(0, 0), Vector2(30, 30), 1],
+	["CAM_ROOM_OFFICE", Vector2(-25, 0), Vector2(20, 14), 1],
+	["CAM_ROOM_STORAGE", Vector2(-25, 12), Vector2(20, 10), 1],
+	["CAM_ROOM_ARCHIVE", Vector2(-25, -12), Vector2(20, 10), 1],
+	["CAM_ROOM_LAB", Vector2(-25, 22), Vector2(20, 10), 1],
+	["CAM_ROOM_WING_A", Vector2(28, 0), Vector2(26, 18), 1],
+	["CAM_ROOM_WING_B", Vector2(0, -24), Vector2(26, 18), 1],
+	["CAM_PLANETARIUM", Vector2(0, -41), Vector2(20, 16), 1],
+	["CAM_ROOM_WING_C", Vector2(24, -24), Vector2(22, 16), 2],
+	["CAM_ROOM_WING_D", Vector2(52, 0), Vector2(22, 16), 3],
 ]
 
 var _player: CharacterBody3D = null
@@ -62,6 +74,7 @@ var _cams: Array[Camera3D] = []
 var _lights: Array[SpotLight3D] = []
 var _base_rot: Array[Vector3] = []
 var _buttons: Array[Button] = []
+var _room_boxes: Array[StyleBoxFlat] = []
 var _layer: CanvasLayer
 var _cam_label: Label
 var _rec_dot: ColorRect
@@ -168,15 +181,14 @@ func _build_ui() -> void:
 	panel.offset_bottom = -16.0
 	root.add_child(panel)
 
-	# Room outlines.
+	# Room outlines. The lock colour is not baked here: _refresh_map_locks()
+	# repaints these style boxes every time the tablet is raised.
 	for r in ROOMS:
 		var rp := Panel.new()
 		var rsb := StyleBoxFlat.new()
-		rsb.bg_color = Color(0.9, 0.2, 0.15, 0.10) if r[3] \
-			else Color(GREEN.r, GREEN.g, GREEN.b, 0.08)
-		rsb.border_color = Color(0.7, 0.25, 0.2) if r[3] else GREEN.darkened(0.25)
 		rsb.set_border_width_all(1)
 		rp.add_theme_stylebox_override("panel", rsb)
+		_room_boxes.append(rsb)
 		var c: Vector2 = r[1]
 		var s: Vector2 = r[2]
 		rp.position = _to_map(c - s * 0.5) + Vector2(pad, pad)
@@ -191,12 +203,15 @@ func _build_ui() -> void:
 		rl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(rl)
 
-	# Camera buttons on the map. FOCUS_NONE is critical: focused buttons
-	# swallow TAB for focus navigation and the tablet could not be closed.
+	# Camera buttons on the map. These must be focusable: a pad has no cursor, so
+	# FOCUS_NONE left every feed but CAM 01 unreachable on a controller. TAB is
+	# still safe — _input() runs before the viewport hands the event to the GUI,
+	# and it marks the toggle as handled, so a focused button never sees it and
+	# cannot swallow it for focus navigation.
 	for i in range(CAMS.size()):
 		var btn := Button.new()
 		btn.text = "%02d" % (i + 1)
-		btn.focus_mode = Control.FOCUS_NONE
+		btn.focus_mode = Control.FOCUS_ALL
 		btn.add_theme_font_size_override("font_size", 12)
 		btn.size = Vector2(34, 22)
 		var wp: Vector3 = CAMS[i]["pos"]
@@ -205,9 +220,52 @@ func _build_ui() -> void:
 		panel.add_child(btn)
 		_buttons.append(btn)
 
+	_refresh_map_locks()
+
 
 func _to_map(world: Vector2) -> Vector2:
 	return (world + MAP_ORIGIN) * MAP_SCALE
+
+
+## Repaint the mini-map's lock state. Called on every open, never baked: wings C
+## and D are sealed by blast doors that GameManager tears down on nights 2 and 3,
+## so a const flag made the map keep them red in rooms the player had already
+## walked through.
+func _refresh_map_locks() -> void:
+	var night := _current_night()
+	for i in range(_room_boxes.size()):
+		var box := _room_boxes[i]
+		var locked := night < int(ROOMS[i][3])
+		box.bg_color = Color(0.9, 0.2, 0.15, 0.10) if locked \
+			else Color(GREEN.r, GREEN.g, GREEN.b, 0.08)
+		box.border_color = Color(0.7, 0.25, 0.2) if locked else GREEN.darkened(0.25)
+
+
+## Source of truth for the wing locks: GameManager's night counter. It is the
+## very number GameManager feeds to _unlock_for_night(), so the mini-map cannot
+## disagree with the museum. Reading a private field mirrors what
+## GameplayEnhancements and ExhibitPuzzleController already do for the same value.
+func _current_night() -> int:
+	var game := _game_manager()
+	if game != null:
+		var value: Variant = game.get("_night")
+		if typeof(value) == TYPE_INT and int(value) > 0:
+			return int(value)
+	return _night_from_blast_doors()
+
+
+## Fallback for a tablet running without a GameManager (standalone scene, tests).
+## FirstMuseumMap leaves a blast door in the scene until the wing opens, so the
+## doors that are still standing tell us how far the shift has progressed.
+func _night_from_blast_doors() -> int:
+	var map := get_tree().get_first_node_in_group("museum_map")
+	if map == null:
+		return 1
+	if map.find_child("Wing C*Blast Door*", true, false) != null:
+		return 1
+	if map.find_child("Wing D*Blast Door*", true, false) != null:
+		return 2
+	return 3
 
 
 # _input (not _unhandled_input): GUI must never eat the toggle key.
@@ -220,6 +278,23 @@ func _input(event: InputEvent) -> void:
 		_update_floodlight()
 		_sfx("tablet_click")
 		get_viewport().set_input_as_handled()
+	elif _open and _is_pan_tilt(event):
+		# Pan / tilt is polled in _process; swallow the events here so the mini-map
+		# buttons -- focusable since the pad fix -- do not also treat the arrow keys
+		# as focus navigation and walk the focus ring across the map while the
+		# operator is only aiming the lens. The D-pad and the left stick still move
+		# focus: neither is bound to a camera axis.
+		get_viewport().set_input_as_handled()
+
+
+## True when the event drives the active camera rather than the UI. Guarded
+## because InputBootstrap creates these actions in its own _ready().
+func _is_pan_tilt(event: InputEvent) -> bool:
+	for action in ["camera_pan_left", "camera_pan_right",
+			"camera_tilt_up", "camera_tilt_down"]:
+		if InputMap.has_action(action) and event.is_action(action):
+			return true
+	return false
 
 
 # GameManager owns PlayerController.controls_enabled. Sibling node in the main
@@ -273,7 +348,10 @@ func _toggle() -> void:
 	if _open:
 		_player.controls_enabled = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		_switch_to(_active)
+		_refresh_map_locks()
+		# force: the feed being restored is by definition the active one, and
+		# raising the tablet has to make its camera current again.
+		_switch_to(_active, true)
 	else:
 		_update_floodlight()
 		_player.controls_enabled = _controls_allowed()
@@ -291,7 +369,18 @@ func _player_is_in_office() -> bool:
 		and position.z >= -6.5 and position.z <= 6.5
 
 
-func _switch_to(index: int) -> void:
+## `force` is for the one caller that must relight a feed that is already the
+## active one: _toggle(), when the tablet is raised.
+func _switch_to(index: int, force: bool = false) -> void:
+	# Re-selecting the feed already on screen is a no-op. The mini-map buttons are
+	# focusable since the pad fix, so one of them always holds the ring while the
+	# tablet is open, and ui_accept (Space / Enter / pad A -- the same A bound to
+	# "jump" and "confirm") re-fires "pressed" on it. Without this guard a reflexive
+	# press ran the full switch on an unchanged feed: it zeroed the pan and tilt the
+	# operator had just dialled in, blasted static over the picture and clicked.
+	# Genuine feed changes fall straight through, static flash included.
+	if not force and _open and index == _active:
+		return
 	_sfx("tablet_click")
 	# Reset the previous camera to its mounted orientation.
 	_cams[_active].rotation_degrees = _base_rot[_active]
@@ -305,6 +394,30 @@ func _switch_to(index: int) -> void:
 	_update_floodlight()
 	for i in range(_buttons.size()):
 		_buttons[i].modulate = Color(1.6, 1.6, 1.2) if i == index else Color(1, 1, 1)
+	# Keep the focus ring on the live feed. Without this a pad player who cycled
+	# with the triggers would still have the ring parked on whatever button the
+	# D-pad last visited, and pressing A would yank them back to it.
+	if _open and index < _buttons.size() and _buttons[index].is_visible_in_tree():
+		_buttons[index].grab_focus()
+
+
+## Step through the feeds. This is the only feed control a pad has: every
+## mini-map button needs a pointer or the focus ring, and from night 2 the
+## incident cannot be resolved until a specific camera confirms the source.
+func _cycle_camera(step: int) -> void:
+	if _cams.is_empty():
+		return
+	_switch_to(wrapi(_active + step, 0, _cams.size()))
+
+
+## InputBootstrap builds the actions in its own _ready(); guard the lookup so the
+## tablet still runs in a scene that does not carry one.
+func _cam_cycle_step() -> int:
+	if InputMap.has_action("cam_next") and Input.is_action_just_pressed("cam_next"):
+		return 1
+	if InputMap.has_action("cam_prev") and Input.is_action_just_pressed("cam_prev"):
+		return -1
+	return 0
 
 
 func _update_floodlight() -> void:
@@ -322,12 +435,24 @@ func _process(delta: float) -> void:
 		_static_rect.color.a = _static_alpha * randf_range(0.6, 1.0)
 	else:
 		_static_rect.color.a = 0.0
-	# Pan / tilt the active camera around its mounted orientation.
+	# Feed cycling is polled, not read from _input(): an analog trigger emits a
+	# motion event for every step past the deadzone, so is_action_pressed() on the
+	# event would fire several times per pull. Input tracks the edge for us.
+	var step := _cam_cycle_step()
+	if step != 0:
+		_cycle_camera(step)
+		# No early return: bailing out here skipped this frame's pan/tilt
+		# integration, so holding a trigger while nudging the stick stuttered.
+		# The block below re-reads _active, so it aims the feed we just switched to.
+	# Pan / tilt the active camera around its mounted orientation. No negation on
+	# the tilt: get_axis returns +1 for camera_tilt_up and a larger rotation.x
+	# pitches a Godot camera up, so negating it aimed "up" at the floor — the
+	# reverse of the player's own mouse look.
 	var pan_dir := -Input.get_axis("camera_pan_left", "camera_pan_right")
-	var tilt_dir := -Input.get_axis("camera_tilt_down", "camera_tilt_up")
+	var tilt_dir := Input.get_axis("camera_tilt_down", "camera_tilt_up")
 	if pan_dir != 0.0 or tilt_dir != 0.0:
 		_pan = clampf(_pan + pan_dir * PAN_SPEED * delta, -65.0, 65.0)
-		_tilt = clampf(_tilt + tilt_dir * TILT_SPEED * delta, -18.0, 16.0)
+		_tilt = clampf(_tilt + tilt_dir * TILT_SPEED * delta, -TILT_LIMIT, TILT_LIMIT)
 		var base: Vector3 = _base_rot[_active]
 		_cams[_active].rotation_degrees = Vector3(base.x + _tilt, base.y + _pan, 0.0)
 

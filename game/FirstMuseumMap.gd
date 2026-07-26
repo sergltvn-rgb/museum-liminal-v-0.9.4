@@ -1874,8 +1874,8 @@ func _apply_dome_shader(dome: MeshInstance3D) -> void:
 	dome.material_override = mat
 
 # ===== MapIntro.gd =====
-# Opening cutscene: three camera shots with letterbox titles,
-# skippable with SPACE / ENTER / ESC.
+# Opening cutscene: a prologue title card plus three camera shots with
+# letterbox titles, skippable with SPACE / ENTER / ESC.
 # Inheritance chain:
 #   FirstMuseumMap < MapIntro < MapDecor < MapLighting
 #     < MapStructure < MapPrimitives < Node3D
@@ -1883,17 +1883,74 @@ func _apply_dome_shader(dome: MeshInstance3D) -> void:
 # modules below it; call sites stay unchanged.
 
 # Intro cutscene state (runtime only).
-const INTRO_LENGTH := 13.5
+# INTRO_LENGTH is the sum of the per-shot durations listed in _intro_shots():
+# 6.0 s prologue card + 4.5 + 4.5 + 4.5 for the three camera shots, each of
+# which keeps exactly the length it had when the intro was 13.5 s split three
+# ways. 6.0 + 13.5 = 19.5.
+const INTRO_LENGTH := 19.5
 var _intro_active := false
 var _intro_time := 0.0
 var _intro_camera: Camera3D = null
 var _intro_overlay: CanvasLayer = null
 var _intro_title: Label = null
+var _intro_card: ColorRect = null
 var _intro_fade: ColorRect = null
+
+# --- When the intro is allowed to play --------------------------------------
+# Both files belong to other scripts and are only read here (the seen flag is
+# the one exception, see _mark_intro_seen). Paths are duplicated rather than
+# imported so the map never has to reach for GameManager: this scene is
+# instantiated bare by the headless suites, where that node initializes two
+# frames later than _ready() and would not have loaded the night yet.
+const INTRO_SAVE_PATH := "user://museum_save.cfg"  # GameManager.SAVE_PATH
+const INTRO_PROGRESS_PATH := "user://museum_progress.cfg"  # TutorialPrologue.PROGRESS_PATH
+
+
+## RULE: the cutscene is first-night, first-time-only. It plays only when the
+## saved night is 1 *and* no intro/seen flag has been written yet. Every other
+## way into this scene -- continuing on night 2 or 3, "Main menu" from the pause
+## screen, and the scene reload behind the win screen -- drops straight into the
+## game with no cutscene. Two reasons: the second caption reads "First night on
+## duty", which is a plain lie on night 3, and _ready() runs on every one of
+## those reloads, so an unconditional intro charges 19.5 s for each of them.
+## Side effect worth knowing, not a contract: MenuManager._reset_progress()
+## rewrites museum_progress.cfg wholesale, so "Reset progress" also clears the
+## flag and a reset player is shown the intro again.
+func _intro_should_play() -> bool:
+	return _intro_saved_night() <= 1 and not _intro_seen()
+
+
+func _intro_saved_night() -> int:
+	var config := ConfigFile.new()
+	if config.load(INTRO_SAVE_PATH) != OK:
+		return 1
+	return maxi(1, int(config.get_value("progress", "night", 1)))
+
+
+func _intro_seen() -> bool:
+	var config := ConfigFile.new()
+	if config.load(INTRO_PROGRESS_PATH) != OK:
+		return false
+	return bool(config.get_value("intro", "seen", false))
+
+
+## Written when the intro ends or is skipped, never when it merely starts, so
+## quitting halfway through does not burn it.
+## The flag lives in the tutorial's progress file and not in museum_save.cfg
+## because GameManager._save_night() rewrites that file from a fresh ConfigFile
+## on every night change and would drop any key it does not know about. The
+## load() below is what keeps tutorial/done and tutorial/skipped intact here.
+func _mark_intro_seen() -> void:
+	var config := ConfigFile.new()
+	config.load(INTRO_PROGRESS_PATH)
+	config.set_value("intro", "seen", true)
+	config.save(INTRO_PROGRESS_PATH)
 
 
 func _start_intro() -> void:
 	if Engine.is_editor_hint() or _intro_active:
+		return
+	if not _intro_should_play():
 		return
 	var player := get_tree().get_first_node_in_group("player")
 	if player == null:
@@ -1929,6 +1986,16 @@ func _start_intro() -> void:
 	bottom_bar.anchor_bottom = 1.0
 	_intro_overlay.add_child(bottom_bar)
 
+	# Backdrop for title cards, so the prologue reads over black instead of over
+	# a daylit forecourt. Added before the title label so the text draws on top
+	# of it, while _intro_fade stays last and still blacks out both at the cuts.
+	_intro_card = ColorRect.new()
+	_intro_card.color = Color(0, 0, 0, 0)
+	_intro_card.anchor_right = 1.0
+	_intro_card.anchor_bottom = 1.0
+	_intro_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_intro_overlay.add_child(_intro_card)
+
 	_intro_title = Label.new()
 	_intro_title.anchor_top = 0.76
 	_intro_title.anchor_right = 1.0
@@ -1960,29 +2027,58 @@ func _start_intro() -> void:
 	_intro_active = true
 
 
+# Each entry: camera start and end position, look target, caption, how long it
+# holds and whether it reads over a black card instead of over the world.
+#
+# The opening entry is a title card, not a move: start and end positions are
+# identical, so the camera stands still while STORY_PROLOGUE reads over black.
+# It gets 6.0 s rather than the 4.5 s of a camera shot. The fades eat fixed
+# fractions of each window (0.12 in, 0.10 out), so a 4.5 s shot leaves ~3.5 s of
+# steady text and 6.0 s leaves ~4.7 s -- room for two sentences at a first
+# reading, without stalling a player who has seen it and hits SPACE.
+func _intro_shots() -> Array:
+	return [
+		{"from": Vector3(26, 13, 63), "to": Vector3(26, 13, 63),
+			"look": Vector3(0, 3.0, 35), "text": tr("STORY_PROLOGUE"),
+			"time": 6.0, "card": true},
+		{"from": Vector3(26, 13, 63), "to": Vector3(15, 9, 58),
+			"look": Vector3(0, 3.0, 35), "text": tr("HUD_INTRO_MUSEUM"),
+			"time": 4.5, "card": false},
+		{"from": Vector3(-12, 1.5, 53), "to": Vector3(-5, 1.7, 48),
+			"look": Vector3(0, 3.4, 35.2), "text": tr("HUD_INTRO_FIRST_NIGHT"),
+			"time": 4.5, "card": false},
+		{"from": Vector3(0, 2.4, 53), "to": Vector3(0, 1.75, 46.6),
+			"look": Vector3(0, 1.8, 35), "text": tr("HUD_INTRO_CHECK_HALLS"),
+			"time": 4.5, "card": false},
+	]
+
+
 func _update_intro(delta: float) -> void:
 	_intro_time += delta
 	if _intro_time >= INTRO_LENGTH or not is_instance_valid(_intro_camera):
 		_end_intro()
 		return
-	# Each shot: [start_pos, end_pos, look_target, caption].
-	var shots := [
-		[Vector3(26, 13, 63), Vector3(15, 9, 58), Vector3(0, 3.0, 35),
-			tr("HUD_INTRO_MUSEUM")],
-		[Vector3(-12, 1.5, 53), Vector3(-5, 1.7, 48), Vector3(0, 3.4, 35.2),
-			tr("HUD_INTRO_FIRST_NIGHT")],
-		[Vector3(0, 2.4, 53), Vector3(0, 1.75, 46.6), Vector3(0, 1.8, 35),
-			tr("HUD_INTRO_CHECK_HALLS")],
-	]
-	var shot_length := INTRO_LENGTH / float(shots.size())
-	var idx := clampi(int(_intro_time / shot_length), 0, shots.size() - 1)
-	var t := fmod(_intro_time, shot_length) / shot_length
+	var shots := _intro_shots()
+	# The shots no longer share one length -- a title card stays up longer than a
+	# camera move -- so walk the cumulative durations instead of dividing
+	# INTRO_LENGTH evenly. `elapsed` ends up as the time inside the current shot.
+	var idx := shots.size() - 1
+	var elapsed := _intro_time
+	for i in range(shots.size()):
+		var length := float(shots[i]["time"])
+		if elapsed < length:
+			idx = i
+			break
+		elapsed -= length
+	var shot: Dictionary = shots[idx]
+	var t := clampf(elapsed / float(shot["time"]), 0.0, 1.0)
 	var eased := t * t * (3.0 - 2.0 * t)
-	var shot: Array = shots[idx]
-	_intro_camera.global_position = (shot[0] as Vector3).lerp(shot[1] as Vector3, eased)
-	_intro_camera.look_at(shot[2] as Vector3)
+	_intro_camera.global_position = (shot["from"] as Vector3).lerp(shot["to"] as Vector3, eased)
+	_intro_camera.look_at(shot["look"] as Vector3)
 	if is_instance_valid(_intro_title):
-		_intro_title.text = shot[3] as String
+		_intro_title.text = str(shot["text"])
+	if is_instance_valid(_intro_card):
+		_intro_card.color.a = 1.0 if bool(shot["card"]) else 0.0
 	# Quick fade from black at each cut, fade to black before the next one.
 	var fade := 0.0
 	if t < 0.12:
@@ -1997,6 +2093,9 @@ func _end_intro() -> void:
 	if not _intro_active:
 		return
 	_intro_active = false
+	# Both exits land here -- the last shot running out and the skip in _input --
+	# and both count as "seen", so neither replays on the next reload.
+	_mark_intro_seen()
 	if is_instance_valid(_intro_camera):
 		_intro_camera.current = false
 		_intro_camera.queue_free()
@@ -2051,7 +2150,10 @@ func _ready() -> void:
 		# A layout saved into the scene skips build_map(), but the Curator still
 		# needs a navigation mesh over whatever geometry that layout contains.
 		_ensure_navigation()
-	# In game (not in the editor) the map opens with a short intro cutscene.
+	# In game (not in the editor) the map may open with the intro cutscene.
+	# _start_intro() decides for itself whether this entry deserves one -- see
+	# _intro_should_play(); it is a first-night, first-time-only piece and this
+	# _ready() also runs on every return to the menu and after the win screen.
 	if not Engine.is_editor_hint():
 		call_deferred("_start_intro")
 

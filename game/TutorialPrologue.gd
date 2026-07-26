@@ -11,6 +11,10 @@ const PROGRESS_PATH := "user://museum_progress.cfg"
 const MAIN_SCENE := "res://scenes/FirstMuseumMap.tscn"
 # TUTORIAL_SKIP promises "Удерживайте ESC" / "Hold ESC", so require a real hold.
 const SKIP_HOLD_TIME := 1.2
+# How long TUTORIAL_COMPLETE stays up before the museum loads. Long enough to
+# register as an acknowledgement of the seven steps, short enough that nobody
+# reaches for a skip key that is deliberately not offered any more.
+const COMPLETE_HOLD_TIME := 1.4
 
 # Step ids drive both the checklist UI and the completion checks.
 const STEP_MOVE := 0
@@ -355,7 +359,40 @@ func _finish() -> void:
 		return
 	_leaving = true
 	_write_progress(true)
+	# Acknowledge the seven steps instead of hard-cutting to the museum on the
+	# same frame. _leaving is already true above, and both _process() and
+	# _update_skip() return on it, so for the whole banner the step logic is
+	# inert and a player still holding ESC cannot fall into _skip() and turn a
+	# completed tutorial into a recorded skip.
+	_show_completion_banner()
+	await get_tree().create_timer(COMPLETE_HOLD_TIME).timeout
+	# The tree can be gone under the await (quit, or an editor reload).
+	if not is_inside_tree():
+		return
 	_leave()
+
+
+func _show_completion_banner() -> void:
+	if _layer == null or not is_instance_valid(_layer):
+		return
+	# Covers the checklist and the skip hint: with the tutorial over, both are
+	# stale, and the last thing on screen should be the one line that matters.
+	var veil := ColorRect.new()
+	veil.color = Color(0.02, 0.03, 0.05, 0.88)
+	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer.add_child(veil)
+
+	var done := Label.new()
+	done.text = tr("TUTORIAL_COMPLETE")
+	done.set_anchors_preset(Control.PRESET_FULL_RECT)
+	done.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	done.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	done.add_theme_font_size_override("font_size", 34)
+	done.add_theme_color_override("font_color", Color(0.55, 1.0, 0.72))
+	done.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	veil.add_child(done)
+	_sfx("resolve")
 
 
 func _skip() -> void:

@@ -5,6 +5,10 @@ extends Node
 const ORIGIN := Vector3(0, 72, -260)
 const USE_DISTANCE := 2.8
 const LOOP_DURATION := 18.0
+# How long the one-shot teaching hints stay up when a trial opens, and how much
+# of that tail is spent fading them out.
+const TUTORIAL_HINT_SECONDS := 5.0
+const TUTORIAL_HINT_FADE := 0.8
 const TRIAL_SCENES := {
 	"gravity_surge": preload("res://scenes/trials/GravityArchiveTrial.tscn"),
 	"temporal_drift": preload("res://scenes/trials/MissingMinuteTrial.tscn"),
@@ -27,6 +31,9 @@ var _saved := Transform3D.IDENTITY
 var _layer: CanvasLayer
 var _title: Label
 var _status: Label
+var _hint_panel: ColorRect
+var _hint: Label
+var _hint_time := 0.0
 var _active_trial: RiftTrial
 var last_fail_reason := ""
 var last_fail_detail := ""
@@ -139,6 +146,7 @@ func begin(kind: String, player: CharacterBody3D) -> void:
 	_player.reset_gravity_direction()
 	_player.controls_enabled = true
 	_layer.visible = true
+	_show_tutorial()
 
 func abort() -> void:
 	if not _active: return
@@ -157,6 +165,7 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not _active or not is_instance_valid(_player):
 		return
+	if _hint_time > 0.0: _update_tutorial_hint(delta)
 	if is_instance_valid(_active_trial): _active_trial.process_trial(self, delta)
 	else: _process_trial_legacy(_kind, delta)
 	if not _active or not is_instance_valid(_player):
@@ -191,6 +200,33 @@ func trial_definition() -> Dictionary:
 
 func trial_fail_tip() -> String:
 	return TrialRegistry.fail_tip_for(_kind, TranslationServer.get_locale().begins_with("en"))
+
+# --- One-shot teaching hints ----------------------------------------------
+# Every trial carries a TRIAL_*_TUTORIAL line pair explaining its rules. They
+# cannot ride on _status: the per-trial updates rewrite that label every frame,
+# so the hint would vanish on the next tick. Instead they get their own strip
+# directly under the objective panel, inside the HUD layer that already exists,
+# and fade out once the player has had time to read them.
+func _show_tutorial() -> void:
+	var lines := TrialRegistry.tutorial_for(_kind)
+	if lines.is_empty():
+		_hide_tutorial(); return
+	_hint.text = "\n".join(lines)
+	_hint_panel.modulate.a = 1.0
+	_hint_panel.visible = true
+	_hint_time = TUTORIAL_HINT_SECONDS
+
+func _update_tutorial_hint(delta: float) -> void:
+	_hint_time -= delta
+	if _hint_time <= 0.0:
+		_hide_tutorial(); return
+	_hint_panel.modulate.a = minf(1.0, _hint_time / TUTORIAL_HINT_FADE)
+
+func _hide_tutorial() -> void:
+	_hint_time = 0.0
+	if is_instance_valid(_hint_panel):
+		_hint_panel.visible = false
+		_hint_panel.modulate.a = 1.0
 
 func _build_world() -> void:
 	_world = Node3D.new(); _world.name = "Pocket Dimension — %s" % _kind
@@ -651,7 +687,9 @@ func _build_yellow_halls()->void:
 		if pm!=null:pm.emission_energy_multiplier=1.7
 	_yellow_points=[ORIGIN+Vector3(-13,.35,-19),ORIGIN+Vector3(13,.35,-19),ORIGIN+Vector3(13,.35,7),ORIGIN+Vector3(-13,.35,7)]
 	_yellow_point=0;_yellow_cool=3.0
-	_yellow_walker=CharacterBody3D.new();_yellow_walker.name="Блуждающий"
+	# ASCII node name on purpose: the creature's player-facing name lives in
+	# TRIAL_YELLOW_* rows of the catalogue, this is only the scene-tree handle.
+	_yellow_walker=CharacterBody3D.new();_yellow_walker.name="Wanderer"
 	var wcol:=CollisionShape3D.new();var wshape:=CapsuleShape3D.new();wshape.radius=.4;wshape.height=1.9;wcol.shape=wshape;wcol.position=Vector3(0,1.0,0);_yellow_walker.add_child(wcol)
 	var wmesh:=MeshInstance3D.new();var wcap:=CapsuleMesh.new();wcap.radius=.42;wcap.height=1.95;wmesh.mesh=wcap;wmesh.position=Vector3(0,1.0,0)
 	var wmat:=StandardMaterial3D.new();wmat.albedo_color=Color(.14,.12,.05);wmat.emission_enabled=true;wmat.emission=Color(.22,.18,.05);wmat.emission_energy_multiplier=.35;wmesh.material_override=wmat;_yellow_walker.add_child(wmesh)
@@ -916,7 +954,7 @@ func _return_player()->void:
 		_player.reset_gravity_direction(); _player.controls_enabled=true; _player.velocity=Vector3.ZERO; _player.global_transform=_saved
 
 func _cleanup()->void:
-	_active=false; _layer.visible=false
+	_active=false; _layer.visible=false; _hide_tutorial()
 	if is_instance_valid(_active_trial):
 		_active_trial.cleanup(self)
 		_active_trial.queue_free()
@@ -955,3 +993,5 @@ func _build_hud()->void:
 	var panel:=ColorRect.new(); panel.color=Color(.01,.02,.035,.94); panel.anchor_left=.14; panel.anchor_top=.025; panel.anchor_right=.86; panel.anchor_bottom=.17; panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _layer.add_child(panel)
 	_title=Label.new(); _title.anchor_right=1.; _title.anchor_bottom=.4; _title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _title.add_theme_font_size_override("font_size",24); _title.add_theme_color_override("font_color",Color(.65,.82,1)); _title.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_title)
 	_status=Label.new(); _status.anchor_top=.4; _status.anchor_right=1.; _status.anchor_bottom=1.; _status.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _status.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; _status.add_theme_font_size_override("font_size",16); _status.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_status)
+	_hint_panel=ColorRect.new(); _hint_panel.color=Color(.02,.03,.05,.9); _hint_panel.anchor_left=.14; _hint_panel.anchor_top=.185; _hint_panel.anchor_right=.86; _hint_panel.anchor_bottom=.295; _hint_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.visible=false; _layer.add_child(_hint_panel)
+	_hint=Label.new(); _hint.anchor_right=1.; _hint.anchor_bottom=1.; _hint.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _hint.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _hint.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; _hint.add_theme_font_size_override("font_size",17); _hint.add_theme_color_override("font_color",Color(.98,.86,.55)); _hint.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.add_child(_hint)
