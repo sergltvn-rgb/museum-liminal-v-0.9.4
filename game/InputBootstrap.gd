@@ -18,6 +18,22 @@ extends Node
 ## Y (ui_select), the D-pad and the left stick; those are UI-only and are left
 ## alone on purpose. The D-pad is deliberately left free of game actions: it is
 ## the only way to drive focus navigation, which the CCTV mini-map now needs.
+##
+## THAT PARAGRAPH IS AN ACCESSIBILITY CONTRACT, NOT A NOTE (stage 5.2). The
+## settings dialog, the main menu and the pause menu are driven entirely by the
+## builtin set — ui_up / ui_down / ui_left / ui_right to move the focus,
+## ui_accept to activate, ui_cancel to back out, plus "pause" for START. Nothing
+## below may claim the D-pad, and nothing below may take A or B away from the
+## engine, or the menus stop being operable on a pad. Note there is no builtin
+## pad binding for ui_focus_next / ui_focus_prev (Tab is keyboard-only), so a
+## screen that expects a pad has to make its own up/down/left/right graph
+## complete; game/SettingsPanel.gd `_wire_focus()` is the worked example.
+##
+## The Controls page of the settings dialog is now GENERATED from this map
+## rather than transcribed from it (SettingsPanel.BINDING_ROWS names the actions,
+## InputMap.action_get_events supplies the legends), so rebinding anything here
+## updates what the player is told. Renaming an action, however, silently empties
+## its row — grep BINDING_ROWS before you do.
 
 
 func _ready() -> void:

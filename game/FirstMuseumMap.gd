@@ -1889,7 +1889,15 @@ func _add_outdoor(parent: Node) -> void:
 
 	_box(parent, "Museum Sign", Vector3(0, 3.5, 35.2), Vector3(7.8, 1.0, 0.3),
 		Color(0.16, 0.18, 0.22))
-	_add_label(parent, "NATURAL PHILOSOPHY MUSEUM", Vector3(0, 3.5, 35.0),
+	# The facade sign read "NATURAL PHILOSOPHY MUSEUM" -- an untranslated English
+	# literal naming a building this game does not contain. The museum is THE
+	# FIRST MUSEUM / ПЕРВЫЙ МУЗЕЙ everywhere else: the main menu, the protocol
+	# header, the intro caption. It matters more now than it did, because the
+	# prologue's first three shots are aimed straight at this sign.
+	# z 35.4, not 35.0: the sign box above spans z 35.05..35.35, so the old
+	# position put the museum's own name *inside* the board and nobody could
+	# read it from the forecourt. 0.05 m clear of the street-facing face.
+	_add_label(parent, tr("EXHIBIT_MUSEUM_SIGN"), Vector3(0, 3.5, 35.4),
 		Color(0.92, 0.89, 0.78))
 
 	# Low perimeter walls keep the composition bounded while preserving the
@@ -2021,50 +2029,53 @@ func _apply_dome_shader(dome: MeshInstance3D) -> void:
 	dome.material_override = mat
 
 # ===== MapIntro.gd =====
-# Opening cutscene: a prologue title card plus three camera shots with
-# letterbox titles, skippable with SPACE / ENTER / ESC.
+# Opening cutscenes: a one-off story prologue and, behind it, the museum intro.
+# Neither one owns a camera any more. Both are shot lists handed to Cutscene
+# (res://game/Cutscene.gd), which owns the Camera3D, the letterbox, the
+# captions, the cross-fades, the skip binding and the restore -- roughly 130
+# lines of camera machinery that used to be inlined in this section. What is
+# left here is the part that is actually about this map: which shots, where the
+# camera stands, and when a player is allowed to see them.
 # Inheritance chain:
 #   FirstMuseumMap < MapIntro < MapDecor < MapLighting
 #     < MapStructure < MapPrimitives < Node3D
 # Every module sees the constants, vars and helpers of the
 # modules below it; call sites stay unchanged.
 
-# Intro cutscene state (runtime only).
-# INTRO_LENGTH is the sum of the per-shot durations listed in _intro_shots():
-# 6.0 s prologue card + 4.5 + 4.5 + 4.5 for the three camera shots, each of
-# which keeps exactly the length it had when the intro was 13.5 s split three
-# ways. 6.0 + 13.5 = 19.5.
-const INTRO_LENGTH := 19.5
-var _intro_active := false
-var _intro_time := 0.0
-var _intro_camera: Camera3D = null
-var _intro_overlay: CanvasLayer = null
-var _intro_title: Label = null
-var _intro_card: ColorRect = null
-var _intro_fade: ColorRect = null
+# The cutscene currently on screen, or null. Runtime only; freed by itself.
+var _cutscene: Cutscene = null
 
-# --- When the intro is allowed to play --------------------------------------
-# Both files belong to other scripts and are only read here (the seen flag is
-# the one exception, see _mark_intro_seen). Paths are duplicated rather than
-# imported so the map never has to reach for GameManager: this scene is
-# instantiated bare by the headless suites, where that node initializes two
-# frames later than _ready() and would not have loaded the night yet.
+# --- When a cutscene is allowed to play --------------------------------------
+# Both files belong to other scripts and are only read here (the two seen flags
+# are the exception, see _mark_seen). Paths are
+# duplicated rather than imported so the map never has to reach for GameManager:
+# this scene is instantiated bare by the headless suites, where that node
+# initializes two frames later than _ready() and would not have loaded the night
+# yet.
 const INTRO_SAVE_PATH := "user://museum_save.cfg"  # GameManager.SAVE_PATH
 const INTRO_PROGRESS_PATH := "user://museum_progress.cfg"  # TutorialPrologue.PROGRESS_PATH
 
 
-## RULE: the cutscene is first-night, first-time-only. It plays only when the
-## saved night is 1 *and* no intro/seen flag has been written yet. Every other
-## way into this scene -- continuing on night 2 or 3, "Main menu" from the pause
-## screen, and the scene reload behind the win screen -- drops straight into the
-## game with no cutscene. Two reasons: the second caption reads "First night on
-## duty", which is a plain lie on night 3, and _ready() runs on every one of
-## those reloads, so an unconditional intro charges 19.5 s for each of them.
+## RULE: both cutscenes are first-night, first-time-only. They play only when
+## the saved night is 1 *and* the matching seen flag has not been written yet.
+## Every other way into this scene -- continuing on night 2 or 3, "Main menu"
+## from the pause screen, and the scene reload behind the win screen -- drops
+## straight into the game with no cutscene. Two reasons: the intro's second
+## caption reads "First night on duty", which is a plain lie on night 3, and
+## _ready() runs on every one of those reloads, so an unconditional opening
+## charges 91.5 s for each of them.
 ## Side effect worth knowing, not a contract: MenuManager._reset_progress()
-## rewrites museum_progress.cfg wholesale, so "Reset progress" also clears the
-## flag and a reset player is shown the intro again.
+## rewrites museum_progress.cfg wholesale, so "Reset progress" also clears both
+## flags and a reset player is shown the whole opening again.
 func _intro_should_play() -> bool:
-	return _intro_saved_night() <= 1 and not _intro_seen()
+	return _intro_saved_night() <= 1 and not _seen_flag("intro")
+
+
+## The prologue is gated on its own flag in the same file, so the two can be
+## retired independently -- and so that a build that ships the prologue to a
+## player who already has intro/seen set still gets to show it once.
+func _prologue_should_play() -> bool:
+	return _intro_saved_night() <= 1 and not _seen_flag("story", "prologue_seen")
 
 
 func _intro_saved_night() -> int:
@@ -2074,197 +2085,186 @@ func _intro_saved_night() -> int:
 	return maxi(1, int(config.get_value("progress", "night", 1)))
 
 
-func _intro_seen() -> bool:
+func _seen_flag(section: String, key := "seen") -> bool:
 	var config := ConfigFile.new()
 	if config.load(INTRO_PROGRESS_PATH) != OK:
 		return false
-	return bool(config.get_value("intro", "seen", false))
+	return bool(config.get_value(section, key, false))
 
 
-## Written when the intro ends or is skipped, never when it merely starts, so
+## Written when a cutscene ends or is skipped, never when it merely starts, so
 ## quitting halfway through does not burn it.
-## The flag lives in the tutorial's progress file and not in museum_save.cfg
+## The flags live in the tutorial's progress file and not in museum_save.cfg
 ## because GameManager._save_night() rewrites that file from a fresh ConfigFile
 ## on every night change and would drop any key it does not know about. The
-## load() below is what keeps tutorial/done and tutorial/skipped intact here.
-func _mark_intro_seen() -> void:
+## load() below is what keeps tutorial/done, tutorial/skipped and the other
+## cutscene's flag intact here.
+func _mark_seen(section: String, key := "seen") -> void:
 	var config := ConfigFile.new()
 	config.load(INTRO_PROGRESS_PATH)
-	config.set_value("intro", "seen", true)
+	config.set_value(section, key, true)
 	config.save(INTRO_PROGRESS_PATH)
 
 
-func _start_intro() -> void:
-	if Engine.is_editor_hint() or _intro_active:
+# --- Starting and chaining ---------------------------------------------------
+
+
+## Entry point, called deferred from _ready(). Plays the prologue if it is owed,
+## then the museum intro; on a returning player it plays neither.
+func _start_opening() -> void:
+	if Engine.is_editor_hint() or is_instance_valid(_cutscene):
 		return
-	if not _intro_should_play():
+	# A cutscene borrows the player's camera and controls, and hands both back
+	# when it ends. With no player in the tree there is nothing to borrow, and a
+	# camera that took over the frame would never give it back. The map
+	# verification suite instantiates this scene bare; that is the case this
+	# guards, and it is why the old _start_intro() bailed on a null player too.
+	if get_tree().get_first_node_in_group("player") == null:
 		return
-	var player := get_tree().get_first_node_in_group("player")
-	if player == null:
-		return
-	player.set("controls_enabled", false)
-	var player_camera := player.get_node_or_null("Player Camera") as Camera3D
-	if player_camera != null:
-		player_camera.current = false
-
-	_intro_camera = Camera3D.new()
-	_intro_camera.name = "Intro Camera"
-	_intro_camera.fov = 66.0
-	add_child(_intro_camera)
-	_intro_camera.global_position = Vector3(26, 13, 63)
-	_intro_camera.look_at(Vector3(0, 3.0, 35))
-	_intro_camera.current = true
-
-	# Letterbox bars, title text, skip hint and a fade rect.
-	_intro_overlay = CanvasLayer.new()
-	_intro_overlay.name = "Intro Overlay"
-	add_child(_intro_overlay)
-
-	var top_bar := ColorRect.new()
-	top_bar.color = Color(0, 0, 0)
-	top_bar.anchor_right = 1.0
-	top_bar.anchor_bottom = 0.12
-	_intro_overlay.add_child(top_bar)
-
-	var bottom_bar := ColorRect.new()
-	bottom_bar.color = Color(0, 0, 0)
-	bottom_bar.anchor_top = 0.88
-	bottom_bar.anchor_right = 1.0
-	bottom_bar.anchor_bottom = 1.0
-	_intro_overlay.add_child(bottom_bar)
-
-	# Backdrop for title cards, so the prologue reads over black instead of over
-	# a daylit forecourt. Added before the title label so the text draws on top
-	# of it, while _intro_fade stays last and still blacks out both at the cuts.
-	_intro_card = ColorRect.new()
-	_intro_card.color = Color(0, 0, 0, 0)
-	_intro_card.anchor_right = 1.0
-	_intro_card.anchor_bottom = 1.0
-	_intro_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_intro_overlay.add_child(_intro_card)
-
-	_intro_title = Label.new()
-	_intro_title.anchor_top = 0.76
-	_intro_title.anchor_right = 1.0
-	_intro_title.anchor_bottom = 0.88
-	_intro_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_intro_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# Letterbox caption: the largest text on screen at this moment, and the thing
-	# the shot is built around. TITLE, primary text colour.
-	UITheme.apply_text(_intro_title, UITheme.TITLE, UITheme.ON_SURFACE)
-	_intro_overlay.add_child(_intro_title)
-
-	var skip_hint := Label.new()
-	skip_hint.text = tr("HUD_INTRO_SKIP")
-	skip_hint.anchor_right = 0.985
-	skip_hint.anchor_top = 0.90
-	skip_hint.anchor_bottom = 0.985
-	skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	skip_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	# "Press SPACE to skip" is a hint about the interface, not part of the scene:
-	# LABEL, and MUTED so it stays legible without competing with the caption.
-	UITheme.apply_text(skip_hint, UITheme.LABEL, UITheme.MUTED)
-	_intro_overlay.add_child(skip_hint)
-
-	_intro_fade = ColorRect.new()
-	_intro_fade.color = Color(0, 0, 0, 1)
-	_intro_fade.anchor_right = 1.0
-	_intro_fade.anchor_bottom = 1.0
-	_intro_overlay.add_child(_intro_fade)
-
-	_intro_time = 0.0
-	_intro_active = true
+	if _prologue_should_play():
+		_play(_prologue_shots(), _on_prologue_finished)
+	elif _intro_should_play():
+		_play(_intro_shots(), _on_intro_finished)
 
 
-# Each entry: camera start and end position, look target, caption, how long it
-# holds and whether it reads over a black card instead of over the world.
-#
-# The opening entry is a title card, not a move: start and end positions are
-# identical, so the camera stands still while STORY_PROLOGUE reads over black.
-# It gets 6.0 s rather than the 4.5 s of a camera shot. The fades eat fixed
-# fractions of each window (0.12 in, 0.10 out), so a 4.5 s shot leaves ~3.5 s of
-# steady text and 6.0 s leaves ~4.7 s -- room for two sentences at a first
-# reading, without stalling a player who has seen it and hits SPACE.
-func _intro_shots() -> Array:
+func _play(shots: Array, on_finished: Callable) -> void:
+	_cutscene = Cutscene.new()
+	_cutscene.name = "Opening Cutscene"
+	add_child(_cutscene)
+	# Connect before start(): a shot list that finishes synchronously (an empty
+	# one, or one whose durations sum to zero) would otherwise emit into nothing
+	# and leave the chain hanging.
+	_cutscene.finished.connect(on_finished)
+	_cutscene.start(shots)
+
+
+func _on_prologue_finished(_skipped: bool) -> void:
+	_cutscene = null
+	_mark_seen("story", "prologue_seen")
+	# Chained rather than concatenated into one shot list, because the two carry
+	# separate flags: a player who skips the prologue on a first run and then
+	# resets only that flag must still get the prologue back on its own.
+	if _intro_should_play():
+		_play(_intro_shots(), _on_intro_finished)
+
+
+func _on_intro_finished(_skipped: bool) -> void:
+	_cutscene = null
+	_mark_seen("intro")
+
+
+# --- The prologue ------------------------------------------------------------
+
+
+## Roughly 78 s, once per save. It says out loud the five things the wall signs
+## and terminal readouts only imply, in this order: the museum exhibits physical
+## constants rather than objects; a containment core holds them stable; the
+## player is the night operator of the Night Containment Service; a rift is both
+## an accident and a door; and something already walks the halls.
+##
+## Shot budget is 8.0 s for a move and 7.0 s for a card. Cutscene's cross-fades
+## cost a fixed fraction of each window (FADE_IN 0.12 + FADE_OUT 0.10), so 8.0 s
+## leaves ~6.2 s of steady text -- enough for two sentences of prose at a first
+## reading. The museum intro's 4.5 s leaves ~3.5 s, which is fine for four words
+## and far too tight for these.
+##
+## Every camera position below stands in geometry this file actually builds:
+## the forecourt walkway (x 0, z 35..55) and the facade sign at (0, 3.5, 35.2);
+## Gravity Wing A (x 15..41, z -9..9) with its exhibit row at z = -4.5; the
+## Atrium (x +-15, z +-15) with the containment dome on the origin and the
+## rotunda columns at (+-11.5, +-11.5); the Watcher Office (x -35..-15,
+## z +-7) with its monitor wall on the rail at (-25, 2.05, -2.20); and the
+## Atrium -> Time Wing B doorway at z = -15. Paths were routed clear of the
+## street lamps at x +-4.5, the forecourt benches at x +-8, the rotunda benches
+## at radius 8.4, the hover-stone display at (28, 0, 5) and the office chair at
+## (-25, 0, 1.35).
+##
+## STORY_PROLOGUE closes this list. It used to open the museum intro, and it
+## moved here because it is a thesis line about night shifts and rifts, not a
+## caption about this building -- and because both openings are gated on the
+## same first run, so leaving it in place would have replayed the identical card
+## eight seconds after the prologue's own last card.
+func _prologue_shots() -> Array:
 	return [
-		{"from": Vector3(26, 13, 63), "to": Vector3(26, 13, 63),
-			"look": Vector3(0, 3.0, 35), "text": tr("STORY_PROLOGUE"),
-			"time": 6.0, "card": true},
-		{"from": Vector3(26, 13, 63), "to": Vector3(15, 9, 58),
-			"look": Vector3(0, 3.0, 35), "text": tr("HUD_INTRO_MUSEUM"),
-			"time": 4.5, "card": false},
-		{"from": Vector3(-12, 1.5, 53), "to": Vector3(-5, 1.7, 48),
-			"look": Vector3(0, 3.4, 35.2), "text": tr("HUD_INTRO_FIRST_NIGHT"),
-			"time": 4.5, "card": false},
-		{"from": Vector3(0, 2.4, 53), "to": Vector3(0, 1.75, 46.6),
-			"look": Vector3(0, 1.8, 35), "text": tr("HUD_INTRO_CHECK_HALLS"),
-			"time": 4.5, "card": false},
+		# Title card over black, held above the road looking at the facade, so
+		# the first fade-up lands on the building rather than on a moving frame.
+		{"from": Vector3(0, 6.4, 61.0), "to": Vector3(0, 6.4, 61.0),
+			"look": Vector3(0, 3.5, 35.2), "text": "STORY_PROLOGUE_01",
+			"time": 7.0, "card": true},
+		# Descent down the arrival axis. x = 0 keeps the camera off the two lamp
+		# rows at x +-4.5, whose heads sit at y 3.25.
+		{"from": Vector3(0, 6.4, 61.0), "to": Vector3(0, 4.4, 51.5),
+			"look": Vector3(0, 3.2, 35.2), "text": "STORY_PROLOGUE_02",
+			"time": 8.0, "card": false},
+		# Across the west lawn towards the entrance portal, west of the lamp row
+		# and 1.1 m above the forecourt bench at (-8, 0.45, 43.5). The move stops
+		# at z = 43: pushed to z = 41 the sightline to the portal crossed the lamp
+		# post at (-4.5, ., 39.5) and put a black pole through the frame centre
+		# for the last second of the shot.
+		{"from": Vector3(-8.0, 2.3, 48.5), "to": Vector3(-7.0, 2.15, 43.0),
+			"look": Vector3(0, 2.6, 35.0), "text": "STORY_PROLOGUE_03",
+			"time": 8.0, "card": false},
+		# Gravity Wing A, trucking east across the exhibit row towards the
+		# Levitating Column and the Bronze Apple. z = 3.0 stays 2 m clear of the
+		# hover-stone display at (28, 0, 5); the aim point is deliberately the
+		# EAST end of the row and not its middle, because the west end holds the
+		# Falling Cube, whose placeholder .glb is a giant rubber duck. Both ends
+		# of this move keep it more than 80 deg off the optical axis, well
+		# outside the ~50 deg half-frustum a 66 deg vertical fov gives at 16:9.
+		{"from": Vector3(26.0, 2.3, 3.0), "to": Vector3(34.0, 2.3, 3.0),
+			"look": Vector3(38.0, 1.6, -6.0), "text": "STORY_PROLOGUE_04",
+			"time": 8.0, "card": false},
+		# Atrium, descending the north-south axis onto the containment dome.
+		{"from": Vector3(0, 3.0, 12.5), "to": Vector3(0, 2.2, 6.5),
+			"look": Vector3(0, 1.4, 0), "text": "STORY_PROLOGUE_05",
+			"time": 8.0, "card": false},
+		# Lateral truck past the core at eye height, outside the 2.6 m stanchion
+		# ring and above the 0.16 m rotunda kerb.
+		{"from": Vector3(4.6, 1.9, 4.6), "to": Vector3(-4.6, 1.9, 4.6),
+			"look": Vector3(0, 1.35, 0), "text": "STORY_PROLOGUE_06",
+			"time": 8.0, "card": false},
+		# Watcher Office: over the chair, over the desk, onto the six monitors.
+		{"from": Vector3(-25.0, 1.95, 2.4), "to": Vector3(-25.0, 1.8, 0.35),
+			"look": Vector3(-25.0, 2.05, -2.2), "text": "STORY_PROLOGUE_07",
+			"time": 8.0, "card": false},
+		# Atrium again, walking into the Time Wing B doorway and looking through
+		# it. Stops at z = -12.8, short of the arch prop at z = -15.5. The aim
+		# point is the Great Hourglass in its case at (0, ., -20), five metres
+		# past the door: the doorway becomes a frame around an exhibit instead of
+		# around bare floor, which is the whole point of the caption.
+		{"from": Vector3(0, 1.8, -7.5), "to": Vector3(0, 1.75, -12.8),
+			"look": Vector3(0, 1.7, -20.0), "text": "STORY_PROLOGUE_08",
+			"time": 8.0, "card": false},
+		# The unease beat: a slow creep out of the north-west quarter of an
+		# empty Atrium, aimed diagonally at the far column, the dome in between.
+		{"from": Vector3(-9.4, 1.7, 9.4), "to": Vector3(-7.8, 1.7, 7.8),
+			"look": Vector3(11.5, 2.0, -11.5), "text": "STORY_PROLOGUE_09",
+			"time": 8.0, "card": false},
+		# Closing card, on the spot the previous shot ended.
+		{"from": Vector3(-7.8, 1.7, 7.8), "to": Vector3(-7.8, 1.7, 7.8),
+			"look": Vector3(11.5, 2.0, -11.5), "text": "STORY_PROLOGUE",
+			"time": 7.0, "card": true},
 	]
 
 
-func _update_intro(delta: float) -> void:
-	_intro_time += delta
-	if _intro_time >= INTRO_LENGTH or not is_instance_valid(_intro_camera):
-		_end_intro()
-		return
-	var shots := _intro_shots()
-	# The shots no longer share one length -- a title card stays up longer than a
-	# camera move -- so walk the cumulative durations instead of dividing
-	# INTRO_LENGTH evenly. `elapsed` ends up as the time inside the current shot.
-	var idx := shots.size() - 1
-	var elapsed := _intro_time
-	for i in range(shots.size()):
-		var length := float(shots[i]["time"])
-		if elapsed < length:
-			idx = i
-			break
-		elapsed -= length
-	var shot: Dictionary = shots[idx]
-	var t := clampf(elapsed / float(shot["time"]), 0.0, 1.0)
-	var eased := t * t * (3.0 - 2.0 * t)
-	_intro_camera.global_position = (shot["from"] as Vector3).lerp(shot["to"] as Vector3, eased)
-	_intro_camera.look_at(shot["look"] as Vector3)
-	if is_instance_valid(_intro_title):
-		_intro_title.text = str(shot["text"])
-	if is_instance_valid(_intro_card):
-		_intro_card.color.a = 1.0 if bool(shot["card"]) else 0.0
-	# Quick fade from black at each cut, fade to black before the next one.
-	var fade := 0.0
-	if t < 0.12:
-		fade = 1.0 - t / 0.12
-	elif t > 0.9:
-		fade = (t - 0.9) / 0.1
-	if is_instance_valid(_intro_fade):
-		_intro_fade.color.a = fade
+# --- The museum intro --------------------------------------------------------
 
 
-func _end_intro() -> void:
-	if not _intro_active:
-		return
-	_intro_active = false
-	# Both exits land here -- the last shot running out and the skip in _input --
-	# and both count as "seen", so neither replays on the next reload.
-	_mark_intro_seen()
-	if is_instance_valid(_intro_camera):
-		_intro_camera.current = false
-		_intro_camera.queue_free()
-	if is_instance_valid(_intro_overlay):
-		_intro_overlay.queue_free()
-	var player := get_tree().get_first_node_in_group("player")
-	if player != null:
-		var player_camera := player.get_node_or_null("Player Camera") as Camera3D
-		if player_camera != null:
-			player_camera.current = true
-		player.set("controls_enabled", true)
-
-
-func _input(event: InputEvent) -> void:
-	if Engine.is_editor_hint() or not _intro_active:
-		return
-	if event.is_action_pressed("jump") or event.is_action_pressed("confirm") \
-			or event.is_action_pressed("pause"):
-		_end_intro()
-		get_viewport().set_input_as_handled()
+## Three 4.5 s camera shots on the forecourt, 13.5 s in total, unchanged from
+## the day they were authored except that the STORY_PROLOGUE title card that
+## used to open them now closes the prologue instead (see _prologue_shots).
+func _intro_shots() -> Array:
+	return [
+		{"from": Vector3(26, 13, 63), "to": Vector3(15, 9, 58),
+			"look": Vector3(0, 3.0, 35), "text": "HUD_INTRO_MUSEUM",
+			"time": 4.5, "card": false},
+		{"from": Vector3(-12, 1.5, 53), "to": Vector3(-5, 1.7, 48),
+			"look": Vector3(0, 3.4, 35.2), "text": "HUD_INTRO_FIRST_NIGHT",
+			"time": 4.5, "card": false},
+		{"from": Vector3(0, 2.4, 53), "to": Vector3(0, 1.75, 46.6),
+			"look": Vector3(0, 1.8, 35), "text": "HUD_INTRO_CHECK_HALLS",
+			"time": 4.5, "card": false},
+	]
 
 # ===== FirstMuseumMap.gd =====
 # Top-level orchestrator of the procedural museum map (PS1 horror).
@@ -2273,7 +2273,7 @@ func _input(event: InputEvent) -> void:
 #   MapStructure  - rooms, walls, doors, cameras, player spawn
 #   MapLighting   - environment, room lights, blackout
 #   MapDecor      - exhibits, furnishings, street, dome shader
-#   MapIntro      - opening cutscene
+#   MapIntro      - opening cutscenes (shot lists for game/Cutscene.gd)
 # All files must sit in the project together (e.g. res://game/).
 
 var _flicker_time := 0.0
@@ -2299,12 +2299,13 @@ func _ready() -> void:
 		# A layout saved into the scene skips build_map(), but the Curator still
 		# needs a navigation mesh over whatever geometry that layout contains.
 		_ensure_navigation()
-	# In game (not in the editor) the map may open with the intro cutscene.
-	# _start_intro() decides for itself whether this entry deserves one -- see
-	# _intro_should_play(); it is a first-night, first-time-only piece and this
-	# _ready() also runs on every return to the menu and after the win screen.
+	# In game (not in the editor) the map may open with the story prologue and
+	# the museum intro. _start_opening() decides for itself whether this entry
+	# deserves either -- see _prologue_should_play() / _intro_should_play(); both
+	# are first-night, first-time-only pieces, and this _ready() also runs on
+	# every return to the menu and after the win screen.
 	if not Engine.is_editor_hint():
-		call_deferred("_start_intro")
+		call_deferred("_start_opening")
 		# Deferred so it runs after the whole tree is ready. The tablet builds its
 		# Camera3D nodes in its own _ready(), which Godot runs before this one
 		# (children first), but relying on that ordering for a one-shot fixup is
@@ -2344,8 +2345,11 @@ func _process(delta: float) -> void:
 	# office the blackout fires and only the red emergency light pulses.
 	if Engine.is_editor_hint():
 		return
-	if _intro_active:
-		_update_intro(delta)
+	# The cutscene drives its own camera from its own _process; the map only has
+	# to stay out of the way. Holding the blackout check here still matters: it
+	# fires on the player's position, and the player is parked at the spawn with
+	# controls disabled for the whole opening.
+	if is_instance_valid(_cutscene) and _cutscene.is_playing():
 		return
 	if not _blackout_done:
 		_check_blackout()

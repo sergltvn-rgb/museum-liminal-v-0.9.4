@@ -18,6 +18,12 @@ extends Node
 ## plus whatever pan has been dialled in), and a ring on the camera the current
 ## objective wants confirmed. All three are drawn, not built out of nodes, so
 ## they cost nothing while the tablet is down.
+##
+## The whole picture is finished by a CRTOverlay (game/CRTOverlay.gd) added as
+## the last child of the UI root -- scanlines, tube vignette and a phosphor
+## wash, so the workstation reads as a security monitor rather than as a web
+## dashboard. It obeys SettingsManager.reduced_flashes and quality_preset; see
+## that file's header and UITheme's CRT section for what it costs the mini-map.
 
 const MAP_SCALE := 3.2
 const MAP_ORIGIN := Vector2(35.0, 49.0)  # world offset -> map pixels
@@ -62,6 +68,16 @@ const PLAYER_MARK_RADIUS := 4.0
 # by 7 deg and is applied symmetrically, which still gives every feed at least
 # 34 deg of downward travel for detail.
 const TILT_LIMIT := 28.0
+
+# --- STATIC BURST -----------------------------------------------------------
+## Peak opacity of the near-white burst that covers a feed change, and the
+## ceiling that replaces it for a player who has asked for reduced flashing.
+## 0.85 of near-white over a night-time museum feed is a full-screen white
+## flash; 0.30 still reads as a cut without being one. The burst itself is not
+## dropped: it is the only thing that tells the operator the picture changed
+## rather than glitched, and CAM_HINT_CONTROLS never mentions the cut.
+const STATIC_FLASH_PEAK := 0.85
+const STATIC_FLASH_REDUCED := 0.30
 
 const CAMS: Array = [
 	{"id": "CAM 01", "label": "CAM_ENTRANCE",
@@ -129,6 +145,7 @@ var _layer: CanvasLayer
 var _cam_label: Label
 var _rec_dot: ColorRect
 var _static_rect: ColorRect
+var _crt: CRTOverlay
 var _map_bounds := Vector2.ZERO
 var _chip_active: StyleBoxFlat
 var _cone: Control
@@ -299,6 +316,23 @@ func _build_ui() -> void:
 	_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_marks.draw.connect(_draw_map_marks)
 	panel.add_child(_marks)
+
+	# The tube's glass, added last so it covers the whole workstation picture:
+	# the live feed, the static burst, the header, the hint and the mini-map.
+	# That is the diegetic reading -- all of it is drawn by one monitor, so all
+	# of it wears the same scanlines -- and it is also the only order in which
+	# the burst and the treatment compose. _static_rect is the first child, so
+	# it paints near-white over the feed; with the overlay above, that white-out
+	# still carries scanlines and the tube vignette, which is what a real
+	# monitor does. Below the burst, the overlay would simply vanish for the
+	# quarter-second the burst lasts, i.e. exactly when the operator is looking.
+	#
+	# The mini-map keeps its legibility on purpose, not by luck: UITheme's CRT
+	# section computes the darkening at the worst room label and holds it inside
+	# the 4.5:1 contrast budget.
+	_crt = CRTOverlay.new()
+	_crt.name = "Crt Glass"
+	root.add_child(_crt)
 
 	_refresh_map_locks()
 
@@ -601,6 +635,12 @@ func _toggle() -> void:
 		_player.controls_enabled = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_refresh_map_locks()
+		# Accessibility and quality can both have been changed from the pause
+		# menu since the tablet was last raised. The overlay also listens to
+		# SettingsManager.settings_changed, so this is a second belt for the
+		# case where the settings node only joined its group after _ready.
+		if _crt != null:
+			_crt.refresh()
 		# force: the feed being restored is by definition the active one, and
 		# raising the tablet has to make its camera current again.
 		_switch_to(_active, true)
@@ -642,7 +682,7 @@ func _switch_to(index: int, force: bool = false) -> void:
 	_cams[index].rotation_degrees = _base_rot[index]
 	_cams[index].current = true
 	_cam_label.text = "%s — %s" % [CAMS[index]["id"], tr(String(CAMS[index]["label"]))]
-	_static_alpha = 0.85
+	_static_alpha = STATIC_FLASH_REDUCED if _reduced_flashes() else STATIC_FLASH_PEAK
 	_update_floodlight()
 	# The live feed's chip holds the pressed look. This replaces a `modulate` of
 	# 1.6 -- a multiply, which on the new near-black chip fill produced a chip
@@ -696,7 +736,12 @@ func _process(delta: float) -> void:
 	_marks.queue_redraw()
 	if _static_alpha > 0.0:
 		_static_alpha = maxf(0.0, _static_alpha - delta * 4.0)
-		_static_rect.color.a = _static_alpha * randf_range(0.6, 1.0)
+		# The per-frame random jitter is what makes the burst read as static
+		# rather than as a dissolve -- and it is also, precisely, a strobe at
+		# frame rate. A player who asked for reduced flashing gets the smooth
+		# fade instead, off the lower ceiling set in _switch_to.
+		_static_rect.color.a = _static_alpha if _reduced_flashes() \
+			else _static_alpha * randf_range(0.6, 1.0)
 	else:
 		_static_rect.color.a = 0.0
 	# Feed cycling is polled, not read from _input(): an analog trigger emits a
@@ -719,6 +764,18 @@ func _process(delta: float) -> void:
 		_tilt = clampf(_tilt + tilt_dir * TILT_SPEED * delta, -TILT_LIMIT, TILT_LIMIT)
 		var base: Vector3 = _base_rot[_active]
 		_cams[_active].rotation_degrees = Vector3(base.x + _tilt, base.y + _pan, 0.0)
+
+
+## True when the player has asked for reduced flashing.
+##
+## Same resolution as FirstMuseumMap._process and GameplayEnhancements'
+## _update_void / _update_watch: one group lookup, null-guarded, field read via
+## `.get()`. Polled rather than cached because those three poll it too, and
+## because the only caller runs while the tablet is up -- a lookup a frame for
+## the seconds the operator is actually watching a feed.
+func _reduced_flashes() -> bool:
+	var settings := get_tree().get_first_node_in_group("settings_manager")
+	return settings != null and bool(settings.get("reduced_flashes"))
 
 
 func _sfx(sound: String) -> void:

@@ -46,10 +46,30 @@ var _safe_position_timer := 0.0
 
 func _ready() -> void:
 	add_to_group("player")
+	_pull_mouse_sensitivity()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera.current = true
 	stamina = max_stamina
 	_build_stamina_ui()
+
+
+## SettingsManager pushes the saved sensitivity onto whatever is in the "player"
+## group at the moment the value changes -- see its `_apply_sensitivity()`, which
+## is also all `_apply_all()` does on startup. A player that enters the tree
+## *after* that push was never pushed to, and every one of them does: the
+## museum scene is reloaded on retry, on "Restore progress" and on the walk out
+## of the tutorial, and each reload builds a fresh PlayerController carrying the
+## exported default. The setting was saved, restored and then silently ignored.
+## Pulling once on entry closes the other half of the handshake.
+func _pull_mouse_sensitivity() -> void:
+	var settings := get_tree().get_first_node_in_group("settings_manager")
+	if settings == null:
+		return
+	var saved: Variant = settings.get("mouse_sensitivity")
+	if saved is float:
+		# Same clamp SettingsManager.set_mouse_sensitivity() applies, so a config
+		# file edited by hand cannot make the mouse unusable in either direction.
+		mouse_sensitivity = clampf(saved, 0.001, 0.006)
 
 
 func _unhandled_input(event: InputEvent) -> void:

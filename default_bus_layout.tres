@@ -1,0 +1,44 @@
+; Audio bus layout for the museum night shift.
+;
+; Loaded automatically at startup: ProjectSettings "audio/buses/default_bus_layout"
+; defaults to res://default_bus_layout.tres, so project.godot needs no entry.
+;
+; Master  - the only bus the settings screen touches (SettingsManager._apply_volume
+;           mutes and sets volume_db on "Master"), so every child bus still obeys it.
+; Music   - reserved. No music stream ships yet; the bus exists so a future track
+;           can be mixed without another layout migration.
+; Ambience- room beds and the anomaly hum: everything that plays continuously and
+;           should be the first thing to get out of the way.
+; SFX     - one-shots, the alarm loop and the Curator's own footsteps/breath.
+;
+; Bus order is deliberate. AudioServer mixes buses from the highest index down to
+; Master, so a sidechain source must sit ABOVE the bus that ducks. SFX is index 3
+; and Ambience is index 2: dropping an AudioEffectCompressor with sidechain = "SFX"
+; onto Ambience later will read a freshly mixed buffer. Reordering would break that.
+[gd_resource type="AudioBusLayout" format=3]
+
+[resource]
+bus/0/name = "Master"
+bus/0/solo = false
+bus/0/mute = false
+bus/0/bypass_fx = false
+bus/0/volume_db = 0.0
+bus/0/send = "Master"
+bus/1/name = "Music"
+bus/1/solo = false
+bus/1/mute = false
+bus/1/bypass_fx = false
+bus/1/volume_db = 0.0
+bus/1/send = "Master"
+bus/2/name = "Ambience"
+bus/2/solo = false
+bus/2/mute = false
+bus/2/bypass_fx = false
+bus/2/volume_db = 0.0
+bus/2/send = "Master"
+bus/3/name = "SFX"
+bus/3/solo = false
+bus/3/mute = false
+bus/3/bypass_fx = false
+bus/3/volume_db = 0.0
+bus/3/send = "Master"

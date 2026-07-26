@@ -146,6 +146,52 @@ const FOCUS_WIDTH := 2
 const PAD_X := 12
 const PAD_Y := 8
 
+# --- CRT TREATMENT (stage 6.5) ----------------------------------------------
+#
+# Strengths for the diegetic scanline layer game/CRTOverlay.gd paints over the
+# in-world service screens -- today the CCTV tablet, which is the only screen
+# in the game the operator is meant to read as a monitor rather than as UI.
+# They live here for the same reason the colours do: one place to tune the look.
+#
+# THE CEILING IS COMPUTED, NOT TASTE.
+#
+# A mix-blended darkening multiplies the *sRGB* value, and because the WCAG
+# ratio carries a +0.05 flare term, scaling both a glyph and its backing by the
+# same factor still costs contrast. So the treatment has a budget, and the
+# tablet's mini-map spends it: a CAPTION room label is MUTED text on a SCRIM
+# panel pinned to the bottom-right corner, which is where the vignette bites.
+#
+# Worst label is Wing D's, at roughly UV (0.94, 0.81) on a 1600x900 canvas.
+# There `tube` evaluates to 0.557, so it loses 0.443 * CRT_VIGNETTE to the
+# vignette, plus a full CRT_SCANLINE in a trough, plus CRT_FLICKER at the top
+# of the hum -- 0.27 of its light in total, i.e. every channel scaled by 0.73.
+#   MUTED on SCRIM, clean ................ 9.08 : 1
+#   MUTED on SCRIM, worst CRT pixel ...... 5.13 : 1   (gate 4.5)
+# The budget runs out at about 0.32 of total darkening; these tokens spend
+# 0.27. Raising CRT_VIGNETTE past ~0.36, or CRT_SCANLINE past ~0.17, is what
+# would break the gate -- so if the look needs to be stronger, take the extra
+# out of one of them and put it back into the other, or move the mini-map off
+# the corner first.
+#
+# CRT_GLOW is not in the budget because it adds light rather than removing it.
+
+## Darkening at the bottom of a scanline trough, 0..1.
+const CRT_SCANLINE := 0.12
+## Scanline pitch in framebuffer pixels. Below 2 the lines alias into a flat
+## grey haze on any display that is not showing the canvas 1:1.
+const CRT_SCANLINE_PITCH := 3.0
+## Pixels per second the scanline phase drifts -- the tube's vertical roll.
+const CRT_ROLL_SPEED := 14.0
+## Light the simulated tube loses at the very edge of the glass, 0..1.
+const CRT_VIGNETTE := 0.30
+## Falloff exponent for the vignette. Lower is a wider, softer tube.
+const CRT_VIGNETTE_POWER := 0.30
+## Phosphor wash laid over the picture, in ACCENT, brightest at the centre.
+const CRT_GLOW := 0.05
+## Mains hum on the tube's brightness. Deliberately an order below CRT_SCANLINE
+## so it reads as breathing rather than as a flash.
+const CRT_FLICKER := 0.015
+
 
 # --- STYLEBOX FACTORY -------------------------------------------------------
 

@@ -5,7 +5,28 @@ extends Node3D
 ## Each step is confirmed by the player actually performing the action, then
 ## fades out. Finishing writes tutorial/done and loads the museum; holding ESC
 ## bails out early and writes tutorial/skipped instead, so the two are never
-## confused on disk. Reachable on first launch and from the main menu.
+## confused on disk.
+##
+## OPTIONAL SINCE STAGE 8.6. The first-run teaching now happens inside the museum
+## itself, over the daytime segment that ends at the security office door -- see
+## the Orientation section of game/GameManager.gd, which reads and writes the
+## same two flags this file does. Nothing sends the player here automatically any
+## more; the main menu's Tutorial button is the only way in. It is kept rather
+## than deleted because it is complete and working, because it is the only place
+## the jump control is taught at all, and because a player who wants the controls
+## with no museum around them can still ask for it. Finishing it writes
+## tutorial/done, which also tells the museum's orientation to stand down:
+## somebody who has just been walked through the controls does not need to be
+## walked through them a second time.
+##
+## Two nodes joined scenes/TutorialPrologue.tscn at the same time, because they
+## were what this scene could not do without. InputBootstrap: without it the
+## scene only worked when it was entered from the museum, which had already
+## registered the actions in the global InputMap; run on its own, every sprint /
+## jump / flashlight poll asked about an action that did not exist.
+## SettingsManager: without it the saved mouse sensitivity was never applied,
+## because PlayerController pulls it from the "settings_manager" group in
+## _ready() and this scene had nothing in that group to pull from.
 
 const PROGRESS_PATH := "user://museum_progress.cfg"
 const MAIN_SCENE := "res://scenes/FirstMuseumMap.tscn"

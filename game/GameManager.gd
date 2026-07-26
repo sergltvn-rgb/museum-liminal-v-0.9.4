@@ -280,6 +280,8 @@ func _initialize() -> void:
 		_set_objective(Loc.fmt("OBJ_NIGHT_RESTART", [_night]))
 	else:
 		_set_objective(Loc.fmt("OBJ_NIGHT_INTRO", [_night]))
+	# Last, so the orientation can outrank whichever of those two was set.
+	_teach_begin()
 
 
 func _process(delta: float) -> void:
@@ -328,6 +330,10 @@ func _process(delta: float) -> void:
 	# in place when the capture happens.
 	_check_kill_plane()
 	_update_hint()
+	# After _update_hint(), which reads the current orientation step: advancing
+	# first would print the next step's hint one frame before its objective.
+	_teach_process(delta)
+	_sync_hud_visibility()
 
 
 # The forecourt is an open lot: past its edge there is no floor, so a player
@@ -384,9 +390,20 @@ func _input(event: InputEvent) -> void:
 		return
 	if _admin_layer != null and _admin_layer.visible:
 		return
+	# The ending cutscene owns the screen and carries its own skip binding, so
+	# nothing belonging to a live shift may fire behind it. Cutscene does mark
+	# that skip as handled, but only for the nodes it is reached before; this
+	# guard does not depend on propagation order.
+	if _ending_playing():
+		return
 	if _trial_active:
 		return
+	_teach_watch(event)
 	if _protocol_layer != null and _protocol_layer.visible and (event.is_action_pressed("confirm") or event.is_action_pressed("interact")):
+		# Dismissing the protocol by hand is the orientation's proof that the
+		# player actually read it; letting it time out proves nothing. That is
+		# why the flag is set here and not inside _hide_protocol().
+		_teach_protocol_read = true
 		_hide_protocol()
 		get_viewport().set_input_as_handled()
 		return
@@ -396,7 +413,11 @@ func _input(event: InputEvent) -> void:
 		elif _state == STATE_NIGHT_DONE:
 			_advance_night()
 		elif _state == STATE_WIN:
-			get_tree().reload_current_scene()
+			# The curtain rolls into the ending by itself once WIN_HOLD is up;
+			# this is the impatient player's way past that hold. It is no longer
+			# a scene reload -- the reload happens after the ending has played,
+			# in _on_ending_finished().
+			_play_ending()
 	elif event.is_action_pressed("drop_item"):
 		_drop_device()
 	elif event.is_action_pressed("interact"):
@@ -494,6 +515,11 @@ func _resolve() -> void:
 		_state = STATE_NIGHT_DONE
 		_set_player_controls(false)
 		_save_night(_night + 1)
+		# A player who survived a whole night with orientation steps still open
+		# has learnt the game by playing it. Closing the sequence here is what
+		# stops it from following them into night 2, where its objective line
+		# would sit under the incident's and never come back.
+		_teach_finish(false)
 		_set_objective(Loc.fmt("OBJ_NIGHT_DONE", [_night]))
 		_flash(Loc.fmt("HUD_NIGHT_COMPLETE", [_night]), UITheme.SUCCESS)
 
@@ -632,26 +658,29 @@ func _advance_night() -> void:
 		_flash(Loc.fmt("HUD_NIGHT", [_night]), UITheme.ACCENT)
 
 
-# The end of the third night. Stage 8.7 buys the cheap half of an ending: the
-# expensive half (a cutscene) is a later task, and this is deliberately the
-# seam it gets built on -- _refresh_win_label() and the curtain below are the
-# two things it will replace.
+# The end of the third night, in three beats:
 #
-# What changes here versus a HUD message:
-#   * the curtain is opaque and fades in, so the museum goes out instead of
-#     showing through a green tint that reads as "another notification";
-#   * the label is composed now, not once at scene build, so the screen can
-#     speak about the run that just ended;
-#   * the save records that this file reached the ending, separately from the
-#     night the next shift starts on -- see _save_night().
+#   1. the curtain. Opaque and fading in over WIN_FADE, so the museum goes out
+#      instead of showing through a green tint that reads as "another
+#      notification". It carries HUD_WIN, the scoreboard for the run that just
+#      ended -- composed now rather than at scene build, because a label written
+#      once when the HUD was assembled has nothing to say about this run.
+#   2. the ending cutscene, WIN_HOLD later. See _play_ending().
+#   3. the main menu, once the cutscene ends or is skipped.
+#
+# The save records that this file reached the ending, separately from the night
+# the next shift starts on -- see _save_night().
 func _win() -> void:
 	_state = STATE_WIN
-	# Confirm reloads the scene from here, so control is restored by the fresh
-	# PlayerController rather than by an explicit re-enable.
+	# The reload behind the ending builds a fresh PlayerController, so control is
+	# never handed back here; Cutscene borrows the player it finds frozen and
+	# restores exactly that.
 	_set_player_controls(false)
 	if _timer_label != null:
 		_timer_label.visible = false
 	_hide_protocol()
+	# Whatever is still open on the orientation checklist, three nights closes it.
+	_teach_finish(false)
 	_refresh_win_label()
 	if _win_overlay != null:
 		_win_overlay.visible = true
@@ -660,6 +689,163 @@ func _win() -> void:
 	_run_completed = true
 	_save_night(1, true)
 	_set_objective("")
+	_roll_ending_after_curtain()
+
+
+# --- The ending (stage 8.7) --------------------------------------------------
+#
+# Before this, "win" was one green overlay and then a scene reload straight back
+# to the main menu -- the same reload the pause menu's "Main menu" button does,
+# which is to say no ending at all: the run stopped rather than closed.
+#
+# The close is a 29 s shot list handed to game/Cutscene.gd, the node the museum's
+# own prologue and intro already run on. Nothing about the camera, the letterbox,
+# the captions, the cross-fades or the skip binding is re-implemented here; what
+# lives here is which shots, and when the player is allowed to see them.
+
+
+## Seconds the curtain holds at full opacity before the ending rolls. WIN_FADE
+## closes it, this reads it. Confirm skips the remainder (see _input).
+const WIN_HOLD := 2.6
+
+## The ending's overlay layer. Cutscene builds its own CanvasLayer and leaves it
+## at the engine default of 1, which is right for the opening -- that plays over
+## an empty HUD on a paused tree -- and wrong here: the ending rolls at the end
+## of a live shift, with the stamina panel (14) and the anomaly readout (11)
+## still on screen. 16 clears every layer in the table above _build_hud() except
+## the pause menu (20) and the F9 console (60), both of which must stay on top.
+const ENDING_LAYER := 16
+
+## The cutscene currently closing the run, or null. Freed by itself.
+var _ending: Cutscene = null
+## Set the first time the ending ends, so a stray "confirm" during the reload
+## frame cannot start a second one on top of the first.
+var _ending_rolled := false
+
+
+## True while the ending owns the screen.
+func _ending_playing() -> bool:
+	return _ending != null and is_instance_valid(_ending) and _ending.is_playing()
+
+
+func _roll_ending_after_curtain() -> void:
+	await get_tree().create_timer(WIN_FADE + WIN_HOLD).timeout
+	# The tree can be gone under the await (a quit, an editor reload), and the
+	# F9 console can have pulled the run back out of STATE_WIN in the meantime.
+	if not is_inside_tree() or _state != STATE_WIN:
+		return
+	_play_ending()
+
+
+## Take the screen and play the close. Idempotent: the timer above and the
+## player's "confirm" both call it, and only the first one does anything.
+func _play_ending() -> void:
+	if _ending_rolled or _ending != null:
+		return
+	_ending_rolled = true
+	var cut := Cutscene.new()
+	cut.name = "Ending Cutscene"
+	# Parented to this plain Node rather than to the map: a Node3D under a Node
+	# sits at the world origin, which is exactly the frame the shot list below is
+	# authored in, and it keeps the ending alive if the map is ever rebuilt.
+	add_child(cut)
+	_ending = cut
+	# Connect before start(), per Cutscene's contract: a degenerate shot list
+	# finishes synchronously inside start() and would emit into nothing.
+	cut.finished.connect(_on_ending_finished)
+	cut.start(_ending_shots())
+	if is_instance_valid(cut) and cut.is_playing():
+		# The overlay only exists once start() has built it. Looked up by type
+		# rather than by name so a rename inside Cutscene cannot silently drop
+		# the ending back under the stamina panel.
+		for child in cut.get_children():
+			var overlay := child as CanvasLayer
+			if overlay != null:
+				overlay.layer = ENDING_LAYER
+	# Lowered only now: start() has already posted the first shot with its fade
+	# rect fully black, so the curtain is replaced rather than lifted, and the
+	# museum is never briefly visible between the two.
+	if _win_overlay != null:
+		_win_overlay.visible = false
+
+
+func _on_ending_finished(_skipped: bool) -> void:
+	_ending = null
+	if not is_inside_tree():
+		return
+	# Back to the main menu exactly the way MenuManager._to_main_menu() gets
+	# there: the reload rebuilds the scene and MenuManager opens the main menu
+	# over it. The museum's own opening does not replay -- it is gated on flags
+	# in museum_progress.cfg that this run has already written.
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+
+## Four shots, 29 s: the atrium the player just saved, the workstation they sat
+## at, the building from outside, and the closing card.
+##
+## Every camera position stands in geometry FirstMuseumMap actually builds, and
+## the numbers are the ones its own prologue shot list documents: the Atrium is
+## x +-15, z +-15 with the containment dome on the origin, a 2.6 m stanchion ring
+## around it and rotunda benches at radius 8.4; the Watcher Office is x -35..-15,
+## z +-7 with its monitor wall on the rail at (-25, 2.05, -2.20); the facade sign
+## is at (0, 3.5, 35.2) and the forecourt walkway runs x 0, z 35..55 between two
+## street-lamp rows at x +-4.5.
+##
+## Shot budget follows the prologue's: 8.0 s for the opening move and 7.0 s for
+## everything after, because Cutscene's cross-fades cost a fixed fraction of each
+## window (FADE_IN 0.12 + FADE_OUT 0.10) and prose needs the remainder. The
+## museum is on emergency power by now -- _resolve() brings part of the mains
+## back at 45% -- so these are dim interiors on purpose.
+func _ending_shots() -> Array:
+	return [
+		# Rising off the core, which _resolve() has just tinted calm green.
+		# z 5.6 and 10.5 both clear the stanchion ring, and the climb puts the
+		# camera above the bench ring rather than through it.
+		{"from": Vector3(0, 1.9, 5.6), "to": Vector3(0, 3.4, 10.5),
+			"look": Vector3(0, 1.35, 0), "text": "STORY_END_01",
+			"time": 8.0, "card": false},
+		# The office, pulling back off the monitor wall: the prologue's arrival
+		# shot run in reverse, which is the whole point of it.
+		{"from": Vector3(-25.0, 1.8, 0.35), "to": Vector3(-25.0, 1.95, 2.4),
+			"look": Vector3(-25.0, 2.05, -2.2), "text": "STORY_END_02",
+			"time": 7.0, "card": false},
+		# Outside, backing down the arrival axis away from the facade. x = 0
+		# keeps the camera off both lamp rows, whose heads sit at y 3.25.
+		{"from": Vector3(0, 2.6, 44.0), "to": Vector3(0, 3.6, 52.0),
+			"look": Vector3(0, 3.5, 35.2), "text": "STORY_END_03",
+			"time": 7.0, "card": false},
+		# Closing card, on the spot the previous shot ended. STORY_ENDING is the
+		# line this game has always ended on; it used to be printed under the win
+		# scoreboard, and it is a closing card, so it is one now.
+		{"from": Vector3(0, 3.6, 52.0), "to": Vector3(0, 3.6, 52.0),
+			"look": Vector3(0, 3.5, 35.2), "text": "STORY_ENDING",
+			"time": 7.0, "card": true},
+	]
+
+
+## True while any cutscene owns the viewport -- the museum's opening as well as
+## the ending. The night HUD stands down for both (see _sync_hud_visibility).
+func _cutscene_on_screen() -> bool:
+	if _ending_playing():
+		return true
+	if _map == null:
+		return false
+	var opening: Variant = _map.get("_cutscene")
+	return opening is Node and is_instance_valid(opening) \
+		and opening.has_method("is_playing") and bool(opening.call("is_playing"))
+
+
+## The night HUD is on layer 5 and Cutscene's overlay defaults to layer 1, so an
+## objective band left standing would print straight across a letterboxed shot.
+## Hiding the layer is cheaper and more honest than clearing four labels and
+## restoring them afterwards.
+func _sync_hud_visibility() -> void:
+	if _hud == null:
+		return
+	var wanted := not _cutscene_on_screen()
+	if _hud.visible != wanted:
+		_hud.visible = wanted
 
 
 func _load_night() -> int:
@@ -755,6 +941,11 @@ func _interact() -> void:
 		var device_name := tr(str(EQUIPMENT[str(info["equipment"])]["name"]))
 		_flash("%s -> %s" % [tr(str(info["title"])), device_name], UITheme.SUCCESS)
 		_sfx("terminal_beep")
+		# The alarm terminal prints the same anomaly-to-tool line the protocol
+		# screen does, so reading it satisfies the protocol step as well. Without
+		# this the step would be unclearable for anyone who let the panel time
+		# out, and the orientation would never record a result.
+		_teach_protocol_read = true
 
 
 func _begin_trial() -> void:
@@ -1123,8 +1314,10 @@ func _admin_select_dimension(id: String) -> void:
 #   12  Protocol Screen .......... here
 #   14  PlayerController ......... stamina panel
 #   15  Terminal Overlays ........ here (fail / win)
+#   16  Ending Cutscene .......... game/Cutscene.gd's own overlay, moved up to
+#                                 this number by _play_ending()
 #   20  MenuManager .............. main and pause menus
-#   40  TutorialPrologue
+#   40  TutorialPrologue ......... the optional orientation replay scene
 #   60  Test admin console ....... here, debug builds only
 #
 # HUD_LAYER is the floor: the night HUD is painted on the world and everything
@@ -1206,17 +1399,18 @@ func _build_hud() -> void:
 
 
 ## Compose the end card. Called from _win() and not only from _build_hud(): the
-## ending is the one screen that has to speak about the run that just finished,
-## and a label written once at scene build has nothing to say. Stage 8.7 keeps
-## the wording the catalogue already ships; the cutscene that replaces this
-## screen is a later task, and this is the seam it will be built on.
+## curtain is the one screen that has to speak about the run that just finished,
+## and a label written once at scene build has nothing to say.
+##
+## HUD_WIN alone now. It is the scoreboard -- "three nights done" -- and it no
+## longer carries an ENTER prompt, because the curtain is a beat rather than a
+## menu: it holds for WIN_HOLD and then rolls the ending on its own. STORY_ENDING
+## used to be printed underneath it and is now the ending's closing card, where a
+## closing line belongs.
 func _refresh_win_label() -> void:
 	if _win_label == null:
 		return
-	# HUD_WIN is the scoreboard ("three nights done") and ends with the ENTER
-	# prompt; STORY_ENDING is the closing line of the story and follows it,
-	# separated by a blank line. Same shape as _fail_label above.
-	_win_label.text = "%s\n\n%s" % [tr("HUD_WIN"), tr("STORY_ENDING")]
+	_win_label.text = tr("HUD_WIN")
 
 
 ## The protocol panel keeps the anomaly's own colour as its border: `accent` is
@@ -1366,6 +1560,11 @@ func _update_hint() -> void:
 				hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
 			elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
 				hint = tr("HUD_HINT_TERMINAL")
+	# The orientation's key legend falls in behind the interaction prompts rather
+	# than fighting them: a real "press E to take the null lantern" is always
+	# more useful than the line telling the player what E is for.
+	if hint == "":
+		hint = _teach_hint()
 	_hint_label.text = hint
 
 
@@ -1419,6 +1618,241 @@ func _flash(text: String, color: Color) -> void:
 func _format_time(t: float) -> String:
 	var s := maxi(int(ceil(t)), 0)
 	return "%d:%02d" % [int(s / 60.0), s % 60]
+
+
+# --- Orientation (stage 8.6) ------------------------------------------------
+#
+# The tutorial used to be a separate scene: a 17.4 x 29.4 x 5.2 m windowless
+# charcoal box with twelve objects, its own Player and its own AudioManager, and
+# neither a SettingsManager nor an InputBootstrap -- so the mouse sensitivity the
+# player had saved did not apply inside it. Finishing it returned them to the
+# MAIN MENU to press Start a second time, in a different context.
+#
+# The museum already owns everything that room was faking. It has a daytime
+# segment (STATE_DAY, from the street spawn to the moment the player crosses the
+# office threshold and FirstMuseumMap fires the blackout), a player, an audio
+# manager, the saved settings, the real input map and the real controls. The
+# orientation lives there now: one line in the objective band, one line in the
+# hint label, and every step confirmed by the player doing the thing rather than
+# acknowledging a prompt. The blackout is the payoff at the end of it.
+#
+# WHY THE LIST RUNS PAST THE BLACKOUT. Three of the steps -- the null lantern,
+# the CCTV tablet, the protocol screen -- are the ones the old tutorial never
+# taught at all, and none of the three can be taught in daylight: Equipment
+# Storage is reachable only through the Watcher Office, the tablet refuses to
+# come up anywhere but that office, and the protocol screen exists only while an
+# anomaly does. Crossing into the office IS the blackout trigger
+# (FirstMuseumMap.OFFICE_NIGHT_MIN_X..MAX_Z), so those three necessarily land in
+# the first minutes of night one, which is also the first minute they are usable.
+#
+# WHY THERE IS NO HOLD-TO-SKIP METER. The old scene had one on ESC and it was
+# right for that scene. In the museum ESC belongs to the pause menu -- MenuManager
+# opens it on the first press and pauses the tree, which stops this node's
+# _process and the meter with it -- and putting the hold on some other binding
+# would be a control nobody could discover. The skip is instead the thing a
+# player who does not want the orientation does anyway: walk to the office and
+# work the shift. Finishing a night with steps outstanding records `skipped`
+# (see _resolve and _win), which is the same on-disk answer the meter gave.
+#
+# THE CONTRACT ON DISK is unchanged and is now read here instead of by the menu:
+#   tutorial/done    = every step was confirmed by a real action;
+#   tutorial/skipped = the player got through without confirming them all.
+# A skip deliberately does not clear `done`, so a later skipped replay of the
+# optional TutorialPrologue scene cannot downgrade an honest completion.
+# MenuManager no longer gates the Start button on either flag -- it cannot, with
+# nothing to send the player to -- so the infinite "skip sends you back to the
+# tutorial" loop that shipped once is now structurally impossible.
+
+## Same file TutorialPrologue and FirstMuseumMap's cutscene flags use.
+const TEACH_PROGRESS_PATH := "user://museum_progress.cfg"
+## Metres of real walking that count as "you know how to move".
+const TEACH_MOVE_DISTANCE := 6.0
+## Pixels of accumulated mouse motion for the look step, from the old tutorial.
+const TEACH_LOOK_DELTA := 260.0
+## Seconds of sprinting, and the horizontal speed that counts as sprinting.
+const TEACH_SPRINT_TIME := 0.6
+const TEACH_SPRINT_SPEED := 5.0
+## Above the game's own objective (10) so it owns the band through the day,
+## below the incident (30) and the CCTV confirmation (40) so it can never mask a
+## line the player must act on to finish the night.
+const TEACH_PRIORITY := 20
+## Largest distance a single frame may contribute to the move step. A teleport --
+## the kill plane, a rift trial, safe_teleport() -- must not pass it for free.
+const TEACH_MOVE_STEP_CAP := 1.0
+
+## The remaining steps, front to back; empty when the orientation is not running.
+var _teach_steps: Array = []
+## Index into _teach_steps, or -1 when nothing is running.
+var _teach_index := -1
+var _teach_move := 0.0
+var _teach_last_pos := Vector3.ZERO
+var _teach_look := 0.0
+var _teach_sprint := 0.0
+var _teach_flashlight := false
+var _teach_protocol_read := false
+
+
+## The step list. Each row is an objective line (what to do, in the band) and a
+## hint line (which key does it, at the bottom) -- the same split the old
+## tutorial's checklist and caption had, mapped onto the two labels the night HUD
+## already owns. Three of the old scene's hint keys are reused verbatim; its
+## look hint is not, because it names the orientation sector, which no longer
+## exists on the path to the office.
+func _teach_rows() -> Array:
+	return [
+		{"id": "move", "obj": "TEACH_OBJ_MOVE", "hint": "TUT_HINT_MOVE"},
+		{"id": "look", "obj": "TEACH_OBJ_LOOK", "hint": "TEACH_HINT_LOOK"},
+		{"id": "sprint", "obj": "TEACH_OBJ_SPRINT", "hint": "TUT_HINT_SPRINT"},
+		{"id": "flashlight", "obj": "TEACH_OBJ_FLASHLIGHT", "hint": "TUT_HINT_FLASHLIGHT"},
+		{"id": "office", "obj": "TEACH_OBJ_OFFICE", "hint": "TEACH_HINT_OFFICE"},
+		{"id": "lantern", "obj": "TEACH_OBJ_LANTERN", "hint": "TEACH_HINT_LANTERN"},
+		{"id": "tablet", "obj": "TEACH_OBJ_TABLET", "hint": "TEACH_HINT_TABLET"},
+		{"id": "protocol", "obj": "TEACH_OBJ_PROTOCOL", "hint": "TEACH_HINT_PROTOCOL"},
+	]
+
+
+func _teach_begin() -> void:
+	if _teach_recorded():
+		return
+	if _night > 1:
+		# This save has already worked a whole night. Teaching it to walk would
+		# be an insult, and the steps would spend the rest of the run sitting
+		# under the incident line where nobody would ever clear them. Record the
+		# skip so the question is settled once instead of every reload.
+		_teach_write(false)
+		return
+	_teach_steps = _teach_rows()
+	_teach_index = 0
+	if _player != null and is_instance_valid(_player):
+		_teach_last_pos = _player.global_position
+	_teach_show()
+
+
+## Has this save already answered the orientation, either way?
+func _teach_recorded() -> bool:
+	var config := ConfigFile.new()
+	if config.load(TEACH_PROGRESS_PATH) != OK:
+		return false
+	if bool(config.get_value("tutorial", "done", false)):
+		return true
+	return bool(config.get_value("tutorial", "skipped", false))
+
+
+## Byte-for-byte the same write TutorialPrologue._write_progress() performs, and
+## for the same reason: `done` is only ever set by a real completion, while a
+## skip sets `skipped` alone and leaves an earlier completion standing. The
+## existing file is loaded first because it also carries the two cutscene flags
+## FirstMuseumMap writes, and a fresh ConfigFile would drop them.
+func _teach_write(completed: bool) -> void:
+	var config := ConfigFile.new()
+	config.load(TEACH_PROGRESS_PATH)
+	if completed:
+		config.set_value("tutorial", "done", true)
+		config.set_value("tutorial", "skipped", false)
+	else:
+		config.set_value("tutorial", "skipped", true)
+	config.save(TEACH_PROGRESS_PATH)
+
+
+func _teach_process(delta: float) -> void:
+	if _teach_index < 0:
+		return
+	if _player == null or not is_instance_valid(_player) or _cutscene_on_screen():
+		return
+	# Distance and sprint time are sampled on every frame whatever step is
+	# current, so a player who has already sprinted across the forecourt is not
+	# asked to do it again when the sprint step comes round.
+	var moved := _player.global_position.distance_to(_teach_last_pos)
+	_teach_last_pos = _player.global_position
+	_teach_move += minf(moved, TEACH_MOVE_STEP_CAP)
+	var horizontal := Vector2(_player.velocity.x, _player.velocity.z).length()
+	if Input.is_action_pressed("sprint") and horizontal > TEACH_SPRINT_SPEED:
+		_teach_sprint += delta
+	# A loop, not a single test: the steps are ordered by where the player meets
+	# them, not by when they satisfy them, and several can already be true by the
+	# time the one in front of them clears.
+	var advanced := false
+	while _teach_index < _teach_steps.size() \
+			and _teach_done(str((_teach_steps[_teach_index] as Dictionary)["id"])):
+		_teach_index += 1
+		advanced = true
+	if not advanced:
+		return
+	if _teach_index >= _teach_steps.size():
+		_teach_finish(true)
+		return
+	_sfx("resolve", -8.0)
+	_teach_show()
+
+
+## Every one of these is a fact about the world, not a button the player pressed
+## to say they understood.
+func _teach_done(id: String) -> bool:
+	match id:
+		"move":
+			return _teach_move > TEACH_MOVE_DISTANCE
+		"look":
+			return _teach_look > TEACH_LOOK_DELTA
+		"sprint":
+			return _teach_sprint > TEACH_SPRINT_TIME
+		"flashlight":
+			return _teach_flashlight
+		"office":
+			# The blackout is the confirmation: it fires from the map the instant
+			# the player crosses into the Watcher Office, and STATE_DAY is the
+			# only state that precedes it.
+			return _state != STATE_DAY
+		"lantern":
+			return _carried_id == "null_lantern"
+		"tablet":
+			return _camera_tablet_open()
+		"protocol":
+			return _teach_protocol_read
+	return true
+
+
+## Passive observers for the two steps with nothing to poll: a mouse that moved
+## and a flashlight that was toggled. Both stand down while a cutscene owns the
+## screen -- the player is frozen there, and dragging the mouse across the
+## opening prologue is not looking around the museum.
+func _teach_watch(event: InputEvent) -> void:
+	if _teach_index < 0 or _cutscene_on_screen():
+		return
+	if event is InputEventMouseMotion:
+		_teach_look += (event as InputEventMouseMotion).relative.length()
+	elif event.is_action_pressed("flashlight"):
+		_teach_flashlight = true
+
+
+func _teach_show() -> void:
+	if _teach_index < 0 or _teach_index >= _teach_steps.size():
+		return
+	var step: Dictionary = _teach_steps[_teach_index]
+	set_objective("teach", tr(str(step["obj"])), TEACH_PRIORITY)
+
+
+## The current step's key legend, for the hint label. Read live rather than
+## cached so a language switch mid-orientation lands on the next frame.
+func _teach_hint() -> String:
+	if _teach_index < 0 or _teach_index >= _teach_steps.size():
+		return ""
+	return tr(str((_teach_steps[_teach_index] as Dictionary)["hint"]))
+
+
+## End the orientation and write the result. Safe to call when nothing is
+## running, which is what lets _resolve() and _win() call it unconditionally.
+func _teach_finish(completed: bool) -> void:
+	if _teach_index < 0:
+		return
+	_teach_index = -1
+	_teach_steps = []
+	clear_objective("teach")
+	_teach_write(completed)
+	if completed:
+		# The banner the old orientation sector signed off with, kept: it is the
+		# same event, and the catalogue already answers for it in both locales.
+		_flash(tr("TUTORIAL_COMPLETE"), UITheme.SUCCESS)
+		_sfx("resolve")
 
 
 # --- Visual helpers ---------------------------------------------------------

@@ -7,7 +7,9 @@
 ##
 ## Drop a `.glb` into the `models/` directory (see models/README.md for the
 ## list of recognised names) and it will automatically replace the fallback
-## primitive the next time the map is (re)built.
+## primitive the next time the map is (re)built. The one exception is
+## PLACEHOLDER_MODELS below: names whose file on disk is a stand-in rather than
+## the exhibit, for which the fallback is the real artwork and wins.
 
 static var _cache: Dictionary = {}
 const MODEL_PATHS := {
@@ -46,7 +48,59 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 # Wing C, even though the mesh itself is almost all empty air. An exact concave
 # collider follows the real surface instead. Static bodies only:
 # ConcavePolygonShape3D is not valid on anything that moves.
+#
+# The "portal_arch" entry is dormant while that name is in PLACEHOLDER_MODELS
+# (the file behind it is the Khronos Lantern and never instantiates). It is kept
+# because it describes the collider a genuine arch mesh would need, and because
+# working around the sample's hull was the reason it was written -- deleting it
+# would erase the record of why concave collision exists here at all.
 const TRIMESH_COLLISION := ["portal_arch"]
+# Names that have a file in models/ but whose file is NOT the thing the name
+# says. Every one of them is a stock Khronos glTF sample dropped in as a
+# stand-in, and every one of them sits in an _add_exhibit slot whose procedural
+# fallback is the exhibit the map author actually wrote, sized to fit the
+# 2.25 x 2.10 x 2.25 m glass case and the 3.4 m ceiling. Without this list
+# place() resolves the file, the fallback branch never runs, and the case holds
+# a rubber duck.
+#
+# READ THIS BEFORE DELETING AN ENTRY. The file still exists on disk (models/ is
+# the owner's and nothing there may be removed), so dropping a name from this
+# list does not "restore a model" -- it puts the sample asset back in the museum
+# and silently deletes the authored exhibit again. Remove a name only when the
+# file behind it has genuinely been replaced with the exhibit it claims to be;
+# verify by opening the .glb and reading asset.generator / the node names.
+#
+# Identified by parsing each .glb's JSON chunk (generator, copyright, node,
+# mesh and material names) and computing a transform-aware scene bbox.
+const PLACEHOLDER_MODELS := [
+	# Khronos sample "Duck" (COLLADA2GLTF, mesh LOD3spShape, material blinn3-fx).
+	# Floats 0.95 m over its plinth with its head 0.74 m out through the case lid.
+	# Fallback "box": a 0.95 m cube tilted (24,38,12) over a shadow disc -- the
+	# Falling Cube Exhibit frozen mid-fall, which is what Wing A's sign promises.
+	"falling_cube",
+	# Khronos sample "DamagedHelmet" (Blender glTF exporter, node
+	# node_damagedHelmet_-6514). A sci-fi flight helmet filling the case wall to
+	# wall, nothing to do with a clock. Fallback "box": the same tilted emissive
+	# cube + shadow disc, which is what models/README.md lists for this slot.
+	"broken_clock",
+	# Khronos sample "Avocado" (glTF Tools for Unity, node/mesh "Avocado").
+	# 6.3 cm of fruit hanging in mid-air inside a 2.25 m case. Fallback "drop":
+	# a 0.84 m teardrop with a cone tail and a splash torus -- a waterdrop frozen
+	# mid-fall, i.e. the Frozen Drop Exhibit.
+	"frozen_drop",
+	# Khronos sample "Lantern" (glTF Tools for Unity; children LanternPole_Body /
+	# _Chain / _Lantern). A 25.7 m lamp post: 24 m of it stands above Space Wing
+	# C's roof, it punches through the east wall, and its lantern head lands 9.6 m
+	# from its own pedestal. Fallback "portal": a 2.4 x 2.9 x 0.3 m prism arch over
+	# a translucent portal plane -- the spatial-curvature portal Wing C advertises.
+	"portal_arch",
+	# Khronos sample "MetalRoughSpheres" (AGI / Ed Mackey, CC-BY 4.0) -- a PBR
+	# material test grid of 501,776 triangles, 9.6 m wide, 2.54 m through the
+	# ceiling and 3.39 m below the floor, swallowing its own case, pedestal and
+	# the containment ring. Fallback "heavy_sphere": a 1.5 m sphere sunk into a
+	# cracked plinth, i.e. one impossibly dense mass, which is the exhibit.
+	"superheavy_sphere",
+]
 
 
 ## Instantiate `model_name` under `parent` at `world_position`.
@@ -67,9 +121,13 @@ const TRIMESH_COLLISION := ["portal_arch"]
 ## covering a room whose ceiling is WALL_HEIGHT 3.4 m.
 static func place(parent: Node, model_name: String, world_position: Vector3,
 		scale_factor := 1.0, rotation_y_deg := 0.0, pitch_x_deg := 0.0) -> Node3D:
-	# Every supplied museum asset is eligible. Authored call-site scale and
-	# rotation keep inconsistent source units under control; procedural geometry
-	# remains the fallback whenever import or instantiation fails.
+	# Every supplied museum asset is eligible EXCEPT the known stand-ins, which
+	# are refused before the file is even looked up so the caller's procedural
+	# fallback -- the authored exhibit -- runs instead. Authored call-site scale
+	# and rotation keep inconsistent source units under control; procedural
+	# geometry remains the fallback whenever import or instantiation fails.
+	if model_name in PLACEHOLDER_MODELS:
+		return null
 	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
 	if not ResourceLoader.exists(path):
 		return null
@@ -116,6 +174,11 @@ static func _ensure_collisions(root: Node3D, use_trimesh := false) -> void:
 			mesh_instance.create_convex_collision(true, true)
 
 
+## True when place() would return a model for this name. Placeholders answer
+## false even though their file exists, so a caller that asks first and a caller
+## that just tries place() cannot disagree about what is on the pedestal.
 static func has_model(model_name: String) -> bool:
+	if model_name in PLACEHOLDER_MODELS:
+		return false
 	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
 	return ResourceLoader.exists(path)

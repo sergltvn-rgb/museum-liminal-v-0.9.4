@@ -17,10 +17,29 @@ var quality_preset := 2 # 0 low, 1 medium, 2 high
 var resolution_index := 1
 var reduced_flashes := false
 var large_text := false
-var subtitles := true
 var high_contrast := false
-var reduced_motion := false
 var language := "ru"
+
+# WHY SUBTITLES AND REDUCED-MOTION ARE NOT HERE (stage 5.1)
+#
+# Both used to live in this file and in the accessibility tab, and both were
+# write-only: `subtitles` and `reduced_motion` were stored, persisted, restored
+# by reset_defaults() -- and read by nobody, in this file or any other. An
+# accessibility toggle that changes nothing is worse than a missing one, because
+# a player who needs it flips it, believes they are covered, and plays on.
+#
+# The other four are honest and stay: reduced_flashes has four readers
+# (FirstMuseumMap's alarm pulse, GameplayEnhancements, SecurityCameraTablet's
+# static, CRTOverlay), large_text drives content_scale_factor, high_contrast
+# drives the colour grade below, language drives TranslationServer.
+#
+# Restoring either is a small change, and the catalogue rows for both survive in
+# localization/game.csv (ACCESS_SUBTITLES / SET_SUBTITLES_DESC,
+# ACCESS_REDUCED_MOTION / SET_REDUCED_MOTION_DESC) -- but restore the *reader*
+# first and the toggle second, in that order, or this comment gets to be written
+# again. `subtitles` needs a caption surface fed by the dialogue and stinger
+# sources; `reduced_motion` needs the camera shake and screen transitions to
+# consult it. Neither reader is in this file's reach.
 
 # Colour grade authored by FirstMuseumMap (_add_world_env, later modified by
 # _trigger_blackout), captured the first time we touch the environment. High
@@ -85,19 +104,9 @@ func set_large_text(value: bool) -> void:
 	_commit()
 
 
-func set_subtitles(value: bool) -> void:
-	subtitles = value
-	_commit()
-
-
 func set_high_contrast(value: bool) -> void:
 	high_contrast = value
 	_apply_contrast()
-	_commit()
-
-
-func set_reduced_motion(value: bool) -> void:
-	reduced_motion = value
 	_commit()
 
 
@@ -117,9 +126,7 @@ func reset_defaults() -> void:
 	resolution_index = 1
 	reduced_flashes = false
 	large_text = false
-	subtitles = true
 	high_contrast = false
-	reduced_motion = false
 	language = "ru"
 	TranslationServer.set_locale(language)
 	_apply_all()
@@ -226,9 +233,7 @@ func _load_settings() -> void:
 	resolution_index = clampi(int(config.get_value("display", "resolution", 1)), 0, RESOLUTIONS.size() - 1)
 	reduced_flashes = bool(config.get_value("accessibility", "reduced_flashes", false))
 	large_text = bool(config.get_value("accessibility", "large_text", false))
-	subtitles = bool(config.get_value("accessibility", "subtitles", true))
 	high_contrast = bool(config.get_value("accessibility", "high_contrast", false))
-	reduced_motion = bool(config.get_value("accessibility", "reduced_motion", false))
 	language = str(config.get_value("localization", "language", "ru"))
 
 
@@ -242,8 +247,6 @@ func _save_settings() -> void:
 	config.set_value("display", "resolution", resolution_index)
 	config.set_value("accessibility", "reduced_flashes", reduced_flashes)
 	config.set_value("accessibility", "large_text", large_text)
-	config.set_value("accessibility", "subtitles", subtitles)
 	config.set_value("accessibility", "high_contrast", high_contrast)
-	config.set_value("accessibility", "reduced_motion", reduced_motion)
 	config.set_value("localization", "language", language)
 	config.save(PATH)

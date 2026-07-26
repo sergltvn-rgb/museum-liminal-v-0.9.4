@@ -10,16 +10,30 @@ extends CharacterBody3D
 ## against the physics step, so driving it from a render frame made the chase
 ## speed scale with the player's framerate — the Curator was roughly twice as
 ## fast at 144 Hz as at 60 Hz.
+##
+## It is also audible. The Curator carries its own positional players rather
+## than borrowing AudioManager's shared 3D pool, so a door or a pickup cannot
+## steal a footstep mid-stride, and both players sit on the SFX bus by name.
 
 ## Emitted once when the Curator reaches the player. The listener owns the
 ## consequence (GameplayEnhancements turns it into a run failure); the Curator
 ## deliberately knows nothing about the night loop.
 signal caught_player
 
-const BASE_SPEED := 2.25
-const SPEED_PER_NIGHT := 0.55
+## Chase speed, in m/s, against PlayerController's walk_speed 4.5 and
+## run_speed 7.5. Every night has to land inside that window: below 4.5 the
+## player strolls away and the Curator is scenery, above 7.5 no amount of
+## stamina saves them and the chase is a cutscene. The formula gives 4.9 / 5.6
+## / 6.3 for nights 1-3, and it only hunts from night 2, so what ships is 5.6
+## and 6.3: walking always loses ground and sprinting always gains it — but
+## sprinting costs stamina (22/s of 100), which is what makes the gap a
+## decision instead of a formality. It was 2.25 / 2.80 / 3.35, half a walk.
+const BASE_SPEED := 4.9
+const SPEED_PER_NIGHT := 0.7
 const CATCH_DISTANCE := 1.25
 ## Null lantern: slows the Curator while the operator carries it nearby.
+## 0.45 of the night-3 speed is 2.84 m/s, still below a walk, so the lantern
+## keeps its promise: carry it and you can leave at walking pace.
 const NULL_LANTERN_RANGE := 14.0
 const NULL_LANTERN_FACTOR := 0.45
 const TURN_SPEED := 6.0
@@ -27,7 +41,40 @@ const TURN_SPEED := 6.0
 ## cannot outrun a third of a second of staleness.
 const REPATH_INTERVAL := 0.35
 const GRAVITY := 18.0
-const EYE_HEIGHT := 1.5
+
+## Sample points for the weeping-angel test, in metres above the Curator's
+## feet: shoe, coat torso, camera head (see _build_model for the geometry).
+## One point at eye height was not enough — standing three metres away and
+## looking up at the face put the head outside the tested point's frustum
+## check often enough that the Curator kept walking while the player was
+## staring straight at it.
+const OBSERVE_HEIGHTS := [0.15, 1.35, 2.12]
+
+## Audio. Everything below plays on the SFX bus (AudioManager owns the layout);
+## if that bus is missing the players fall back to Master rather than erroring.
+const AUDIO_BUS := "SFX"
+## Distance in metres at which the Curator becomes inaudible. Wide enough to
+## warn a room ahead, short enough that it reads as direction and range.
+const HEAR_DISTANCE := 18.0
+## One footstep per this many metres travelled, so the cadence is the movement
+## rather than a timer that keeps ticking while the Curator is frozen.
+const STEP_DISTANCE := 1.55
+const STEP_VOLUME_DB := -6.0
+## Footstep samples are a human on a museum floor; two-and-a-bit metres of
+## porcelain and coat is not, so they are pitched down into a slow thud.
+const STEP_PITCH := 0.58
+const STEP_SOUNDS := ["res://audio/footstep1.wav", "res://audio/footstep2.wav",
+	"res://audio/footstep3.wav"]
+## The catch: land.wav dropped almost an octave and a half, so the last thing
+## the player hears is the claw closing rather than the generic fail sting.
+const CATCH_SOUND := "res://audio/land.wav"
+const CATCH_PITCH := 0.42
+const CATCH_VOLUME_DB := -1.0
+const BREATH_VOLUME_DB := -9.0
+## Synthesised breath loop (see _build_breath_stream): sample rate, and the
+## length of one inhale/exhale in seconds.
+const BREATH_RATE := 16000
+const BREATH_CYCLE := 3.4
 
 ## Set by GameplayEnhancements: false while no anomaly is running, during a
 ## pocket-dimension trial, or before night 2.
@@ -41,6 +88,11 @@ var _player_camera: Camera3D = null
 var _agent: NavigationAgent3D = null
 var _repath_left := 0.0
 var _caught := false
+var _steps: AudioStreamPlayer3D = null
+var _breath: AudioStreamPlayer3D = null
+var _step_streams: Array[AudioStream] = []
+var _catch_stream: AudioStream = null
+var _step_left := STEP_DISTANCE
 
 
 func _ready() -> void:
@@ -48,6 +100,7 @@ func _ready() -> void:
 	var collision:=CollisionShape3D.new(); var capsule:=CapsuleShape3D.new(); capsule.radius=.38; capsule.height=2.25
 	collision.position.y=1.12; collision.shape=capsule; add_child(collision); _build_model()
 	_build_agent()
+	_build_audio()
 
 
 func _build_agent() -> void:
@@ -73,6 +126,13 @@ func reset_at(spawn: Vector3) -> void:
 	velocity = Vector3.ZERO
 	global_position = spawn
 	_repath_left = 0.0
+	_step_left = STEP_DISTANCE
+	if _steps != null:
+		# The catch stinger borrows this player and leaves it loud; a new night
+		# must not open with a footstep at stinger level.
+		_steps.stop()
+		_steps.volume_db = STEP_VOLUME_DB
+	_set_breathing(false)
 	if _agent != null:
 		_agent.target_position = spawn
 
@@ -80,9 +140,14 @@ func reset_at(spawn: Vector3) -> void:
 func _physics_process(delta: float) -> void:
 	if not active or _caught or not _resolve_player():
 		velocity = Vector3.ZERO
+		_set_breathing(false)
 		return
 
 	var target := _player.global_position
+	# Breathing runs for as long as it is hunting, frozen or not: while it
+	# stands still under observation the breath is the only thing left telling
+	# the player it is still there, and it keeps working behind them.
+	_set_breathing(true)
 
 	# Weeping-angel rule: the Curator only advances while unobserved. A frustum
 	# test alone is not enough — a wall between the two still counts as unseen.
@@ -116,11 +181,16 @@ func _physics_process(delta: float) -> void:
 
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
+	# After move_and_slide, so the cadence follows the distance actually
+	# covered: it slows with the null lantern and stops dead against a wall.
+	_advance_footsteps(delta)
 
 	if global_position.distance_to(_player.global_position) < CATCH_DISTANCE:
 		_caught = true
 		active = false
 		velocity = Vector3.ZERO
+		_set_breathing(false)
+		_play_catch()
 		caught_player.emit()
 
 
@@ -136,6 +206,18 @@ func _face(direction: Vector3, delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, target_yaw, clampf(TURN_SPEED * delta, 0.0, 1.0))
 
 
+## True while the player can actually see any part of the Curator.
+##
+## Three points instead of one. A single sample at eye height answered for a
+## 2.3 m tall figure as if it were a dot: three metres away with the camera
+## tilted up at the lens, the torso point fell out of the frustum, the check
+## said "unobserved" and the Curator walked at a player who was looking right
+## at it. Any of feet / torso / head being visible now counts.
+##
+## Frustum and occlusion have to agree per point — a head poking through the
+## frustum while a wall covers it is not seen — so the ray is only cast for
+## points that passed the cheap test, and a point that fails either one simply
+## moves on to the next.
 func _is_observed() -> bool:
 	if _player_camera == null:
 		return false
@@ -147,12 +229,18 @@ func _is_observed() -> bool:
 	# lets the Curator stay ignorant of whatever stole the view.
 	if not _player_camera.current:
 		return false
-	var head := global_position + Vector3.UP * EYE_HEIGHT
-	if not _player_camera.is_position_in_frustum(head):
-		return false
-	var query := PhysicsRayQueryParameters3D.create(_player_camera.global_position, head)
-	query.exclude = [_player.get_rid(), get_rid()]
-	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+	var space := get_world_3d().direct_space_state
+	var eye := _player_camera.global_position
+	var blockers: Array[RID] = [_player.get_rid(), get_rid()]
+	for height: float in OBSERVE_HEIGHTS:
+		var point := global_position + Vector3.UP * height
+		if not _player_camera.is_position_in_frustum(point):
+			continue
+		var query := PhysicsRayQueryParameters3D.create(eye, point)
+		query.exclude = blockers
+		if space.intersect_ray(query).is_empty():
+			return true
+	return false
 
 
 func _resolve_player() -> bool:
@@ -163,6 +251,136 @@ func _resolve_player() -> bool:
 		return false
 	_player_camera = _player.get_node_or_null("Player Camera") as Camera3D
 	return _player_camera != null
+
+
+func _build_audio() -> void:
+	for path: String in STEP_SOUNDS:
+		if ResourceLoader.exists(path):
+			_step_streams.append(load(path) as AudioStream)
+		else:
+			push_warning("CuratorMonster: missing %s" % path)
+	if ResourceLoader.exists(CATCH_SOUND):
+		_catch_stream = load(CATCH_SOUND) as AudioStream
+	_steps = AudioStreamPlayer3D.new()
+	_steps.name = "Curator Footsteps"
+	# At the shoes and at the lens: two heights a metre and a half apart is the
+	# difference between "something is in the room" and "it is behind you".
+	_steps.position = Vector3(0.0, 0.12, 0.0)
+	_steps.volume_db = STEP_VOLUME_DB
+	_steps.max_distance = HEAR_DISTANCE
+	_steps.unit_size = 4.5
+	_steps.panning_strength = 1.35
+	_steps.bus = _audio_bus()
+	add_child(_steps)
+	_breath = AudioStreamPlayer3D.new()
+	_breath.name = "Curator Breath"
+	_breath.position = Vector3(0.0, 2.05, 0.0)
+	_breath.volume_db = BREATH_VOLUME_DB
+	_breath.max_distance = HEAR_DISTANCE
+	_breath.unit_size = 3.2
+	_breath.panning_strength = 1.1
+	_breath.bus = _audio_bus()
+	_breath.stream = _build_breath_stream()
+	add_child(_breath)
+
+
+## SFX if AudioManager's layout is loaded, Master otherwise. An AudioStreamPlayer3D
+## silently reports Master for an unknown bus anyway, but saying so here keeps a
+## stripped export explainable instead of "the Curator ignores the SFX slider".
+func _audio_bus() -> StringName:
+	if AudioServer.get_bus_index(AUDIO_BUS) >= 0:
+		return StringName(AUDIO_BUS)
+	push_warning("CuratorMonster: no '%s' bus - routing to Master" % AUDIO_BUS)
+	return &"Master"
+
+
+## One footstep per STEP_DISTANCE metres of ground actually covered. Driving
+## this from distance rather than a timer means the freeze is audible: the
+## instant the weeping-angel rule stops the Curator the steps stop too, and
+## they resume from the same point in the stride when the player looks away.
+func _advance_footsteps(delta: float) -> void:
+	var travelled := Vector2(velocity.x, velocity.z).length() * delta
+	if travelled <= 0.0001:
+		return
+	_step_left -= travelled
+	if _step_left > 0.0:
+		return
+	_step_left += STEP_DISTANCE
+	if _step_streams.is_empty() or _steps == null:
+		return
+	_steps.stream = _step_streams[randi() % _step_streams.size()]
+	# Pitched down and jittered: the three samples are 80-100 ms, so at 0.58
+	# they land as ~160 ms thuds and never overlap at any of the three speeds.
+	_steps.pitch_scale = STEP_PITCH * randf_range(0.94, 1.06)
+	_steps.play()
+
+
+func _play_catch() -> void:
+	if _catch_stream == null or _steps == null:
+		return
+	# Reuses the footstep player on purpose: the catch is the last sound this
+	# Curator makes before the run ends, so there is nothing left to interrupt.
+	_steps.stream = _catch_stream
+	_steps.pitch_scale = CATCH_PITCH
+	_steps.volume_db = CATCH_VOLUME_DB
+	_steps.play()
+
+
+func _set_breathing(on: bool) -> void:
+	if _breath == null or _breath.stream == null:
+		return
+	if on:
+		if not _breath.playing:
+			_breath.play()
+	elif _breath.playing:
+		_breath.stop()
+
+
+## Build the breathing loop in code.
+##
+## res://audio/ holds 20 wavs and not one of them is a breath: three footsteps,
+## a landing thud, ten UI/interaction one-shots, two room beds, the anomaly hum,
+## the alarm, blackout, power_down, fail and resolve. Borrowing anomaly_hum
+## would have been worse than silence — that sound is the player's locator for
+## an anomaly, and hearing it walk around would break the one audio cue the
+## game already teaches. So the breath is synthesised once, at build time:
+## noise through a one-pole low-pass under a slow inhale/exhale envelope, plus a
+## little sub-bass body. The envelope is silent at both ends of the cycle, so
+## LOOP_FORWARD has nothing to click on and the filter state carries over
+## inaudibly. A recorded sample would still sound better - see the report.
+func _build_breath_stream() -> AudioStreamWAV:
+	var frames := int(float(BREATH_RATE) * BREATH_CYCLE)
+	var data := PackedByteArray()
+	data.resize(frames * 2)
+	var low := 0.0
+	for i in range(frames):
+		var t := float(i) / float(frames)
+		var envelope := 0.0
+		# Inhale is shorter, quieter and brighter; exhale is long and dark.
+		var smoothing := 0.06
+		if t >= 0.02 and t < 0.30:
+			envelope = sin(PI * (t - 0.02) / 0.28) * 0.62
+			smoothing = 0.085
+		elif t >= 0.38 and t < 0.80:
+			envelope = sin(PI * (t - 0.38) / 0.42) * 0.95
+			smoothing = 0.045
+		low += ((randf() * 2.0 - 1.0) - low) * smoothing
+		# x4 makeup: a one-pole at these coefficients drops the noise to about a
+		# tenth of full scale, so without it the loop is inaudible under the mix.
+		# Measured over a full cycle this peaks at 0.95 and clips 0.03% of
+		# samples; pushing it to x5 clips 0.4% and the exhale starts to rasp.
+		var sample := low * 4.0 * envelope
+		sample += sin(TAU * 41.0 * t * BREATH_CYCLE) * envelope * 0.18
+		data.encode_s16(i * 2, int(clampf(sample, -0.95, 0.95) * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = BREATH_RATE
+	wav.stereo = false
+	wav.data = data
+	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	wav.loop_begin = 0
+	wav.loop_end = frames
+	return wav
 
 
 func _build_model() -> void:

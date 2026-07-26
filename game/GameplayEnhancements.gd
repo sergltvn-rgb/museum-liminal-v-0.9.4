@@ -4,6 +4,9 @@ extends Node
 ## remains easy to test and maintain.
 
 const STATE_ANOMALY := 2
+## GameManager.STATE_FAILED. Read, never written: this node asks whether the run
+## has already ended so the catch sequence does not fail it a second time.
+const STATE_FAILED := 4
 const SCAN_TIME := 2.5
 const EFFECT_RADIUS := 15.0
 
@@ -49,6 +52,37 @@ const WATCH_CRITICAL_RELEASE := 1.4
 const WATCH_FRAME_WIDTH := 6
 ## Half-angle of the "ahead" and "behind" sectors, as a dot product: cos(45 deg).
 const WATCH_SECTOR_DOT := 0.7071
+
+# --- Being caught (stage 4.4) -----------------------------------------------
+#
+# The catch used to last one frame. _on_watcher_caught() called GameManager's
+# _fail() straight away, the scrim landed over whatever the operator's head
+# happened to be pointing at, and the very next _process() saw the state leave
+# STATE_ANOMALY and ran _end_anomaly(), which hides the Curator. So the thing
+# that killed you was gone before the screen finished turning red, the player
+# still had the mouse, and the whole event read as a bug rather than an ending.
+#
+# _update_death() below is the shot instead. It owns the frame for its whole
+# length -- _process() short-circuits into it -- which is what guarantees nothing
+# tears the Curator down mid-take, including GameManager failing the run itself
+# when the night timer happens to expire during it.
+#
+# HAND-OFF, EXACTLY. At t = 0 this calls GameManager._flash(HUD_CURATOR_CAUGHT),
+# whose message lives 3.0 s and so is legible across the turn and the hold. At
+# t = 1.55 s, with the veil fully opaque, it calls this node's own _end_anomaly()
+# and then GameManager._fail() -- the same two calls the one-frame version made
+# and in the same order, 1.55 s later and behind a black screen. GameManager
+# still owns the fail overlay, the "fail" sting and the ENTER-to-retry path;
+# none of that is touched or duplicated here.
+const DEATH_TURN := 0.55     ## Swing the view onto the Curator.
+const DEATH_HOLD := 0.45     ## Hold on it. This is the shot.
+const DEATH_FADE := 0.55     ## Picture out.
+const DEATH_RELEASE := 0.45  ## Veil back off, onto GameManager's fail screen.
+## Height of the Curator's lens above its feet: CuratorMonster._build_model()
+## mounts "Camera Head" at y = 2.12. The view is aimed there rather than at the
+## body centre -- the thing that caught you is a camera on a neck, and framing it
+## is the difference between a death and a collision.
+const DEATH_FOCUS_Y := 2.12
 
 ## Perceived-size window each local anomaly drives the operator through, as
 ## Vector2(min, max). _update_player_scale() only interpolates between these two
@@ -96,6 +130,13 @@ var _watch_pulse := 0.0
 var _incident_origin := Vector3.ZERO
 var _incident_name := ""
 var _rift_visual: Node3D
+## Seconds into the catch sequence, or -1.0 while it is not running.
+var _death_time := -1.0
+var _death_layer: CanvasLayer
+var _death_veil: ColorRect
+var _death_from_yaw := 0.0
+var _death_from_pitch := 0.0
+var _death_handed_off := false
 var _chalk_marks: Array[MeshInstance3D] = []
 var _chalk_index := 0
 var _last_chalk_position := Vector3.ZERO
@@ -139,6 +180,12 @@ func _carried_tool() -> String:
 
 func _process(delta: float) -> void:
 	if _game == null or _player == null:
+		return
+	if _death_time >= 0.0:
+		# The catch owns the frame. Falling through to the state check below would
+		# let _end_anomaly() hide the Curator the moment GameManager leaves
+		# STATE_ANOMALY, which is the exact bug the sequence exists to fix.
+		_update_death(delta)
 		return
 	if _carried_tool() == "thermal_chalk":
 		_update_chalk()
@@ -498,6 +545,30 @@ func _build_hud() -> void:
 	_effect_label.visible = false
 	layer.add_child(_effect_label)
 	_build_watch_alert()
+	_build_death_veil()
+
+
+## Full-screen veil for the catch sequence.
+##
+## Layer 13 puts it above every in-world screen this node can be caught in front
+## of -- the tablet (10), the effect readout (11), the proximity alert (12) --
+## so they all go dark with the picture, and below GameManager's OVERLAY_LAYER
+## (15), so the fail screen it hands off to draws on top of a screen that is
+## already black instead of cutting into a lit one.
+func _build_death_veil() -> void:
+	_death_layer = CanvasLayer.new()
+	_death_layer.name = "Curator Catch Veil"
+	_death_layer.layer = 13
+	_death_layer.visible = false
+	add_child(_death_layer)
+	_death_veil = ColorRect.new()
+	_death_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_death_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# SURFACE is the darkest token in the palette and the colour the fail scrim
+	# is mixed from, so the fade lands on the value the next screen starts at.
+	# Only the RGB comes from the token; the alpha is what this animates.
+	_death_veil.color = Color(UITheme.SURFACE, 0.0)
+	_death_layer.add_child(_death_veil)
 
 
 ## Motion readout drawn over the camera feed. Its own CanvasLayer at 12, above
@@ -692,5 +763,98 @@ func _build_watcher() -> void:
 
 
 func _on_watcher_caught() -> void:
-	_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), Color(1, .2, .15))
-	_game.call("_fail")
+	if _death_time >= 0.0:
+		return
+	if _death_veil == null or _game == null or _player == null:
+		# No HUD was ever built (headless suites, or _initialize() bailed out).
+		# Fail the run the blunt way rather than not at all.
+		if _game != null:
+			_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), UITheme.DANGER)
+			_game.call("_fail")
+		return
+	_begin_death()
+
+
+func _begin_death() -> void:
+	_death_time = 0.0
+	_death_handed_off = false
+	_death_layer.visible = true
+	_death_veil.color.a = 0.0
+	# Order matters. close() hands control back through
+	# GameManager.player_controls_allowed(), which still answers "yes" -- the run
+	# has not failed yet -- so the tablet has to be lowered BEFORE control is
+	# taken, or it would grant it straight back. Lowering it also returns the
+	# viewport to the player's own camera, without which there is nothing to aim.
+	if _tablet != null and bool(_tablet.get("_open")) and _tablet.has_method("close"):
+		_tablet.call("close")
+	_hide_watch_alert()
+	# Revoking control, never granting it: GameManager remains the only thing
+	# allowed to hand it back, and _fail() re-revokes through _set_player_controls
+	# at the end of this sequence.
+	_player.set("controls_enabled", false)
+	_player.velocity = Vector3.ZERO
+	_death_from_yaw = _player.rotation.y
+	_death_from_pitch = float(_player.get("_pitch"))
+	# Said now, not at the hand-off: _flash() keeps a message up for 3.0 s, so
+	# starting it here makes it legible across the turn and the hold instead of
+	# arriving under the fail scrim that covers it.
+	_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), UITheme.DANGER)
+	# One low hit on the seize. GameManager plays its own "fail" sting later.
+	_sfx("blackout", -3.0, 0.68)
+
+
+func _update_death(delta: float) -> void:
+	var previous := _death_time
+	_death_time += delta
+	_aim_at_watcher(clampf(_death_time / DEATH_TURN, 0.0, 1.0))
+	var fade_at := DEATH_TURN + DEATH_HOLD
+	var handoff_at := fade_at + DEATH_FADE
+	if _death_time < handoff_at:
+		if previous < fade_at and _death_time >= fade_at:
+			_sfx("power_down", -7.0, 0.9)
+		_death_veil.color.a = clampf((_death_time - fade_at) / DEATH_FADE, 0.0, 1.0)
+		return
+	if not _death_handed_off:
+		_death_handed_off = true
+		_death_veil.color.a = 1.0
+		# Behind an opaque veil, in this order: our own presentation comes down
+		# first, so the Curator is never seen to blink out, and then the run is
+		# handed to GameManager, which owns the fail overlay and the retry.
+		_end_anomaly()
+		if int(_game.get("_state")) != STATE_FAILED:
+			_game.call("_fail")
+		return
+	# The night timer can fail the run mid-sequence; _fail() is then already done
+	# and the release just uncovers the screen it put up.
+	_death_veil.color.a = clampf(1.0 - (_death_time - handoff_at) / DEATH_RELEASE, 0.0, 1.0)
+	if _death_time - handoff_at >= DEATH_RELEASE:
+		_death_time = -1.0
+		_death_layer.visible = false
+
+
+## Ease the operator's own head onto the Curator's lens. `amount` runs 0 -> 1
+## across DEATH_TURN; once it reaches 1 this keeps rewriting the finished aim
+## every frame, which is what holds the frame steady while the body slides the
+## last few centimetres to a stop under its own deceleration.
+func _aim_at_watcher(amount: float) -> void:
+	if not is_instance_valid(_watcher):
+		return
+	var eye := _player.global_position + Vector3.UP * 1.65
+	if is_instance_valid(_player_camera):
+		eye = _player_camera.global_position
+	var to := _watcher.global_position + Vector3.UP * DEATH_FOCUS_Y - eye
+	var flat := Vector2(to.x, to.z).length()
+	var eased := amount * amount * (3.0 - 2.0 * amount)
+	if flat > 0.01:
+		# Godot forward is -Z: the same yaw convention PlayerController turns the
+		# body on and CuratorMonster._face() turns the Curator on.
+		_player.rotation.y = lerp_angle(_death_from_yaw, atan2(-to.x, -to.z), eased)
+	var pitch := lerpf(_death_from_pitch,
+		clampf(atan2(to.y, maxf(flat, 0.01)), deg_to_rad(-85.0), deg_to_rad(85.0)), eased)
+	# Write PlayerController's own pitch field as well as the camera node: the
+	# controller integrates mouse motion onto `_pitch` and re-applies it, so
+	# leaving the two disagreeing would snap the view back to the pre-death angle
+	# on the first mouse movement after a retry.
+	_player.set("_pitch", pitch)
+	if is_instance_valid(_player_camera):
+		_player_camera.rotation.x = pitch

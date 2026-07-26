@@ -1,6 +1,12 @@
 extends Node
 ## Full pocket-world mechanics: rotated gravity, recorded time echoes,
 ## movable radiation resonators and flashlight-dependent solid geometry.
+##
+## Stage 3.6: this file, not CuratorMonster, was where the _physics_process
+## migration stopped. Two CharacterBody3D hunters (void_rift, yellow_halls) and
+## every player teleport used to run off _process, so they moved further per second
+## the faster the machine drew. The frame is split now -- see _process and
+## _physics_process below for exactly what went where and why.
 
 const ORIGIN := Vector3(0, 72, -260)
 const USE_DISTANCE := 2.8
@@ -71,6 +77,8 @@ var _void_nodes:Array[Node3D]=[]
 var _void_activated:=0
 var _lidar_multimesh:MultiMesh
 var _lidar_index:=0
+# Raised by the radar_scan input, consumed on the next physics step.
+var _lidar_pending:=false
 const LIDAR_CAPACITY:=4200
 const LIDAR_RAYS_PER_SCAN:=240
 # Эхо-камера
@@ -155,44 +163,94 @@ func abort() -> void:
 func _input(event: InputEvent) -> void:
 	if not _active: return
 	if event.is_action_pressed("interact"):
-		if is_instance_valid(_active_trial): _active_trial.interact(self)
-		else: _interact()
+		_dispatch_interact()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("drop_item") or event.is_action_pressed("radar_scan"):
 		var action: StringName = &"drop_item" if event.is_action_pressed("drop_item") else &"radar_scan"
-		if _secondary_action_legacy(_kind, action): get_viewport().set_input_as_handled()
+		if _dispatch_secondary(action): get_viewport().set_input_as_handled()
 
+# --- The seven hooks of the RiftTrial contract ----------------------------
+# Stage 3.2: every one of these goes through the active trial node when there is
+# one, and falls back to the legacy dispatcher below when there is not. That is
+# the whole point -- a migrated trial overrides its hook and the manager is none
+# the wiser, while the nine unmigrated ones keep landing in the same match.
+func _dispatch_interact() -> void:
+	# The reach test belongs to the manager (it owns _targets), so the trial is
+	# handed the body it is meant to act on rather than having to look again.
+	var body := _nearest_target("")
+	if body == null:
+		_status.text = tr("TRIAL_MOVE_CLOSER"); return
+	if is_instance_valid(_active_trial): _active_trial._on_interact(self, body)
+	else: _interact_trial_legacy(body)
+
+func _dispatch_secondary(action: StringName) -> bool:
+	if is_instance_valid(_active_trial): return _active_trial._on_secondary(self, action)
+	return _secondary_action_legacy(_kind, action)
+
+func _dispatch_fall() -> void:
+	if is_instance_valid(_active_trial): _active_trial._on_fall(self)
+	else: _reset_after_fall_legacy(_kind)
+
+# Stage 3.6: the frame is split in two. _process keeps what only the eye sees --
+# the tutorial strip fading, HUD strings, emission pulses, the round timers of the
+# echo chamber. Everything that moves a body, drives a CharacterBody3D or asks the
+# physics server a question runs on the fixed step in _physics_process, so it can
+# no longer go faster on a 240 Hz machine than on a 60 Hz one.
 func _process(delta: float) -> void:
 	if not _active or not is_instance_valid(_player):
 		return
 	if _hint_time > 0.0: _update_tutorial_hint(delta)
-	if is_instance_valid(_active_trial): _active_trial.process_trial(self, delta)
-	else: _process_trial_legacy(_kind, delta)
+	if is_instance_valid(_active_trial): _active_trial._tick_visuals(self, delta)
+	else: _visual_trial_legacy(_kind, delta)
+
+func _physics_process(delta: float) -> void:
+	if not _active or not is_instance_valid(_player):
+		return
+	# PhysicsDirectSpaceState3D is only valid inside the physics step, so the
+	# lidar burst is queued by the input handler and fired here.
+	if _lidar_pending:
+		_lidar_pending = false
+		_lidar_scan()
+	if is_instance_valid(_active_trial): _active_trial._tick(self, delta)
+	else: _physics_trial_legacy(_kind, delta)
+	# A trial that just completed has already returned and freed the player.
 	if not _active or not is_instance_valid(_player):
 		return
 	if _player.global_position.y < ORIGIN.y - 14.0:
-		_reset_after_fall()
+		_dispatch_fall()
 
-func _process_trial_legacy(kind: String, delta: float) -> void:
+## Drawn-frame half of the legacy dispatcher: HUD, materials, cosmetic timers.
+## radiation_bloom stays here on purpose -- its dose meter is a delta-scaled
+## counter and its only body moves are StaticBody3D teleports on reset, neither of
+## which is simulated. mirror_maze animates emission and MeshInstance3D ghosts;
+## echo_chamber is a sequence timer with lights. gravity_surge has no per-frame
+## work at all: it is driven entirely from _on_interact.
+func _visual_trial_legacy(kind: String, delta: float) -> void:
+	match kind:
+		"radiation_bloom": _update_radiation(delta)
+		"echo_chamber": _update_echo(delta)
+		"mirror_maze": _update_mirrors(delta)
+
+## Fixed-step half: everything that moves. temporal_drift samples and replays the
+## player transform and teleports on loop end; void_rift and yellow_halls each
+## drive a CharacterBody3D with move_and_slide; glass_bridge runs a hand-written
+## overlap test that flips collision layers and teleports; scrap_run sweeps the
+## drone and catches the player by distance; ascent slides the StaticBody3D
+## platforms the player is standing on and respawns them out of the fog.
+func _physics_trial_legacy(kind: String, delta: float) -> void:
 	match kind:
 		"temporal_drift": _update_time_loop(delta)
-		"radiation_bloom": _update_radiation(delta)
 		"void_rift": _update_negative_space(delta)
-		"echo_chamber": _update_echo(delta)
 		"glass_bridge": _update_glass_bridge()
-		"mirror_maze": _update_mirrors(delta)
 		"yellow_halls": _update_yellow(delta)
 		"scrap_run": _update_scrap(delta)
 		"ascent": _update_ascent(delta)
-
-func _interact_trial_legacy() -> void:
-	_interact()
 
 func _secondary_action_legacy(kind: String, action: StringName) -> bool:
 	if kind == "radiation_bloom" and action == &"drop_item":
 		_tune_nearest(); return true
 	if kind == "void_rift" and action == &"radar_scan":
-		_lidar_scan(); return true
+		_lidar_pending = true; return true
 	return false
 
 func trial_definition() -> Dictionary:
@@ -231,7 +289,13 @@ func _hide_tutorial() -> void:
 func _build_world() -> void:
 	_world = Node3D.new(); _world.name = "Pocket Dimension — %s" % _kind
 	get_tree().current_scene.add_child(_world)
-	if is_instance_valid(_active_trial): _active_trial.build(self)
+	if is_instance_valid(_active_trial):
+		# title_key was scene data nothing read. Seeding the header from it means a
+		# migrated trial gets its name for free; the legacy builders then set the
+		# same string again, so nothing changes for the nine that have not moved.
+		var scene_title := _active_trial.localized_title()
+		if scene_title != "": _title.text = scene_title
+		_active_trial._build(self)
 	else: _build_trial_legacy(_kind)
 	_add_bounds()
 	if _kind in ["void_rift", "scrap_run", "yellow_halls"]:
@@ -461,7 +525,7 @@ func _update_negative_space(_delta:float)->void:
 		var monster_speed:=1.45+float(_void_activated)*.22
 		if _game!=null and str(_game.get("_carried_id"))=="thread_spool":monster_speed*=.75
 		if d.length()>.1:_void_monster.velocity=d.normalized()*monster_speed;_void_monster.move_and_slide()
-		if d.length()<1.15:_reset_after_fall()
+		if d.length()<1.15:_dispatch_fall()
 	_status.text=Loc.fmt("TRIAL_VOID_HUD",[_void_activated])
 	if _void_activated>=3 and _player.global_position.distance_to(_void_exit)<1.8:_complete()
 
@@ -887,9 +951,7 @@ func _add_bounds()->void:
 	_invisible_wall(center+Vector3(0,0,half_z),Vector3(half_x*2,26,.5))
 
 # --- Shared interaction and construction ---------------------------------
-func _interact()->void:
-	var body:=_nearest_target("")
-	if body==null: _status.text=tr("TRIAL_MOVE_CLOSER"); return
+func _interact_trial_legacy(body:StaticBody3D)->void:
 	var type:=str(body.get_meta("type","")); var index:=int(body.get_meta("index",-1))
 	if type=="gravity_anchor": _gravity_anchor(index)
 	elif type in ["monolith","socket"]: _radiation_interact(body)
@@ -922,28 +984,31 @@ func _nearest_target(type_filter:String)->StaticBody3D:
 # to the forecourt -- delegate to the per-trial recovery rules below instead.
 func recover_from_fall()->void:
 	if not _active: return
-	_reset_after_fall()
+	_dispatch_fall()
 
-func _reset_after_fall()->void:
+# Stage 3.2: the name RiftTrial.reset_after_fall() used to reflect into. It did not
+# exist, so the hook was a crash with no caller; it exists now and is what
+# _dispatch_fall() falls back to for every unmigrated trial.
+func _reset_after_fall_legacy(kind:String)->void:
 	if not is_instance_valid(_player): return
 	_player.velocity=Vector3.ZERO
-	if _kind=="scrap_run" and _scrap_carrying>=0:
+	if kind=="scrap_run" and _scrap_carrying>=0:
 		var dropped:=_scrap_items[_scrap_carrying]
 		if is_instance_valid(dropped):dropped.visible=true;dropped.collision_layer=1
 		_scrap_carrying=-1
 		_drop_carry_visual()
 		_status.text=tr("TRIAL_SCRAP_DROPPED")
-	if _kind=="ascent" and _ascent_checkpoint!=Vector3.ZERO:
+	if kind=="ascent" and _ascent_checkpoint!=Vector3.ZERO:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.global_position=_ascent_checkpoint
 		_status.text=tr("TRIAL_ASCENT_RESPAWN")
 		return
-	if _kind=="void_rift":
+	if kind=="void_rift":
 		if _player.has_method("safe_teleport"):_player.call_deferred("safe_teleport",_spawn_position(),Vector3.DOWN)
 		else:_player.global_position=_spawn_position()
 		if is_instance_valid(_void_monster):_void_monster.global_position=ORIGIN+Vector3(10,0,-4)
 	else: _player.global_position=_spawn_position()
-	if _kind=="gravity_surge": _player.reset_gravity_direction(); _step=0
+	if kind=="gravity_surge": _player.reset_gravity_direction(); _step=0
 
 func _complete()->void:
 	_return_player(); _cleanup()
@@ -956,13 +1021,14 @@ func _return_player()->void:
 func _cleanup()->void:
 	_active=false; _layer.visible=false; _hide_tutorial()
 	if is_instance_valid(_active_trial):
-		_active_trial.cleanup(self)
+		_active_trial._teardown(self)
 		_active_trial.queue_free()
 	_active_trial=null
 	for echo in _echoes:
 		if is_instance_valid(echo): echo.queue_free()
 	_echoes.clear(); _echo_recordings.clear(); _targets.clear(); _light_bridges.clear(); _bridge_requires_light.clear(); _monoliths.clear(); _void_nodes.clear(); _echo_pads.clear(); _bridge_tiles.clear(); _bridge_fake.clear(); _bridge_done.clear()
 	_void_monster=null;_fog_plane=null;_scrap_carrying=-1;_scrap_delivered=0;_tapes_found=0;_mirror_found=0;_echo_look=0.0;_echo_glow_on=false
+	_lidar_multimesh=null;_lidar_index=0;_lidar_pending=false
 	_mirror_frames.clear();_mirror_defective.clear();_scrap_items.clear();_scrap_home.clear()
 	_mirror_ghosts.clear();_yellow_tapes.clear();_yellow_points.clear();_ascent_movers.clear();_ascent_mover_base.clear();_ascent_cps.clear()
 	_yellow_walker=null;_scrap_drone=null;_mirror_errors=0;_yellow_point=0;_yellow_cool=0.0;_drone_angle=0.0;_scrap_value=0;_ascent_time=0.0;_ascent_checkpoint=Vector3.ZERO

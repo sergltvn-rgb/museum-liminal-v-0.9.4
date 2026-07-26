@@ -69,10 +69,14 @@ func _open_main_menu() -> void:
 	_in_main_menu = true
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	if _tutorial_done():
-		_start_button.text = Loc.fmt("MENU_CONTINUE_NIGHT", [_saved_night()])
+	# The button says what pressing it does, and pressing it now always does the
+	# same thing: enter the museum. A save past the first night is offered as a
+	# continuation; everything else, first launch included, is a plain start.
+	var night := _saved_night()
+	if night > 1:
+		_start_button.text = Loc.fmt("MENU_CONTINUE_NIGHT", [night])
 	else:
-		_start_button.text = tr("MENU_NEW_TUTORIAL")
+		_start_button.text = tr("MENU_START")
 	if _settings_panel != null:
 		_settings_panel.visible = false
 	if _feedback_panel != null:
@@ -132,43 +136,47 @@ func _gameplay_mouse_mode() -> Input.MouseMode:
 	return Input.MOUSE_MODE_CAPTURED
 
 
+## Start the shift. Nothing stands between this button and the museum any more.
+##
+## It used to open the tutorial scene instead whenever tutorial/done was unset,
+## which is what made the first press of Start mean two different things and the
+## walk out of the tutorial land back on this menu, where the player pressed
+## Start a second time. Since stage 8.6 the orientation is taught inside the
+## museum's own daytime segment (GameManager's "Orientation" section), so there
+## is nothing here to divert to and the gate is gone rather than weakened.
+##
+## THE GATE'S REPLACEMENT, since removing it outright is what shipped an infinite
+## tutorial loop once before: the done-vs-skipped pair in museum_progress.cfg is
+## still written and still respected -- GameManager._teach_recorded() reads it to
+## decide whether to run the orientation at all, and _teach_write() sets it. The
+## loop cannot come back, because no button's behaviour depends on those flags:
+## the worst a corrupt flag can now do is show or hide eight one-line hints.
 func _start_game() -> void:
-	if not _tutorial_done():
-		_open_tutorial()
-		return
 	_in_main_menu = false
 	_resume()
 
 
+## The old orientation sector, kept as an optional replay rather than deleted:
+## it is a complete, working scene, it is the only place the jump control is
+## taught, and a player who wants the controls without the museum around them
+## can still have it. Finishing it writes tutorial/done, which also tells the
+## museum's own orientation to stand down -- someone who has just been walked
+## through the controls does not need to be walked through them again.
 func _open_tutorial() -> void:
 	_sfx("menu_select")
 	get_tree().paused = false
 	get_tree().change_scene_to_file(TUTORIAL_SCENE)
 
 
-## True when the player may start the shift.
-## Deliberately done-OR-skipped: TutorialPrologue._write_progress(false) records a
-## skip as tutorial/skipped and leaves tutorial/done false on purpose (so a skipped
-## replay cannot downgrade an earlier honest completion). Checking "done" alone
-## sends anyone who held ESC out of the tutorial straight back into it on every
-## press of Start -- an infinite loop. Do not "simplify" this to a single key.
-func _tutorial_done() -> bool:
-	var config := ConfigFile.new()
-	if config.load(TUTORIAL_PROGRESS_PATH) != OK:
-		return false
-	if bool(config.get_value("tutorial", "done", false)):
-		return true
-	return bool(config.get_value("tutorial", "skipped", false))
-
-
 func _reset_progress() -> void:
 	var config := ConfigFile.new()
 	config.set_value("progress", "night", 1)
 	config.save(SAVE_PATH)
-	# Both keys are cleared explicitly: _tutorial_done() gates on done-OR-skipped,
-	# so leaving a stale skipped=true behind would let Reset Progress skip the
-	# tutorial. (Today the fresh ConfigFile also overwrites the file wholesale,
-	# but that stops being true the moment someone adds a load() here.)
+	# Both keys are cleared explicitly: the orientation stands down on
+	# done-OR-skipped, so leaving a stale skipped=true behind would give a reset
+	# player a museum that never teaches them anything. (Today the fresh
+	# ConfigFile also overwrites the file wholesale, but that stops being true
+	# the moment someone adds a load() here.)
 	var tutorial_config := ConfigFile.new()
 	tutorial_config.set_value("tutorial", "done", false)
 	tutorial_config.set_value("tutorial", "skipped", false)

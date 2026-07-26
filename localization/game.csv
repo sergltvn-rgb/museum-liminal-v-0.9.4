@@ -80,6 +80,7 @@ EXHIBIT_LAB_SIGN,Restoration lab — do not touch exhibit 9,Реставраци
 EXHIBIT_LEVITATING_COLUMN,Levitating Column,Левитирующая колонна
 EXHIBIT_MAIN_ENTRANCE,MAIN ENTRANCE · CLOSING 20:00,ГЛАВНЫЙ ВХОД · ЗАКРЫТИЕ 20:00
 EXHIBIT_MASS_PENDULUM,Mass Pendulum,Маятник массы
+EXHIBIT_MUSEUM_SIGN,THE FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
 EXHIBIT_OPEN_HOURS,OPEN 09:00–20:00,ОТКРЫТО 09:00–20:00
 EXHIBIT_ORRERY,Orrery,Оррери
 EXHIBIT_PLANETARIUM_SIGN,Planetarium — projector switched off,Планетарий — проектор отключён
@@ -157,7 +158,7 @@ HUD_WATCH_BEARING_LEFT,TO YOUR LEFT,СЛЕВА ОТ ВАС
 HUD_WATCH_BEARING_RIGHT,TO YOUR RIGHT,СПРАВА ОТ ВАС
 HUD_WATCH_CRITICAL,IT IS IN THE ROOM — LOWER THE TABLET (TAB),ОН УЖЕ РЯДОМ — ОПУСТИТЕ ПЛАНШЕТ (TAB)
 HUD_WATCH_MOTION,"!! MOTION SENSOR — %d m, %s","!! ДАТЧИК ДВИЖЕНИЯ — %d м, %s"
-HUD_WIN,SHIFT OVER\nAll three nights are done. The museum sleeps again.\n\nENTER - start over,СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.\n\nENTER - начать заново
+HUD_WIN,SHIFT OVER\nAll three nights are done. The museum sleeps again.,СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.
 HUD_WRONG_TOOL,The device has no effect. Check the terminal readout.,Прибор не действует. Проверьте показания терминала.
 MENU_BACK,Back,Назад
 MENU_CONTINUE_NIGHT,Continue — Night %d,Продолжить — Ночь %d
@@ -177,7 +178,6 @@ MENU_FB_SUBMIT,Send,Отправить
 MENU_FB_URL,Notion Worker webhook URL:,URL вебхука Notion Worker:
 MENU_FEEDBACK,Feedback (Notion),Обратная связь (Notion)
 MENU_MAIN_MENU,Main menu,Главное меню
-MENU_NEW_TUTORIAL,NEW: take the tutorial,НОВОЕ: пройти обучение
 MENU_QUIT,Quit,Выход
 MENU_RESET_PROGRESS,Reset progress,Сбросить прогресс
 MENU_RESUME,Resume,Продолжить
@@ -242,7 +242,32 @@ SET_TAB_GRAPHICS,Graphics,Графика
 SET_VSYNC,Vertical sync,Вертикальная синхронизация
 SET_VSYNC_DESC,Eliminates screen tearing,Устраняет разрывы изображения
 STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.
+STORY_END_01,"Three nights. The core holds, and wing by wing the constants settle back into their cases.","Три ночи. Ядро держит, и крыло за крылом постоянные величины возвращаются в свои витрины."
+STORY_END_02,The monitors go quiet one after another. Nothing walks the halls that the cameras can name.,"Мониторы гаснут один за другим. По залам не ходит ничего такого, что камеры сумели бы назвать."
+STORY_END_03,The Night Containment Service logs the shift as ordinary. Dawn finds the First Museum still standing.,Служба ночного сдерживания записывает смену как обычную. Рассвет застаёт Первый музей на месте.
 STORY_PROLOGUE,The museum remembers every night shift. The rifts remember every mistake.,Музей помнит каждую ночную смену. Разломы помнят каждую ошибку.
+STORY_PROLOGUE_01,THE FIRST MUSEUM. The collection is physical constants. There are no objects in the holdings.,ПЕРВЫЙ МУЗЕЙ. Экспозиция — постоянные величины. Предметов в фондах нет.
+STORY_PROLOGUE_02,"Four wings, four quantities: gravity, time, space, mass.","Четыре крыла, четыре величины: тяготение, время, пространство, масса."
+STORY_PROLOGUE_03,A visitor sees a stone on a plinth. The register lists not the stone but the weight it holds.,"Посетитель видит камень на подставке. В описи значится не камень, а вес, который он держит."
+STORY_PROLOGUE_04,"Wing A. Gravity: 9.81. Here the value is held, not measured.","Крыло A. Тяготение: 9,81. Здесь это значение удерживают, а не измеряют."
+STORY_PROLOGUE_05,Under the atrium dome: the containment core. It is what keeps all four quantities in agreement.,Под куполом атриума — ядро сдерживания. Оно и держит все четыре величины в согласии.
+STORY_PROLOGUE_06,The core is the one exhibit that cannot be closed for the night. That is why the museum has a night shift.,"Ядро — единственный экспонат, который нельзя закрыть на ночь. Поэтому у музея есть ночная смена."
+STORY_PROLOGUE_07,Night Containment Service. One observer per shift. Tonight the observer is you.,Служба ночного сдерживания. Один наблюдатель на смену. Сегодня наблюдатель — вы.
+STORY_PROLOGUE_08,"When a quantity slips, a rift opens. The instructions record it as an accident. The floor plan marks it as a way through.","Когда величина срывается, открывается разлом. В инструкции он числится аварией. На плане — проходом."
+STORY_PROLOGUE_09,For three weeks the round log has carried the same entry: there is someone in the halls. No shift wrote it.,В журнале обходов третью неделю одна и та же отметка: в залах кто-то есть. Смена её не ставила.
+TEACH_HINT_LANTERN,Press E at the null lantern to take it.,"Нажмите E у нуль-фонаря, чтобы взять его."
+TEACH_HINT_LOOK,Move the mouse to look around.,"Поводите мышью, чтобы осмотреться."
+TEACH_HINT_OFFICE,West through the atrium and in through the office door.,На запад через атриум и внутрь через дверь офиса.
+TEACH_HINT_PROTOCOL,"E closes the protocol screen; the alarm terminal repeats it, also on E.","E закрывает экран протокола; терминал тревоги повторит его — тоже на E."
+TEACH_HINT_TABLET,Press TAB at the office desk to raise the camera tablet.,"Нажмите TAB за столом офиса, чтобы поднять планшет камер."
+TEACH_OBJ_FLASHLIGHT,Check your flashlight while the lights are still on.,"Проверьте фонарик, пока свет ещё горит."
+TEACH_OBJ_LANTERN,The equipment store is south of the office. Take the null lantern.,Склад оборудования — к югу от офиса. Возьмите нуль-фонарь.
+TEACH_OBJ_LOOK,Look the forecourt over before you go inside.,"Осмотрите двор, прежде чем войти."
+TEACH_OBJ_MOVE,Report for the night shift. The First Museum is at the end of the walkway.,Заступайте на ночную смену. Первый музей — в конце дорожки.
+TEACH_OBJ_OFFICE,Take up your post: the security office is in the west wing.,Займите пост: офис охраны — в западном крыле.
+TEACH_OBJ_PROTOCOL,The protocol screen names the device the breach needs. Read it.,"Экран протокола называет прибор, который нужен при прорыве. Прочтите его."
+TEACH_OBJ_SPRINT,Tonight you will have to cover ground fast. Try a run.,Ночью придётся передвигаться быстро. Попробуйте бег.
+TEACH_OBJ_TABLET,Back at the desk: the cameras show what you cannot see from here.,"Вернитесь к столу: камеры показывают то, чего отсюда не видно."
 TOOL_CHRONO_STABILIZER_HINT,Evens out the flow of time in the incident zone,Выравнивает ход времени в зоне аварии
 TOOL_CHRONO_STABILIZER_NAME,Chrono Stabilizer,Хроностабилизатор
 TOOL_CONTAINMENT_ROD_HINT,Damps the exhibit's radiation bloom,Гасит радиационное цветение экспоната
