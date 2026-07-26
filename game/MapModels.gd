@@ -49,8 +49,24 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 const TRIMESH_COLLISION := ["portal_arch"]
 
 
+## Instantiate `model_name` under `parent` at `world_position`.
+##
+## `rotation_y_deg` is the yaw (compass heading); `pitch_x_deg` is the tilt of
+## the model's own nose, positive = up, negative = DOWN. Both default to the
+## behaviour every existing call site relies on, so adding pitch to one
+## placement never disturbs the others.
+##
+## Why an X euler and not a look_at: Godot's default euler order is YXZ, so
+## `Vector3(pitch, yaw, 0)` yaws in world space first and then pitches about the
+## model's own local right axis. That is what a wall bracket does, and it is
+## already the convention the procedural CCTV fallback uses
+## (`FirstMuseumMap._camera` builds its pivot with `Vector3(-14, yaw, 0)`), so
+## an imported mount and a fallback mount given the same numbers now aim the
+## same way. Forward is -Z, so a NEGATIVE pitch points the lens at the floor:
+## -14 deg reproduces the fallback exactly, -20 to -30 suits a 3.0 m mount
+## covering a room whose ceiling is WALL_HEIGHT 3.4 m.
 static func place(parent: Node, model_name: String, world_position: Vector3,
-		scale_factor := 1.0, rotation_y_deg := 0.0) -> Node3D:
+		scale_factor := 1.0, rotation_y_deg := 0.0, pitch_x_deg := 0.0) -> Node3D:
 	# Every supplied museum asset is eligible. Authored call-site scale and
 	# rotation keep inconsistent source units under control; procedural geometry
 	# remains the fallback whenever import or instantiation fails.
@@ -70,7 +86,12 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 	var instance: Node3D = packed.instantiate()
 	instance.position = world_position
 	instance.scale = Vector3.ONE * scale_factor
-	instance.rotation_degrees.y = rotation_y_deg
+	# Read-modify-write rather than a fresh Vector3: roll (Z) stays whatever the
+	# imported scene root carried, exactly as when only yaw was assigned here.
+	var euler := instance.rotation_degrees
+	euler.x = pitch_x_deg
+	euler.y = rotation_y_deg
+	instance.rotation_degrees = euler
 	parent.add_child(instance)
 	# Imported museum pieces are static. Generate collision for visible exhibit
 	# meshes when the source GLB did not provide one; wall-mounted CCTV stays

@@ -157,11 +157,14 @@ func _build_stamina_ui() -> void:
 	panel.offset_top = -82.0
 	panel.offset_right = 284.0
 	panel.offset_bottom = -24.0
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.025, 0.035, 0.04, 0.86)
-	panel_style.border_color = Color(0.24, 0.34, 0.34, 0.9)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(7)
+	# UITheme.apply_panel() is deliberately NOT used here: it hands back
+	# panel_raised(), whose RADIUS_LG corners and PAD+4 margins push the combined
+	# minimum size past this panel's fixed 260x58 offsets, and Godot would grow
+	# the control to fit -- a layout change, which this restyle is not allowed to
+	# make. Same tokens, HUD-sized: RADIUS_SM is the nearest step to the old 7,
+	# and the default PAD_X/PAD_Y still leave the 232px bar room inside 260px.
+	var panel_style := UITheme.stylebox(UITheme.SURFACE_RAISED, UITheme.BORDER,
+		UITheme.BORDER_WIDTH, UITheme.RADIUS_SM)
 	panel.add_theme_stylebox_override("panel", panel_style)
 	layer.add_child(panel)
 	var box := VBoxContainer.new()
@@ -169,20 +172,21 @@ func _build_stamina_ui() -> void:
 	panel.add_child(box)
 	_stamina_label = Label.new()
 	_stamina_label.text = tr("HUD_STAMINA")
-	_stamina_label.add_theme_font_size_override("font_size", 13)
-	_stamina_label.add_theme_color_override("font_color", Color(0.72, 0.86, 0.82))
+	UITheme.apply_text(_stamina_label, UITheme.CAPTION, UITheme.MUTED)
 	box.add_child(_stamina_label)
 	_stamina_bar = ProgressBar.new()
 	_stamina_bar.custom_minimum_size = Vector2(232, 14)
 	_stamina_bar.max_value = max_stamina
 	_stamina_bar.value = stamina
 	_stamina_bar.show_percentage = false
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.08, 0.10, 0.11, 0.95)
-	background.set_corner_radius_all(3)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.30, 0.82, 0.62)
-	fill.set_corner_radius_all(3)
+	# Track and fill are drawn with zero border width and zero padding: Godot
+	# draws the fill over the full height of the bar, from the left edge, so a
+	# border on the track would be swallowed as the bar fills and any content
+	# margin on the fill would shift where 0% and 100% land. Colours only.
+	var background := UITheme.stylebox(UITheme.SURFACE, UITheme.BORDER, 0,
+		UITheme.RADIUS_SM, 0, 0)
+	var fill := UITheme.stylebox(UITheme.ACCENT, UITheme.ACCENT, 0,
+		UITheme.RADIUS_SM, 0, 0)
 	_stamina_bar.add_theme_stylebox_override("background", background)
 	_stamina_bar.add_theme_stylebox_override("fill", fill)
 	box.add_child(_stamina_bar)
@@ -196,7 +200,7 @@ func _update_stamina_ui() -> void:
 	var ratio := stamina / maxf(max_stamina, 1.0)
 	var fill := _stamina_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	if fill != null:
-		fill.bg_color = Color(0.92, 0.30, 0.22) if _exhausted else (Color(0.92, 0.66, 0.25) if ratio < 0.3 else Color(0.30, 0.82, 0.62))
+		fill.bg_color = UITheme.DANGER if _exhausted else (UITheme.WARNING if ratio < 0.3 else UITheme.ACCENT)
 	_stamina_label.text = tr("HUD_STAMINA_EXHAUSTED") if _exhausted else tr("HUD_STAMINA")
 
 

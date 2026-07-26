@@ -216,9 +216,16 @@ var _pre_test_time_left := 0.0
 var _pre_test_calm := 0.0
 var _pre_test_anomaly := ""
 var _message_time := 0.0
+# Fail and win live on their own CanvasLayer, above every screen a live shift
+# can raise -- see the layer table above _build_hud().
+var _overlay_layer: CanvasLayer = null
 var _fail_overlay: ColorRect = null
 var _fail_label: Label = null
 var _win_overlay: ColorRect = null
+var _win_label: Label = null
+# True when this save has already reached the ending at least once, read from
+# progress/completed. Only changes how the first objective of a run is framed.
+var _run_completed := false
 var _objective_entries: Dictionary = {}
 var _objective_priorities: Dictionary = {}
 
@@ -265,7 +272,14 @@ func _initialize() -> void:
 	_trial_manager.name = "RiftTrialManager"
 	add_child(_trial_manager)
 	_trial_manager.call("setup", self)
-	_set_objective(Loc.fmt("OBJ_NIGHT_INTRO", [_night]))
+	# A save that has already seen the ending is not on its first night ever, so
+	# it is not greeted with the first-night briefing that explains where the
+	# security office is. OBJ_NIGHT_RESTART is the same sentence the game uses
+	# every other time the core wakes up again, which is exactly what this is.
+	if _run_completed:
+		_set_objective(Loc.fmt("OBJ_NIGHT_RESTART", [_night]))
+	else:
+		_set_objective(Loc.fmt("OBJ_NIGHT_INTRO", [_night]))
 
 
 func _process(delta: float) -> void:
@@ -343,7 +357,7 @@ func _check_kill_plane() -> void:
 	else:
 		_player.set("velocity", Vector3.ZERO)
 		_player.global_position = target
-	_flash(tr("HUD_FALL_RESPAWN"), Color(0.86, 0.74, 0.52))
+	_flash(tr("HUD_FALL_RESPAWN"), UITheme.WARNING)
 
 
 # Prefer the last spot the player actually stood on -- PlayerController samples
@@ -424,7 +438,7 @@ func _start_accident() -> void:
 		_terminal_label.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), tr(str(info["readout"]))])
 	_set_screen_color(color)
 	_set_objective(Loc.fmt("OBJ_INCIDENT", [_incident_name(), _anomalies_left]))
-	_flash(tr("HUD_CONTAINMENT_BREACHED"), Color(1.0, 0.35, 0.3))
+	_flash(tr("HUD_CONTAINMENT_BREACHED"), UITheme.DANGER)
 	_show_protocol(info, color)
 	var am := _audio()
 	if am != null:
@@ -473,7 +487,7 @@ func _resolve() -> void:
 		_calm_time = CALM_TIME
 		_respawn_devices()
 		_set_objective(tr("OBJ_CORE_UNSTABLE"))
-		_flash(tr("HUD_ANOMALY_CLEARED"), Color(0.85, 0.95, 0.6))
+		_flash(tr("HUD_ANOMALY_CLEARED"), UITheme.SUCCESS)
 	elif _night >= MAX_NIGHT:
 		_win()
 	else:
@@ -481,7 +495,7 @@ func _resolve() -> void:
 		_set_player_controls(false)
 		_save_night(_night + 1)
 		_set_objective(Loc.fmt("OBJ_NIGHT_DONE", [_night]))
-		_flash(Loc.fmt("HUD_NIGHT_COMPLETE", [_night]), Color(0.5, 1.0, 0.6))
+		_flash(Loc.fmt("HUD_NIGHT_COMPLETE", [_night]), UITheme.SUCCESS)
 
 
 # The fail / night-done / win screens are read-only panels the player can only
@@ -520,12 +534,26 @@ func _set_player_controls(enabled: bool) -> void:
 # is what keeps those two resume paths clean. Sibling lookup, mirroring the way
 # SecurityCameraTablet._toggle() reaches back for this node.
 func _close_camera_tablet() -> void:
-	var parent := get_parent()
-	if parent == null:
-		return
-	var tablet := parent.get_node_or_null("SecurityCameraTablet")
+	var tablet := _camera_tablet()
 	if tablet != null and tablet.has_method("close"):
 		tablet.call("close")
+
+
+func _camera_tablet() -> Node:
+	var parent := get_parent()
+	if parent == null:
+		return null
+	return parent.get_node_or_null("SecurityCameraTablet")
+
+
+## True while the CCTV feed is up. The HUD asks because the tablet is a
+## full-screen diegetic screen with no opaque backing of its own: anything the
+## night HUD draws lands on top of the feed's own chrome no matter which
+## CanvasLayer it sits on. Same sibling lookup and same `_open` flag
+## MenuManager._gameplay_mouse_mode() reads.
+func _camera_tablet_open() -> bool:
+	var tablet := _camera_tablet()
+	return tablet != null and bool(tablet.get("_open"))
 
 
 func _fail() -> void:
@@ -599,11 +627,23 @@ func _advance_night() -> void:
 	_set_objective(Loc.fmt("OBJ_NIGHT_RESTART", [_night]))
 	var wing := str(NIGHT_CONFIG[_night].get("unlock", ""))
 	if wing != "":
-		_flash(Loc.fmt("HUD_NIGHT_WING_UNLOCKED", [_night, wing]), Color(0.7, 0.85, 1.0))
+		_flash(Loc.fmt("HUD_NIGHT_WING_UNLOCKED", [_night, wing]), UITheme.ACCENT)
 	else:
-		_flash(Loc.fmt("HUD_NIGHT", [_night]), Color(0.7, 0.85, 1.0))
+		_flash(Loc.fmt("HUD_NIGHT", [_night]), UITheme.ACCENT)
 
 
+# The end of the third night. Stage 8.7 buys the cheap half of an ending: the
+# expensive half (a cutscene) is a later task, and this is deliberately the
+# seam it gets built on -- _refresh_win_label() and the curtain below are the
+# two things it will replace.
+#
+# What changes here versus a HUD message:
+#   * the curtain is opaque and fades in, so the museum goes out instead of
+#     showing through a green tint that reads as "another notification";
+#   * the label is composed now, not once at scene build, so the screen can
+#     speak about the run that just ended;
+#   * the save records that this file reached the ending, separately from the
+#     night the next shift starts on -- see _save_night().
 func _win() -> void:
 	_state = STATE_WIN
 	# Confirm reloads the scene from here, so control is restored by the fresh
@@ -611,9 +651,14 @@ func _win() -> void:
 	_set_player_controls(false)
 	if _timer_label != null:
 		_timer_label.visible = false
+	_hide_protocol()
+	_refresh_win_label()
 	if _win_overlay != null:
 		_win_overlay.visible = true
-	_save_night(1)
+		_win_overlay.modulate.a = 0.0
+		create_tween().tween_property(_win_overlay, "modulate:a", 1.0, WIN_FADE)
+	_run_completed = true
+	_save_night(1, true)
 	_set_objective("")
 
 
@@ -621,12 +666,26 @@ func _load_night() -> int:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
 		return 1
+	_run_completed = bool(config.get_value("progress", "completed", false))
 	return clampi(int(config.get_value("progress", "night", 1)), 1, MAX_NIGHT)
 
 
-func _save_night(night: int) -> void:
+# `completed` is a separate fact from `night`, and writing only the night is
+# what made a finished game indistinguishable from one nobody had played: the
+# player who had just watched the ending was reloaded into the first-night
+# briefing ("Night 1. Look around the museum. The security office is in the
+# west wing."), which frames the museum as somewhere they have never been.
+# The existing row is loaded first so nothing else under progress/ is dropped;
+# MenuManager._reset_progress() still wipes the file wholesale, which is what
+# "reset" is supposed to mean.
+func _save_night(night: int, completed := false) -> void:
 	var config := ConfigFile.new()
+	config.load(SAVE_PATH)
 	config.set_value("progress", "night", clampi(night, 1, MAX_NIGHT))
+	if completed:
+		config.set_value("progress", "completed", true)
+		config.set_value("progress", "runs_completed",
+			int(config.get_value("progress", "runs_completed", 0)) + 1)
 	config.save(SAVE_PATH)
 
 
@@ -682,7 +741,7 @@ func _interact() -> void:
 					return
 			_begin_trial()
 		else:
-			_flash(tr("HUD_WRONG_TOOL"), Color(1.0, 0.45, 0.4))
+			_flash(tr("HUD_WRONG_TOOL"), UITheme.DANGER)
 		return
 	# Pick up a device.
 	if _carried_id == "":
@@ -694,7 +753,7 @@ func _interact() -> void:
 	if _near(TERMINAL_POS, INTERACT_DISTANCE) and _anomaly_id != "" and _state == STATE_ANOMALY:
 		var info: Dictionary = ANOMALIES[_anomaly_id]
 		var device_name := tr(str(EQUIPMENT[str(info["equipment"])]["name"]))
-		_flash("%s -> %s" % [tr(str(info["title"])), device_name], Color(0.7, 0.95, 0.8))
+		_flash("%s -> %s" % [tr(str(info["title"])), device_name], UITheme.SUCCESS)
 		_sfx("terminal_beep")
 
 
@@ -704,7 +763,7 @@ func _begin_trial() -> void:
 	_trial_active = true
 	_hide_protocol()
 	set_objective("trial", tr("OBJ_TRIAL"), 50)
-	_flash(tr("HUD_ENTER_POCKET"), Color(0.55, 0.75, 1.0))
+	_flash(tr("HUD_ENTER_POCKET"), UITheme.ACCENT)
 	_trial_manager.call("begin", _anomaly_id, _player)
 
 
@@ -722,7 +781,7 @@ func _complete_trial() -> void:
 		_calm_time = _pre_test_calm
 		if _timer_label != null and _state != STATE_ANOMALY:
 			_timer_label.visible = false
-		_flash(tr("ADMIN_TEST_DONE"), Color(0.55, 1.0, 0.7))
+		_flash(tr("ADMIN_TEST_DONE"), UITheme.SUCCESS)
 		return
 	_resolve()
 
@@ -738,12 +797,12 @@ func _pick_up(id: String) -> void:
 	body.rotation = Vector3.ZERO
 	body.scale = Vector3(0.8, 0.8, 0.8)
 	_set_collision(body, false)
-	_flash(Loc.fmt("HUD_TOOL_TAKEN", [tr(str(EQUIPMENT[id]["name"]))]), Color(0.85, 0.9, 0.8))
+	_flash(Loc.fmt("HUD_TOOL_TAKEN", [tr(str(EQUIPMENT[id]["name"]))]), UITheme.ON_SURFACE)
 	if id == "memory_reel" and not _memory_reel_used and _state == STATE_ANOMALY:
 		# Катушка памяти: одноразовый бонус времени за ночную смену.
 		_memory_reel_used = true
 		_time_left += 45.0
-		_flash(tr("HUD_MEMORY_REEL_BONUS"), Color(0.6, 0.85, 1.0))
+		_flash(tr("HUD_MEMORY_REEL_BONUS"), UITheme.ACCENT)
 	_sfx("pickup")
 
 
@@ -911,19 +970,6 @@ const ADMIN_DESCRIPTIONS := {
 }
 
 
-func _admin_button_style(bg_color: Color, border_color: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.border_color = border_color
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(9)
-	style.content_margin_left = 16.0
-	style.content_margin_right = 16.0
-	style.content_margin_top = 10.0
-	style.content_margin_bottom = 10.0
-	return style
-
-
 func _build_test_admin() -> void:
 	_admin_layer = CanvasLayer.new()
 	_admin_layer.name = "Test Admin Console"
@@ -931,7 +977,9 @@ func _build_test_admin() -> void:
 	_admin_layer.visible = false
 	add_child(_admin_layer)
 	var shade := ColorRect.new()
-	shade.color = Color(0.0, 0.01, 0.03, 0.8)
+	# Modal: the console eats the mouse and freezes the player, so the standard
+	# full-screen dim applies.
+	shade.color = UITheme.SCRIM
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_admin_layer.add_child(shade)
@@ -940,16 +988,7 @@ func _build_test_admin() -> void:
 	_admin_panel.anchor_top = 0.06
 	_admin_panel.anchor_right = 0.82
 	_admin_panel.anchor_bottom = 0.94
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.035, 0.05, 0.075, 0.985)
-	panel_style.border_color = Color(0.3, 0.65, 0.95)
-	panel_style.set_border_width_all(2)
-	panel_style.set_corner_radius_all(14)
-	panel_style.content_margin_left = 26.0
-	panel_style.content_margin_right = 26.0
-	panel_style.content_margin_top = 20.0
-	panel_style.content_margin_bottom = 20.0
-	_admin_panel.add_theme_stylebox_override("panel", panel_style)
+	UITheme.apply_panel(_admin_panel)
 	_admin_layer.add_child(_admin_panel)
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 10)
@@ -957,19 +996,17 @@ func _build_test_admin() -> void:
 	var header := Label.new()
 	header.text = tr("ADMIN_TITLE")
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.add_theme_font_size_override("font_size", 24)
-	header.add_theme_color_override("font_color", Color(0.62, 0.85, 1.0))
+	UITheme.apply_text(header, UITheme.TITLE, UITheme.ACCENT)
 	layout.add_child(header)
 	var sub := Label.new()
 	sub.text = tr("ADMIN_SUBTITLE")
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	sub.add_theme_font_size_override("font_size", 14)
-	sub.add_theme_color_override("font_color", Color(0.66, 0.74, 0.82))
+	UITheme.apply_text(sub, UITheme.LABEL, UITheme.MUTED)
 	layout.add_child(sub)
 	var divider := ColorRect.new()
 	divider.custom_minimum_size = Vector2(0, 2)
-	divider.color = Color(0.2, 0.42, 0.6)
+	divider.color = UITheme.BORDER
 	layout.add_child(divider)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -990,16 +1027,17 @@ func _build_test_admin() -> void:
 		if desc_key != "":
 			desc = tr(desc_key)
 		button.text = "%s\n%s" % [tr(str(info["title"])), desc]
-		button.focus_mode = Control.FOCUS_NONE
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.custom_minimum_size = Vector2(0, 62)
-		button.add_theme_font_size_override("font_size", 14)
-		button.add_theme_color_override("font_color", accent.lightened(0.35))
-		button.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-		button.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
-		button.add_theme_stylebox_override("normal", _admin_button_style(Color(0.05, 0.075, 0.11, 0.96), accent.darkened(0.25)))
-		button.add_theme_stylebox_override("hover", _admin_button_style(accent.darkened(0.72), accent))
-		button.add_theme_stylebox_override("pressed", _admin_button_style(accent.darkened(0.55), accent.lightened(0.2)))
+		# The console is mouse-driven with a free cursor, so it stays out of the
+		# tab order deliberately (the `false` argument), not by accident.
+		UITheme.apply_button(button, UITheme.LABEL, UITheme.ON_SURFACE, false)
+		# `accent` is the anomaly's fiction colour -- the same Color that lights
+		# the OmniLight3D and tints the fog, not a UI role -- so it survives the
+		# migration as the resting border only: identity without inventing a
+		# thirteenth text colour.
+		button.add_theme_stylebox_override("normal", UITheme.stylebox(
+			UITheme.SURFACE, accent, UITheme.BORDER_WIDTH, UITheme.RADIUS_MD))
 		button.pressed.connect(_admin_select_dimension.bind(id))
 		grid.add_child(button)
 	var footer := HBoxContainer.new()
@@ -1007,21 +1045,15 @@ func _build_test_admin() -> void:
 	layout.add_child(footer)
 	var close := Button.new()
 	close.text = tr("ADMIN_CLOSE")
-	close.focus_mode = Control.FOCUS_NONE
 	close.custom_minimum_size = Vector2(180, 42)
-	close.add_theme_font_size_override("font_size", 15)
-	close.add_theme_color_override("font_color", Color(0.85, 0.9, 0.95))
-	close.add_theme_stylebox_override("normal", _admin_button_style(Color(0.09, 0.1, 0.12, 0.95), Color(0.45, 0.5, 0.56)))
-	close.add_theme_stylebox_override("hover", _admin_button_style(Color(0.16, 0.18, 0.2, 0.95), Color(0.7, 0.75, 0.8)))
-	close.add_theme_stylebox_override("pressed", _admin_button_style(Color(0.2, 0.22, 0.25, 0.95), Color(0.85, 0.9, 0.95)))
+	UITheme.apply_button(close, UITheme.LABEL, UITheme.ON_SURFACE, false)
 	close.pressed.connect(_toggle_test_admin)
 	footer.add_child(close)
 	var note := Label.new()
 	note.text = tr("ADMIN_NOTE")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	note.add_theme_font_size_override("font_size", 13)
-	note.add_theme_color_override("font_color", Color(0.55, 0.62, 0.68))
+	UITheme.apply_text(note, UITheme.CAPTION, UITheme.MUTED)
 	footer.add_child(note)
 
 
@@ -1029,7 +1061,7 @@ func _toggle_test_admin() -> void:
 	if _admin_layer == null:
 		return
 	if _trial_active:
-		_flash(tr("HUD_FINISH_TRIAL_FIRST"), Color(1.0, 0.65, 0.35))
+		_flash(tr("HUD_FINISH_TRIAL_FIRST"), UITheme.WARNING)
 		return
 	var opening := not _admin_layer.visible
 	_admin_layer.visible = opening
@@ -1076,32 +1108,73 @@ func _admin_select_dimension(id: String) -> void:
 	if _win_overlay != null:
 		_win_overlay.visible = false
 	_hide_protocol()
-	_flash(Loc.fmt("ADMIN_TEST_PREFIX", [tr(str(ANOMALIES[id]["title"]))]), ANOMALIES[id]["color"] as Color)
+	_flash(Loc.fmt("ADMIN_TEST_PREFIX", [tr(str(ANOMALIES[id]["title"]))]), UITheme.ACCENT)
 	_begin_trial()
 
 
 # --- HUD (step 8) -----------------------------------------------------------
+#
+# CANVAS LAYERS -- the whole project's stack, low to high, so that "what draws
+# on top" is a decision instead of an accident of construction order:
+#
+#    5  Night HUD ................ here (objective, timer, hint, flash)
+#   10  SecurityCameraTablet ..... the CCTV feed the player raises
+#   11  GameplayEnhancements ..... anomaly effect readout
+#   12  Protocol Screen .......... here
+#   14  PlayerController ......... stamina panel
+#   15  Terminal Overlays ........ here (fail / win)
+#   20  MenuManager .............. main and pause menus
+#   40  TutorialPrologue
+#   60  Test admin console ....... here, debug builds only
+#
+# HUD_LAYER is the floor: the night HUD is painted on the world and everything
+# the player raises is held in front of it. It was never set before, so it fell
+# back to 1 -- below the tablet by luck rather than by choice.
+#
+# OVERLAY_LAYER sits above every in-world screen (tablet, effects, protocol,
+# stamina) because fail and win take the game away from the player: nothing
+# belonging to a live shift may draw over them. It stays below the pause menu,
+# which has to stay reachable, and below the F9 console.
+const HUD_LAYER := 5
+const OVERLAY_LAYER := 15
+## Seconds the ending curtain takes to close. Long enough to read as a fade.
+const WIN_FADE := 1.4
+
 
 func _build_hud() -> void:
 	_hud = CanvasLayer.new()
 	_hud.name = "Night HUD"
+	_hud.layer = HUD_LAYER
 	add_child(_hud)
-	_objective_label = _make_label(Vector4(0.01, 0.01, 0.62, 0.10), 15,
-		Color(0.85, 0.88, 0.8), HORIZONTAL_ALIGNMENT_LEFT)
-	_timer_label = _make_label(Vector4(0.40, 0.02, 0.60, 0.10), 30,
-		Color(1.0, 0.35, 0.3), HORIZONTAL_ALIGNMENT_CENTER)
+	# The objective band used to start at y = 0.01, which ran it straight through
+	# the CCTV tablet's 30 px feed name at (52, 18) -- and the one objective that
+	# names the camera to watch (OBJ_CCTV_CONFIRM, set by GameplayEnhancements) is
+	# read with the tablet up. The tablet draws no opaque backing, so no z-order
+	# separates the two glyph runs; the band moves instead. y = 0.10 clears both
+	# the tablet's header row (which ends at 58 px of 900) and the timer box
+	# above it, which ends at exactly 0.10.
+	_objective_label = _make_label(Vector4(0.01, 0.10, 0.62, 0.19), UITheme.LABEL,
+		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_LEFT)
+	_timer_label = _make_label(Vector4(0.40, 0.02, 0.60, 0.10), UITheme.TITLE,
+		UITheme.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
 	_timer_label.visible = false
-	_hint_label = _make_label(Vector4(0.10, 0.90, 0.90, 0.98), 17,
-		Color(0.9, 0.92, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
-	_message_label = _make_label(Vector4(0.10, 0.40, 0.90, 0.52), 26,
-		Color(1.0, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_hint_label = _make_label(Vector4(0.10, 0.90, 0.90, 0.98), UITheme.BODY,
+		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
+	_message_label = _make_label(Vector4(0.10, 0.40, 0.90, 0.52), UITheme.TITLE,
+		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
 	_message_label.modulate.a = 0.0
+	_overlay_layer = CanvasLayer.new()
+	_overlay_layer.name = "Terminal Overlays"
+	_overlay_layer.layer = OVERLAY_LAYER
+	add_child(_overlay_layer)
 	_fail_overlay = ColorRect.new()
-	_fail_overlay.color = Color(0.08, 0.0, 0.0, 0.82)
+	# A scrim, not a curtain: the night is still behind it and ENTER drops the
+	# player straight back into it.
+	_fail_overlay.color = UITheme.SCRIM
 	_fail_overlay.anchor_right = 1.0
 	_fail_overlay.anchor_bottom = 1.0
 	_fail_overlay.visible = false
-	_hud.add_child(_fail_overlay)
+	_overlay_layer.add_child(_fail_overlay)
 	_fail_label = Label.new()
 	_fail_label.text = "%s\n\n%s" % [tr("FAIL_TITLE"), tr("FAIL_RETRY")]
 	_fail_label.anchor_left = 0.12
@@ -1111,48 +1184,56 @@ func _build_hud() -> void:
 	_fail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_fail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_fail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_fail_label.add_theme_font_size_override("font_size", 24)
-	_fail_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.62))
+	UITheme.apply_text(_fail_label, UITheme.TITLE, UITheme.DANGER)
 	_fail_overlay.add_child(_fail_label)
 	_win_overlay = ColorRect.new()
-	_win_overlay.color = Color(0.0, 0.05, 0.03, 0.85)
+	# Opaque, unlike the fail scrim: at the end of the third night the museum
+	# goes out instead of showing through a green tint. _win() fades it in.
+	_win_overlay.color = UITheme.SURFACE
 	_win_overlay.anchor_right = 1.0
 	_win_overlay.anchor_bottom = 1.0
 	_win_overlay.visible = false
-	_hud.add_child(_win_overlay)
-	var win_label := Label.new()
+	_overlay_layer.add_child(_win_overlay)
+	_win_label = Label.new()
+	_win_label.anchor_right = 1.0
+	_win_label.anchor_bottom = 1.0
+	_win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_win_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_win_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UITheme.apply_text(_win_label, UITheme.TITLE, UITheme.SUCCESS)
+	_win_overlay.add_child(_win_label)
+	_refresh_win_label()
+
+
+## Compose the end card. Called from _win() and not only from _build_hud(): the
+## ending is the one screen that has to speak about the run that just finished,
+## and a label written once at scene build has nothing to say. Stage 8.7 keeps
+## the wording the catalogue already ships; the cutscene that replaces this
+## screen is a later task, and this is the seam it will be built on.
+func _refresh_win_label() -> void:
+	if _win_label == null:
+		return
 	# HUD_WIN is the scoreboard ("three nights done") and ends with the ENTER
 	# prompt; STORY_ENDING is the closing line of the story and follows it,
 	# separated by a blank line. Same shape as _fail_label above.
-	win_label.text = "%s\n\n%s" % [tr("HUD_WIN"), tr("STORY_ENDING")]
-	win_label.anchor_right = 1.0
-	win_label.anchor_bottom = 1.0
-	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	win_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	win_label.add_theme_font_size_override("font_size", 26)
-	win_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
-	_win_overlay.add_child(win_label)
+	_win_label.text = "%s\n\n%s" % [tr("HUD_WIN"), tr("STORY_ENDING")]
 
 
+## The protocol panel keeps the anomaly's own colour as its border: `accent` is
+## the fiction colour that also drives the anomaly light and the fog, and the
+## border is the one place UITheme allows a non-token colour to survive. The
+## fill and the geometry come from the shared factory; only the generous 30/20
+## content margins are kept, because they are this panel's layout.
 func _protocol_style(accent: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.045, 0.06, 0.97)
-	style.border_color = accent
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 30.0
-	style.content_margin_right = 30.0
-	style.content_margin_top = 20.0
-	style.content_margin_bottom = 20.0
-	return style
+	return UITheme.stylebox(UITheme.SURFACE_RAISED, accent, UITheme.BORDER_WIDTH,
+		UITheme.RADIUS_MD, 30, 20)
 
 
 func _proto_label(size: int, color: Color, align: HorizontalAlignment) -> Label:
 	var label := Label.new()
 	label.horizontal_alignment = align
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_color_override("font_color", color)
+	UITheme.apply_text(label, size, color)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
 
@@ -1164,7 +1245,10 @@ func _build_protocol_screen() -> void:
 	_protocol_layer.visible = false
 	add_child(_protocol_layer)
 	var dim := ColorRect.new()
-	dim.color = Color(0.008, 0.012, 0.028, 0.72)
+	# SURFACE at the panel's own 72%, not UITheme.SCRIM (88%): the protocol screen
+	# is a timed readout the player keeps walking behind, so it must not black the
+	# museum out the way a modal does.
+	dim.color = Color(UITheme.SURFACE, 0.72)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_protocol_layer.add_child(dim)
@@ -1174,32 +1258,37 @@ func _build_protocol_screen() -> void:
 	_protocol_panel.anchor_right = 0.74
 	_protocol_panel.anchor_bottom = 0.8
 	_protocol_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(Color(0.4, 0.7, 0.9)))
+	# Placeholder border until the first anomaly rolls; _show_protocol() repaints
+	# it with that anomaly's colour.
+	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(UITheme.BORDER_ACCENT))
 	_protocol_layer.add_child(_protocol_panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_protocol_panel.add_child(box)
-	var header := _proto_label(15, Color(0.55, 0.68, 0.78), HORIZONTAL_ALIGNMENT_CENTER)
+	var header := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	header.text = tr("HUD_PROTO_HEADER")
 	box.add_child(header)
-	_proto_title = _proto_label(25, Color(0.95, 0.55, 0.45), HORIZONTAL_ALIGNMENT_CENTER)
+	_proto_title = _proto_label(UITheme.TITLE, UITheme.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_proto_title)
 	var divider := ColorRect.new()
 	divider.custom_minimum_size = Vector2(0, 2)
-	divider.color = Color(0.25, 0.35, 0.42)
+	divider.color = UITheme.BORDER
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(divider)
-	var need := _proto_label(15, Color(0.6, 0.72, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
+	var need := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	need.text = tr("HUD_PROTO_TAKE")
 	box.add_child(need)
-	_proto_item = _proto_label(33, Color(0.95, 0.9, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	# The one thing the player has to leave the screen remembering, so it carries
+	# the accent instead of each anomaly's own tint (which the border already
+	# shows, and which no longer has to clear a text contrast ratio).
+	_proto_item = _proto_label(UITheme.TITLE, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_proto_item)
-	_proto_purpose = _proto_label(17, Color(0.75, 0.85, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
+	_proto_purpose = _proto_label(UITheme.BODY, UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_proto_purpose)
-	_proto_status = _proto_label(16, Color(0.62, 0.74, 0.7), HORIZONTAL_ALIGNMENT_LEFT)
+	_proto_status = _proto_label(UITheme.BODY, UITheme.MUTED, HORIZONTAL_ALIGNMENT_LEFT)
 	box.add_child(_proto_status)
-	var footer := _proto_label(14, Color(0.5, 0.58, 0.64), HORIZONTAL_ALIGNMENT_CENTER)
+	var footer := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	footer.text = tr("HUD_PROTO_FOOTER")
 	box.add_child(footer)
 
@@ -1213,7 +1302,6 @@ func _show_protocol(info: Dictionary, accent: Color) -> void:
 		equip_name = tr(str(EQUIPMENT[equip_id]["name"]))
 	_proto_title.text = Loc.fmt("HUD_PROTO_TITLE", [tr(str(info["title"]))])
 	_proto_item.text = equip_name.to_upper()
-	_proto_item.add_theme_color_override("font_color", accent.lightened(0.4))
 	var hint_key := str(TOOL_HINTS.get(equip_id, ""))
 	_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
 	_proto_status.text = Loc.fmt("HUD_PROTO_STATUS", [_night, _incident_name()])
@@ -1241,8 +1329,11 @@ func _make_label(anchors: Vector4, size: int, color: Color,
 	label.anchor_bottom = anchors.w
 	label.horizontal_alignment = align
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_color_override("font_color", color)
+	UITheme.apply_text(label, size, color)
+	# The outline stays a literal. It is not a palette colour: these four labels
+	# are drawn straight onto the 3D museum, where the background is whatever the
+	# player happens to be looking at, and a black halo is a legibility measure
+	# rather than a surface. UITheme has no token for it by design.
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	label.add_theme_constant_override("outline_size", 6)
 	_hud.add_child(label)
@@ -1253,6 +1344,15 @@ func _update_hint() -> void:
 	if _hint_label == null or _player == null:
 		return
 	var hint := ""
+	# The hint sits at y 0.90..0.98, which is where the tablet prints its own
+	# control legend (bottom-left, 44 px up). The player cannot act on an
+	# interaction prompt while holding the tablet up anyway -- controls are off --
+	# so the prompt stands down for as long as the feed is on screen. The
+	# objective line above does the opposite: it is moved, not hidden, because
+	# reading which camera to watch is the whole reason the tablet is up.
+	if _camera_tablet_open():
+		_hint_label.text = ""
+		return
 	if _state != STATE_FAILED and _state != STATE_WIN and _state != STATE_NIGHT_DONE:
 		if _carried_id != "":
 			var carried_name := tr(str(EQUIPMENT[_carried_id]["name"]))
@@ -1302,6 +1402,11 @@ func _refresh_objective() -> void:
 	_objective_label.text = text
 
 
+## Transient banner across the middle of the screen. `color` is the one thing
+## every caller has to decide, and every caller now passes a UITheme role
+## (DANGER for a breach, SUCCESS for a containment, WARNING for a recoverable
+## slip, ACCENT for a milestone) rather than its own approximation of one --
+## which is why the override below is the last raw colour call in the file.
 func _flash(text: String, color: Color) -> void:
 	if _message_label == null:
 		return

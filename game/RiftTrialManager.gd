@@ -31,7 +31,7 @@ var _saved := Transform3D.IDENTITY
 var _layer: CanvasLayer
 var _title: Label
 var _status: Label
-var _hint_panel: ColorRect
+var _hint_panel: Panel
 var _hint: Label
 var _hint_time := 0.0
 var _active_trial: RiftTrial
@@ -988,10 +988,17 @@ func _mark(body:StaticBody3D)->void:
 	var visual:=body.get_child(1) as MeshInstance3D; var mat:=visual.material_override as StandardMaterial3D; mat.emission=Color(.4,1,.7); mat.albedo_color=Color(.08,.4,.23)
 func _find_label(body:Node)->Label3D: return body.get_node_or_null("Label") as Label3D
 
+# Stage 6.2: both strips are Panels rather than ColorRects now, because a
+# ColorRect has no stylebox and therefore cannot take UITheme.apply_panel() --
+# it can only be handed a flat fill, which is the ad-hoc styling this migration
+# exists to remove. Every anchor is byte-for-byte the one that was here before;
+# only the fill, the hairline and the type scale changed. The objective strip is
+# the page-level surface and the teaching strip the raised one, so the hint
+# genuinely reads as floating above the objective it interrupts.
 func _build_hud()->void:
 	_layer=CanvasLayer.new(); _layer.layer=30; _layer.visible=false; add_child(_layer)
-	var panel:=ColorRect.new(); panel.color=Color(.01,.02,.035,.94); panel.anchor_left=.14; panel.anchor_top=.025; panel.anchor_right=.86; panel.anchor_bottom=.17; panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _layer.add_child(panel)
-	_title=Label.new(); _title.anchor_right=1.; _title.anchor_bottom=.4; _title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _title.add_theme_font_size_override("font_size",24); _title.add_theme_color_override("font_color",Color(.65,.82,1)); _title.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_title)
-	_status=Label.new(); _status.anchor_top=.4; _status.anchor_right=1.; _status.anchor_bottom=1.; _status.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _status.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; _status.add_theme_font_size_override("font_size",16); _status.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_status)
-	_hint_panel=ColorRect.new(); _hint_panel.color=Color(.02,.03,.05,.9); _hint_panel.anchor_left=.14; _hint_panel.anchor_top=.185; _hint_panel.anchor_right=.86; _hint_panel.anchor_bottom=.295; _hint_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.visible=false; _layer.add_child(_hint_panel)
-	_hint=Label.new(); _hint.anchor_right=1.; _hint.anchor_bottom=1.; _hint.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _hint.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _hint.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; _hint.add_theme_font_size_override("font_size",17); _hint.add_theme_color_override("font_color",Color(.98,.86,.55)); _hint.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.add_child(_hint)
+	var panel:=Panel.new(); panel.anchor_left=.14; panel.anchor_top=.025; panel.anchor_right=.86; panel.anchor_bottom=.17; panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; UITheme.apply_panel(panel,false); _layer.add_child(panel)
+	_title=Label.new(); _title.anchor_right=1.; _title.anchor_bottom=.4; _title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; UITheme.apply_text(_title,UITheme.TITLE,UITheme.ACCENT); _title.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_title)
+	_status=Label.new(); _status.anchor_top=.4; _status.anchor_right=1.; _status.anchor_bottom=1.; _status.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _status.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; UITheme.apply_text(_status,UITheme.BODY); _status.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_status)
+	_hint_panel=Panel.new(); _hint_panel.anchor_left=.14; _hint_panel.anchor_top=.185; _hint_panel.anchor_right=.86; _hint_panel.anchor_bottom=.295; _hint_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.visible=false; UITheme.apply_panel(_hint_panel,true); _layer.add_child(_hint_panel)
+	_hint=Label.new(); _hint.anchor_right=1.; _hint.anchor_bottom=1.; _hint.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _hint.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _hint.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; UITheme.apply_text(_hint,UITheme.BODY,UITheme.WARNING); _hint.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.add_child(_hint)

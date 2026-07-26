@@ -45,7 +45,7 @@ ANOMALY_YELLOW_TITLE,YELLOW LIMIT,ЖЁЛТЫЙ ПРЕДЕЛ
 CAM_ACCESS_OFFICE_ONLY,CCTV access is only available from the security office.,Доступ к CCTV возможен только из офиса охраны.
 CAM_ATRIUM_EAST,Atrium — East,Атриум — восток
 CAM_ATRIUM_WEST,Atrium — West,Атриум — запад
-CAM_BASEMENT_LIFT,Basement Lift,Лифт в подвал
+CAM_BASEMENT_LIFT,Atrium — Power Panel,Атриум — электрощит
 CAM_ENTRANCE,Entrance,Вход
 CAM_HINT_CONTROLS,"TAB / Y — exit  |  arrows / right stick — camera  |  , . / LT / RT — switch feed  |  F / RB — floodlight","TAB / Y — выйти  |  стрелки / правый стик — камера  |  , . / LT / RT — смена камеры  |  F / RB — прожектор"
 CAM_PLANETARIUM,Planetarium,Планетарий
@@ -62,7 +62,7 @@ CAM_ROOM_WING_D,Wing D,Крыло D
 CAM_WATCH_POST,Observer Post,Пост наблюдателя
 CAM_WING_A_GRAVITY,Wing A — Gravity,Крыло A — гравитация
 CAM_WING_B_TIME,Wing B — Time,Крыло B — время
-CAM_WING_C_DOOR,Wing C Door,Дверь крыла C
+CAM_WING_C_DOOR,Wing C — Space,Крыло C — космос
 CAM_WING_D_MASS,Wing D — Mass,Крыло D — масса
 EXHIBIT_BROKEN_CLOCK,Broken Clock,Сломанные часы
 EXHIBIT_CENTRAL_CORE,the central core,центральное ядро
@@ -151,6 +151,12 @@ HUD_TOOL_LENS,LENS: rift %d m away,ЛИНЗА: разрыв в %d м
 HUD_TOOL_PRISM,PRISM: anomaly influence weakened,ПРИЗМА: влияние аномалии ослаблено
 HUD_TOOL_TAKEN,Device taken: %s,Взят прибор: %s
 HUD_TOOL_THREAD,RETURN THREAD: %d m to the rift,НИТЬ ВОЗВРАТА: %d м до разрыва
+HUD_WATCH_BEARING_AHEAD,AHEAD OF YOU,ПРЯМО ПЕРЕД ВАМИ
+HUD_WATCH_BEARING_BEHIND,BEHIND YOU,У ВАС ЗА СПИНОЙ
+HUD_WATCH_BEARING_LEFT,TO YOUR LEFT,СЛЕВА ОТ ВАС
+HUD_WATCH_BEARING_RIGHT,TO YOUR RIGHT,СПРАВА ОТ ВАС
+HUD_WATCH_CRITICAL,IT IS IN THE ROOM — LOWER THE TABLET (TAB),ОН УЖЕ РЯДОМ — ОПУСТИТЕ ПЛАНШЕТ (TAB)
+HUD_WATCH_MOTION,"!! MOTION SENSOR — %d m, %s","!! ДАТЧИК ДВИЖЕНИЯ — %d м, %s"
 HUD_WIN,SHIFT OVER\nAll three nights are done. The museum sleeps again.\n\nENTER - start over,СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.\n\nENTER - начать заново
 HUD_WRONG_TOOL,The device has no effect. Check the terminal readout.,Прибор не действует. Проверьте показания терминала.
 MENU_BACK,Back,Назад

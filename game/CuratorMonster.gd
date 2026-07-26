@@ -139,6 +139,14 @@ func _face(direction: Vector3, delta: float) -> void:
 func _is_observed() -> bool:
 	if _player_camera == null:
 		return false
+	# Only the camera actually rendering can observe anything. A parked camera
+	# keeps its last transform, so is_position_in_frustum() below would happily
+	# answer for a viewpoint nobody is looking through — the CCTV tablet takes
+	# the viewport this way, and so does the intro cinematic. Camera3D.current
+	# resolves to `get_viewport().get_camera_3d() == self` at runtime, which
+	# lets the Curator stay ignorant of whatever stole the view.
+	if not _player_camera.current:
+		return false
 	var head := global_position + Vector3.UP * EYE_HEIGHT
 	if not _player_camera.is_position_in_frustum(head):
 		return false

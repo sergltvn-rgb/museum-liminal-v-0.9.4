@@ -138,7 +138,10 @@ func _build_ui() -> void:
 	add_child(_layer)
 
 	var panel := ColorRect.new()
-	panel.color = Color(0.02, 0.03, 0.05, 0.9)
+	# ColorRect, not PanelContainer, so the fill is a property rather than a
+	# stylebox: UITheme.apply_panel() does not apply. The token still does --
+	# a raised surface is exactly what this is. Alpha is kept as it was.
+	panel.color = Color(UITheme.SURFACE_RAISED, 0.9)
 	panel.anchor_left = 0.62
 	panel.anchor_top = 0.08
 	panel.anchor_right = 0.98
@@ -160,20 +163,17 @@ func _build_ui() -> void:
 
 	_title = Label.new()
 	_title.text = tr("TUTORIAL_TITLE")
-	_title.add_theme_font_size_override("font_size", 20)
-	_title.add_theme_color_override("font_color", Color(0.65, 0.82, 1.0))
+	UITheme.apply_text(_title, UITheme.SECTION, UITheme.ACCENT)
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_title)
 
 	_checklist = Label.new()
-	_checklist.add_theme_font_size_override("font_size", 16)
-	_checklist.add_theme_color_override("font_color", Color(0.85, 0.9, 0.92))
+	UITheme.apply_text(_checklist, UITheme.BODY, UITheme.ON_SURFACE)
 	_checklist.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_checklist)
 
 	_hint = Label.new()
-	_hint.add_theme_font_size_override("font_size", 15)
-	_hint.add_theme_color_override("font_color", Color(0.95, 0.82, 0.35))
+	UITheme.apply_text(_hint, UITheme.LABEL, UITheme.WARNING)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_hint)
 
@@ -185,8 +185,7 @@ func _build_ui() -> void:
 	skip.anchor_right = 1.0
 	skip.anchor_top = 0.93
 	skip.anchor_bottom = 0.98
-	skip.add_theme_font_size_override("font_size", 14)
-	skip.add_theme_color_override("font_color", Color(0.55, 0.6, 0.66))
+	UITheme.apply_text(skip, UITheme.LABEL, UITheme.MUTED)
 	skip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.add_child(skip)
 
@@ -194,7 +193,7 @@ func _build_ui() -> void:
 	# localization key while the catalogue is still being rebuilt.
 	# Anchors are set before add_child so the offsets stay at zero.
 	_skip_track = ColorRect.new()
-	_skip_track.color = Color(0.10, 0.12, 0.15, 0.85)
+	_skip_track.color = Color(UITheme.SURFACE, 0.85)
 	_skip_track.anchor_left = 0.40
 	_skip_track.anchor_right = 0.60
 	_skip_track.anchor_top = 0.962
@@ -204,7 +203,9 @@ func _build_ui() -> void:
 	_layer.add_child(_skip_track)
 
 	_skip_fill = ColorRect.new()
-	_skip_fill.color = Color(0.95, 0.82, 0.35, 0.95)
+	# Same amber as the hint text above: this bar is the "you are about to leave"
+	# caution, and the two must not drift apart.
+	_skip_fill.color = Color(UITheme.WARNING, 0.95)
 	_skip_fill.anchor_left = 0.0
 	_skip_fill.anchor_top = 0.0
 	_skip_fill.anchor_right = 0.0
@@ -378,7 +379,7 @@ func _show_completion_banner() -> void:
 	# Covers the checklist and the skip hint: with the tutorial over, both are
 	# stale, and the last thing on screen should be the one line that matters.
 	var veil := ColorRect.new()
-	veil.color = Color(0.02, 0.03, 0.05, 0.88)
+	veil.color = UITheme.SCRIM
 	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.add_child(veil)
@@ -388,8 +389,7 @@ func _show_completion_banner() -> void:
 	done.set_anchors_preset(Control.PRESET_FULL_RECT)
 	done.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	done.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	done.add_theme_font_size_override("font_size", 34)
-	done.add_theme_color_override("font_color", Color(0.55, 1.0, 0.72))
+	UITheme.apply_text(done, UITheme.TITLE, UITheme.SUCCESS)
 	done.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	veil.add_child(done)
 	_sfx("resolve")

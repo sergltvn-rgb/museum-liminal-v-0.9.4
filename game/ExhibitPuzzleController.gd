@@ -3,26 +3,53 @@ extends Node
 ## systems. All gameplay puzzles now live exclusively in RiftTrialManager.
 
 const STATE_ANOMALY := 2
+
+# Feed indices into SecurityCameraTablet.CAMS -- 0-based, so index 4 is "CAM 05".
+# Every exhibit names the feed that can actually SEE it. GameplayEnhancements
+# only compares indices when it runs the confirmation scan, so a wrong index
+# means the player completes "confirm the source with your own eyes" while the
+# monitor shows a wall.
+#
+# Every index below is a measured sightline, not a guess: test_map_verification
+# raycasts each mount to each exhibit's anchor in the built scene, and the
+# clearances quoted here were read off that same cast.
+const CAM_WING_A_GRAVITY := 4  # (16.4, 3.0, -7.8) -- inside Gravity Wing A
+const CAM_WING_B_TIME := 5     # (-11.8, 3.0, -16.4) -- inside Time Wing B
+# (42.2, 2.9, 6.8) -- south-west corner of Mass Wing D, the only feed covering
+# the wing, and now the only one it needs: Superheavy Sphere 13.92 m, Dense
+# Ingot 5.31 m, Mass Pendulum 16.10 m, all clear. From the wing's other west
+# corner, where this post used to hang, the imported superheavy_sphere collider
+# stood across the line to the Mass Pendulum and stopped the ray 13.23 m short.
+const CAM_WING_D_MASS := 10
+# (33.6, 2.9, -30.8) -- south-east corner of Space Wing C, aimed back down the
+# wing at (24, 1.0, -24). All three Wing C exhibits are clear from it: Portal
+# Arch 14.14 m (the ray meets the arch's own imported mesh), Star Globe 15.52 m,
+# Orrery 5.43 m. The post used to hang at (9.6, 2.9, -20.6) inside Time Wing B,
+# on the wrong side of the solid wall at x=13, where it saw none of them -- Wing
+# C has exactly one aperture, the 1.8 m doorway at z=-24, and no mount outside
+# the wing threads it. The blast door is still on this feed, 21.7 m away and
+# 17 deg off the optical axis.
+const CAM_WING_C_SPACE := 6
 const EXHIBITS := {
 	"gravity_surge": [
-		{"name":"EXHIBIT_FALLING_CUBE", "wing":"EXHIBIT_WING_A", "origin":Vector3(21.5,0,-4.5), "anchor":"Anomaly Anchor - Falling Cube Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"EXHIBIT_INVERSION_ROOM", "wing":"EXHIBIT_WING_A", "origin":Vector3(28,0,-4.5), "anchor":"Anomaly Anchor - Inversion Room Exhibit", "rule":"descending", "scale":"small"},
-		{"name":"EXHIBIT_LEVITATING_COLUMN", "wing":"EXHIBIT_WING_A", "origin":Vector3(35.5,0,-4.5), "anchor":"Anomaly Anchor - Levitating Column Exhibit", "rule":"outside", "scale":"large"},
+		{"name":"EXHIBIT_FALLING_CUBE", "wing":"EXHIBIT_WING_A", "origin":Vector3(21.5,0,-4.5), "anchor":"Anomaly Anchor - Falling Cube Exhibit", "rule":"ascending", "scale":"large", "camera":CAM_WING_A_GRAVITY},
+		{"name":"EXHIBIT_INVERSION_ROOM", "wing":"EXHIBIT_WING_A", "origin":Vector3(28,0,-4.5), "anchor":"Anomaly Anchor - Inversion Room Exhibit", "rule":"descending", "scale":"small", "camera":CAM_WING_A_GRAVITY},
+		{"name":"EXHIBIT_LEVITATING_COLUMN", "wing":"EXHIBIT_WING_A", "origin":Vector3(35.5,0,-4.5), "anchor":"Anomaly Anchor - Levitating Column Exhibit", "rule":"outside", "scale":"large", "camera":CAM_WING_A_GRAVITY},
 	],
 	"temporal_drift": [
-		{"name":"EXHIBIT_BROKEN_CLOCK", "wing":"EXHIBIT_WING_B", "origin":Vector3(-8,0,-27.5), "anchor":"Anomaly Anchor - Broken Clock Exhibit", "rule":"ascending", "scale":"small"},
-		{"name":"EXHIBIT_FROZEN_DROP", "wing":"EXHIBIT_WING_B", "origin":Vector3(0,0,-27.5), "anchor":"Anomaly Anchor - Frozen Drop Exhibit", "rule":"odd_even", "scale":"small"},
-		{"name":"EXHIBIT_TIME_LOOP", "wing":"EXHIBIT_WING_B", "origin":Vector3(8,0,-27.5), "anchor":"Anomaly Anchor - Time Loop Exhibit", "rule":"descending", "scale":"normal"},
+		{"name":"EXHIBIT_BROKEN_CLOCK", "wing":"EXHIBIT_WING_B", "origin":Vector3(-8,0,-27.5), "anchor":"Anomaly Anchor - Broken Clock Exhibit", "rule":"ascending", "scale":"small", "camera":CAM_WING_B_TIME},
+		{"name":"EXHIBIT_FROZEN_DROP", "wing":"EXHIBIT_WING_B", "origin":Vector3(0,0,-27.5), "anchor":"Anomaly Anchor - Frozen Drop Exhibit", "rule":"odd_even", "scale":"small", "camera":CAM_WING_B_TIME},
+		{"name":"EXHIBIT_TIME_LOOP", "wing":"EXHIBIT_WING_B", "origin":Vector3(8,0,-27.5), "anchor":"Anomaly Anchor - Time Loop Exhibit", "rule":"descending", "scale":"normal", "camera":CAM_WING_B_TIME},
 	],
 	"void_rift": [
-		{"name":"EXHIBIT_PORTAL_ARCH", "wing":"EXHIBIT_WING_C", "origin":Vector3(24,0,-20.5), "anchor":"Anomaly Anchor - Portal Arch Exhibit", "rule":"outside", "scale":"normal"},
-		{"name":"EXHIBIT_STAR_GLOBE", "wing":"EXHIBIT_WING_C", "origin":Vector3(18.5,0,-27.5), "anchor":"Anomaly Anchor - Star Globe Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"EXHIBIT_ORRERY", "wing":"EXHIBIT_WING_C", "origin":Vector3(29.5,0,-27.5), "anchor":"Anomaly Anchor - Orrery Exhibit", "rule":"odd_even", "scale":"small"},
+		{"name":"EXHIBIT_PORTAL_ARCH", "wing":"EXHIBIT_WING_C", "origin":Vector3(24,0,-20.5), "anchor":"Anomaly Anchor - Portal Arch Exhibit", "rule":"outside", "scale":"normal", "camera":CAM_WING_C_SPACE},
+		{"name":"EXHIBIT_STAR_GLOBE", "wing":"EXHIBIT_WING_C", "origin":Vector3(18.5,0,-27.5), "anchor":"Anomaly Anchor - Star Globe Exhibit", "rule":"ascending", "scale":"large", "camera":CAM_WING_C_SPACE},
+		{"name":"EXHIBIT_ORRERY", "wing":"EXHIBIT_WING_C", "origin":Vector3(29.5,0,-27.5), "anchor":"Anomaly Anchor - Orrery Exhibit", "rule":"odd_even", "scale":"small", "camera":CAM_WING_C_SPACE},
 	],
 	"radiation_bloom": [
-		{"name":"EXHIBIT_SUPERHEAVY_SPHERE", "wing":"EXHIBIT_WING_D", "origin":Vector3(52,0,-3), "anchor":"Anomaly Anchor - Superheavy Sphere Exhibit", "rule":"descending", "scale":"large"},
-		{"name":"EXHIBIT_DENSE_INGOT", "wing":"EXHIBIT_WING_D", "origin":Vector3(46.5,0,4), "anchor":"Anomaly Anchor - Dense Ingot Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"EXHIBIT_MASS_PENDULUM", "wing":"EXHIBIT_WING_D", "origin":Vector3(58,0,4), "anchor":"Anomaly Anchor - Mass Pendulum Exhibit", "rule":"odd_even", "scale":"normal"},
+		{"name":"EXHIBIT_SUPERHEAVY_SPHERE", "wing":"EXHIBIT_WING_D", "origin":Vector3(52,0,-3), "anchor":"Anomaly Anchor - Superheavy Sphere Exhibit", "rule":"descending", "scale":"large", "camera":CAM_WING_D_MASS},
+		{"name":"EXHIBIT_DENSE_INGOT", "wing":"EXHIBIT_WING_D", "origin":Vector3(46.5,0,4), "anchor":"Anomaly Anchor - Dense Ingot Exhibit", "rule":"ascending", "scale":"large", "camera":CAM_WING_D_MASS},
+		{"name":"EXHIBIT_MASS_PENDULUM", "wing":"EXHIBIT_WING_D", "origin":Vector3(58,0,4), "anchor":"Anomaly Anchor - Mass Pendulum Exhibit", "rule":"odd_even", "scale":"normal", "camera":CAM_WING_D_MASS},
 	],
 }
 
@@ -66,9 +93,10 @@ func _choose_exhibit(night: int) -> Dictionary:
 			var wing := str(entry.get("wing", ""))
 			var minimum_night := 3 if "EXHIBIT_WING_D" in wing else (2 if "EXHIBIT_WING_C" in wing else 1)
 			if night >= minimum_night:
-				var candidate: Dictionary = entry.duplicate(true)
-				candidate["camera"] = 10 if "EXHIBIT_WING_D" in wing else (6 if "EXHIBIT_WING_C" in wing else (5 if "EXHIBIT_WING_B" in wing else 4))
-				candidates.append(candidate)
+				# The feed comes from the entry, not from the wing. Deriving it per
+				# wing assumed one camera covers a whole wing, which is how all
+				# three Wing C exhibits ended up on a feed that faces a wall.
+				candidates.append(entry.duplicate(true))
 	var selected: Dictionary = candidates.pick_random()
 	if candidates.size() > 1:
 		while str(selected.get("name", "")) == _last_exhibit:

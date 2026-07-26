@@ -68,14 +68,15 @@ func _box(parent: Node, node_name: String, box_position: Vector3, size: Vector3,
 
 func _cylinder(parent: Node, node_name: String, cylinder_position: Vector3,
 		radius: float, height: float, color: Color,
-		horizontal := false, emission_energy := 0.0) -> MeshInstance3D:
+		horizontal := false, emission_energy := 0.0,
+		with_collision := true) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.height = height
 	mesh.bottom_radius = radius
 	mesh.top_radius = radius
 	var size := Vector3(radius * 2.0, height, radius * 2.0)
 	var inst := _primitive(parent, node_name, cylinder_position, mesh, size,
-		color, false, emission_energy, 0.0)
+		color, false, emission_energy, 0.0, with_collision)
 	if horizontal:
 		# Lay the cylinder on its side (default points up along Y).
 		inst.rotate_z(deg_to_rad(90))
@@ -203,8 +204,32 @@ func _primitive(parent: Node, node_name: String, prim_position: Vector3,
 	return instance
 
 
+# --- Signage the security feeds must not see --------------------------------
+#
+# Three families of Label3D are museum signage to a player standing in front of
+# them and pure debug overlay through a monitor: the room name floating in the
+# middle of every room (_add_room), the mount tag above every CCTV post
+# (_camera) and the English notices on the sealed wing doors (_add_locked_doors,
+# unlock_wing). Because Label3D is billboarded they turn to face whatever camera
+# is rendering, so every one of the eleven feeds used to show a fan of text
+# swivelling to greet it.
+#
+# They are not deleted -- they are real world-building on foot -- they are moved
+# onto their own visual layer. The player camera, the intro camera and the editor
+# preview camera all keep Godot's default all-layers cull_mask and still see
+# them; _hide_signage_from_cctv() drops this one bit from the tablet's feed
+# cameras. Layer 20 is the last of the twenty and nothing else in the project
+# touches `layers` or `cull_mask` at all.
+const CCTV_HIDDEN_LAYER := 20
+const CCTV_HIDDEN_MASK := 1 << (CCTV_HIDDEN_LAYER - 1)
+## Identifies the feed cameras in _hide_signage_from_cctv(). Compared as a path
+## rather than preloaded: the map must not take a hard dependency on the tablet,
+## and the headless suites instantiate this scene without one.
+const CCTV_TABLET_SCRIPT := "res://game/SecurityCameraTablet.gd"
+
+
 func _add_label(parent: Node, text: String, label_position: Vector3,
-		color: Color) -> void:
+		color: Color, hide_from_cctv := false) -> void:
 	var label := Label3D.new()
 	label.name = "Label - %s" % text
 	label.text = text
@@ -219,6 +244,10 @@ func _add_label(parent: Node, text: String, label_position: Vector3,
 	label.outline_size = 4
 	label.outline_modulate = Color(0, 0, 0, 0.85)
 	label.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+	if hide_from_cctv:
+		# Exclusively on the hidden layer: leaving layer 1 set as well would keep
+		# the feeds' default cull_mask matching and defeat the whole exercise.
+		label.layers = CCTV_HIDDEN_MASK
 	parent.add_child(label)
 
 
@@ -344,8 +373,9 @@ func _add_room(parent: Node, room_name: String, center: Vector3, size: Vector2,
 		size.y, wall_color, west_gap, accent)
 	_vertical_wall_with_gap(room, "%s East Wall" % room_name, wall_inset_x,
 		size.y, wall_color, east_gap, accent)
+	# Readable on foot, hidden from the CCTV feeds -- see CCTV_HIDDEN_LAYER.
 	_add_label(room, room_name, Vector3(0, 2.2, size.y * 0.5 - 0.8),
-		Color(0.24, 0.27, 0.24))
+		Color(0.24, 0.27, 0.24), true)
 
 
 func _horizontal_wall_with_gap(parent: Node, wall_name: String, z: float,
@@ -492,74 +522,155 @@ func _door_leaves(parent: Node, center: Vector3, axis: String) -> void:
 
 
 # Every CCTV mount joins this group. Counting cameras must never depend on the
-# node name: the mount is either an imported .fbx root or a procedural pivot,
-# and its display name is a localizable string.
+# node name: the mount is a procedural pivot whose display name is a plain
+# string, and test_map_verification asserts one member per
+# SecurityCameraTablet.CAMS entry.
 const SECURITY_CAMERA_GROUP := "security_camera"
 
+# Underside of the ceiling slab: _add_room puts it at WALL_HEIGHT + 0.05 with a
+# thickness of 0.12, so the visible soffit is at 3.39. The mount brackets reach
+# exactly this high, which is what turns them from props floating in mid-air
+# into fixtures screwed to something.
+const CEILING_SOFFIT_Y := WALL_HEIGHT + 0.05 - 0.06
 
+
+## Eleven CCTV posts, listed as (name, mount point, the point the feed frames).
+##
+## The third argument used to be a hand-written yaw and the mount used to have no
+## pitch at all, so the prop and the picture were two independent numbers. Ten of
+## the eleven happened to agree to within half a degree; CAM 11 was 6.8 deg out
+## and nothing noticed, because nothing compared them. Deriving both angles from
+## the target makes that class of drift impossible.
+##
+## Keep index-aligned with SecurityCameraTablet.CAMS: the tablet addresses feeds
+## by index, `pos` must equal the mount point and `target` the point below.
 func _add_cameras(parent: Node) -> void:
-	# Mounted in room corners like real CCTV, each yawed to sweep its room
-	# (they used to hang mid-wall staring straight ahead).
-	_camera(parent, "Камера 01 - Entrance", Vector3(-9.6, 3.0, 33.6), -48.0)
-	_camera(parent, "Камера 02 - Atrium West", Vector3(-13.6, 3.0, 12.6), -47.0)
-	_camera(parent, "Камера 03 - Atrium East", Vector3(13.6, 3.0, -12.6), 133.0)
-	_camera(parent, "Камера 04 - Watcher Office", Vector3(-33.8, 2.9, -5.8), -123.0)
-	_camera(parent, "Камера 05 - Gravity Wing A", Vector3(16.4, 3.0, -7.8), -124.0)
-	_camera(parent, "Камера 06 - Time Wing B", Vector3(-11.8, 3.0, -16.4), -57.0)
-	_camera(parent, "Камера 07 - Space Wing C Door", Vector3(9.6, 2.9, -20.6), -41.0)
-	_camera(parent, "Камера 08 - Basement Elevator", Vector3(8.8, 2.9, 11.8), -125.0)
-	_camera(parent, "Камера 09 - Planetarium", Vector3(-9.2, 3.0, -34.4), -54.0)
-	_camera(parent, "Камера 10 - Restoration Lab", Vector3(-33.8, 2.9, 18.4), -112.0)
-	_camera(parent, "Камера 11 - Mass Wing D", Vector3(42.2, 2.9, -6.8), -118.0)
+	_camera(parent, "Камера 01 - Entrance", Vector3(-9.6, 3.0, 33.6), Vector3(0, 1.0, 25))
+	_camera(parent, "Камера 02 - Atrium West", Vector3(-13.6, 3.0, 12.6), Vector3(0, 1.0, 0))
+	_camera(parent, "Камера 03 - Atrium East", Vector3(13.6, 3.0, -12.6), Vector3(0, 1.0, 0))
+	_camera(parent, "Камера 04 - Watcher Office", Vector3(-33.8, 2.9, -5.8), Vector3(-25, 1.0, 0))
+	_camera(parent, "Камера 05 - Gravity Wing A", Vector3(16.4, 3.0, -7.8), Vector3(28, 1.0, 0))
+	_camera(parent, "Камера 06 - Time Wing B", Vector3(-11.8, 3.0, -16.4), Vector3(0, 1.0, -24))
+	# Post 07 used to hang at (9.6, 2.9, -20.6) -- inside Time Wing B, staring at
+	# the Wing C blast door from 4.27 m -- and it was the only feed nominated for
+	# all three Space Wing C exhibits. It could not see one of them: the solid
+	# wall at x = 13 stopped the rays to the Portal Arch (11.40 m short) and the
+	# Orrery (17.87 m short), and the blast door itself stopped the ray to the
+	# Star Globe (7.76 m short). Wing C is reachable only through the 1.8 m
+	# doorway at z = -24, so no mount outside the wing can do better; the post had
+	# to move inside it. This corner -- 1.05 m off the east inner face at
+	# x = 34.65 and 0.85 m off the south inner face at z = -31.65, the same
+	# clearances CAM 05 uses -- reaches all three (Portal Arch 14.14 m, Star Globe
+	# 15.52 m, Orrery 5.43 m, every off-axis angle inside the 53.8 deg horizontal
+	# half-frustum) and still frames the blast door 21.7 m down the wing, 17 deg
+	# off the optical axis, so the one way in is on camera too.
+	_camera(parent, "Камера 07 - Space Wing C", Vector3(33.6, 2.9, -30.8), Vector3(24, 1.0, -24))
+	# Post 08 was "Камера 08 - Basement Elevator". There is no basement, no lift
+	# and no shaft anywhere in this museum -- that name was the only occurrence of
+	# the word in the whole project -- and the feed framed 4.8 m of bare Atrium
+	# floor in the south-east corner. The aim point is untouched; the corner it
+	# points at now carries the museum's main distribution board
+	# (_add_atrium_power_panel), which is a thing the night watch would genuinely
+	# keep a camera on, given how night one begins. The optical axis lands on the
+	# board's door 4.89 m out. The label the player reads comes from
+	# SecurityCameraTablet.CAMS[7].label -> CAM_BASEMENT_LIFT, whose catalogue text
+	# now reads "Atrium — Power Panel" / "Атриум — электрощит" in both columns.
+	_camera(parent, "Камера 08 - Atrium Power Panel", Vector3(8.8, 2.9, 11.8), Vector3(12.5, 1.2, 14.4))
+	_camera(parent, "Камера 09 - Planetarium", Vector3(-9.2, 3.0, -34.4), Vector3(0, 1.2, -41))
+	_camera(parent, "Камера 10 - Restoration Lab", Vector3(-33.8, 2.9, 18.4), Vector3(-25, 1.0, 22))
+	# Post 11 moved from the wing's north-west corner to its south-west one, a
+	# mirror image across z = 0 with the same 0.85 m clearances. From the old
+	# corner the imported superheavy_sphere model stood across the line to the
+	# Mass Pendulum (blocked at (47.11, 2.48, -3.45), 13.23 m short) and 5.11 m of
+	# it lay across the line to its own anchor. From here all three are clear:
+	# Superheavy Sphere 13.92 m, Dense Ingot 5.31 m, Mass Pendulum 16.10 m.
+	_camera(parent, "Камера 11 - Mass Wing D", Vector3(42.2, 2.9, 6.8), Vector3(52, 1.0, 0))
 
 
+## One CCTV post, hung from the ceiling it is actually under: plate, drop stem,
+## ball joint, and a pitched head carrying housing, lens and record LED.
+##
+## Built from primitives rather than from models/camera.fbx. That file is a
+## 13.4 MB TRIPOD camera -- its two materials are literally named `camera` and
+## `tripod` -- and it was being instantiated once per post, at whatever pitch the
+## import gave it, with nothing holding it up at y ~ 2.9. It won every time
+## because the procedural branch that used to live here was unreachable:
+## MuseumModels.place() returns null only when ResourceLoader.exists() fails,
+## and for a file that is present that never happens. Six primitives per post
+## replace it -- lighter, supported, and aimed where the feed is aimed.
 func _camera(parent: Node, camera_name: String, camera_position: Vector3,
-		yaw := 0.0) -> void:
-	var model := MuseumModels.place(parent, "security_camera", camera_position, 1.0, yaw)
-	if model != null:
-		# The .fbx root carries the same name for all eleven placements, so Godot
-		# auto-suffixes them (@camera@2, ...). Name each mount after its post.
-		model.name = camera_name
-		model.add_to_group(SECURITY_CAMERA_GROUP, true)
-		_add_label(parent, camera_name, camera_position + Vector3(0, 0.3, 0),
-			Color(0.35, 0.95, 0.78))
-		return
-	# Grouped under a pivot so body, lens and LED tilt down together (the
-	# old lens was a vertical cylinder poking out of the housing).
-	var cam := Node3D.new()
-	cam.name = camera_name
-	cam.position = camera_position
-	cam.rotation_degrees = Vector3(-14, yaw, 0)
-	parent.add_child(cam)
-	cam.add_to_group(SECURITY_CAMERA_GROUP, true)
-	_box(cam, "%s Mount Arm" % camera_name, Vector3(0, 0.24, 0.12),
-		Vector3(0.07, 0.2, 0.07), Color(0.04, 0.04, 0.04), 0.0, 0.0, false)
-	_box(cam, "%s Body" % camera_name, Vector3(0, 0, 0),
-		Vector3(0.5, 0.28, 0.34), Color(0.03, 0.035, 0.035))
-	var lens := _cylinder(cam, "%s Lens" % camera_name, Vector3(0, 0, -0.24),
-		0.09, 0.14, Color(0.01, 0.08, 0.07))
+		target: Vector3) -> void:
+	# Same derivation SecurityCameraTablet's `cam.look_at(target)` performs, so
+	# the housing and its picture cannot disagree. Godot's default YXZ Euler order
+	# makes rotation_degrees (pitch, yaw, 0) aim -Z at the target.
+	var to_target := target - camera_position
+	var ground_run := Vector2(to_target.x, to_target.z).length()
+	var yaw := rad_to_deg(atan2(-to_target.x, -to_target.z))
+	var pitch := rad_to_deg(atan2(to_target.y, ground_run)) if ground_run > 0.001 else -90.0
+
+	# The bracket only yaws: a drop stem that leaned with the head would read as
+	# a bent pole rather than as a fixture.
+	var mount := Node3D.new()
+	mount.name = camera_name
+	mount.position = camera_position
+	mount.rotation_degrees = Vector3(0, yaw, 0)
+	parent.add_child(mount)
+	mount.add_to_group(SECURITY_CAMERA_GROUP, true)
+
+	var bracket_color := Color(0.05, 0.05, 0.052)
+	var drop: float = maxf(0.2, CEILING_SOFFIT_Y - camera_position.y)
+	_box(mount, "%s Ceiling Plate" % camera_name, Vector3(0, drop - 0.02, 0),
+		Vector3(0.26, 0.04, 0.26), bracket_color, 0.0, 0.35, false)
+	# Runs from inside the housing up into the plate, so no gap opens at either
+	# end whatever pitch the head is set to.
+	_cylinder(mount, "%s Drop Stem" % camera_name,
+		Vector3(0, (drop + 0.06) * 0.5, 0), 0.035, drop - 0.14,
+		bracket_color, false, 0.0, false)
+	_sphere(mount, "%s Ball Joint" % camera_name, Vector3(0, 0.16, 0), 0.055,
+		Color(0.09, 0.09, 0.095))
+
+	# Grouped under a head so housing, lens and LED tilt down together (the old
+	# lens was a vertical cylinder poking out of the housing).
+	var head := Node3D.new()
+	head.name = "%s Head" % camera_name
+	head.rotation_degrees = Vector3(pitch, 0, 0)
+	mount.add_child(head)
+	# Nothing on a CCTV post carries collision: MapModels lists "security_camera"
+	# in NON_BLOCKING for exactly this reason, and a static body up at y~3 would
+	# only give Recast an overhead obstacle to filter back out again.
+	_box(head, "%s Body" % camera_name, Vector3.ZERO,
+		Vector3(0.5, 0.28, 0.34), Color(0.03, 0.035, 0.035), 0.0, 0.0, false)
+	var lens := _cylinder(head, "%s Lens" % camera_name, Vector3(0, 0, -0.24),
+		0.09, 0.14, Color(0.01, 0.08, 0.07), false, 0.0, false)
 	lens.rotation_degrees = Vector3(90, 0, 0)
-	_box(cam, "%s LED" % camera_name, Vector3(0.17, 0.08, -0.18),
+	_box(head, "%s LED" % camera_name, Vector3(0.17, 0.08, -0.18),
 		Vector3(0.04, 0.04, 0.04), Color(0.9, 0.1, 0.08), 1.8, 0.0, false)
+
+	# Mount tag: legible to a player standing under the post, culled by the feeds.
+	_add_label(parent, camera_name, camera_position + Vector3(0, 0.3, 0),
+		Color(0.35, 0.95, 0.78), true)
 
 
 func _add_locked_doors(parent: Node) -> void:
+	# The three notices below hang on CCTV_HIDDEN_LAYER: they are door signage a
+	# player reads standing in front of the blast door, not something the night
+	# watch should be reading off a monitor.
 	# Space Wing C blast door: the shared wall x=13 now has a real doorway,
 	# sealed by this door until night 2 (see unlock_wing).
 	_box(parent, "Wing C Locked Blast Door", Vector3(12.52, 1.25, -24),
 		Vector3(0.22, 2.5, 3.5), Color(0.035, 0.04, 0.055), 0.0, 0.5)
 	_add_label(parent, "Space Wing C - opens on Night 2", Vector3(12.3, 2.8, -24),
-		Color(0.55, 0.65, 0.95))
+		Color(0.55, 0.65, 0.95), true)
 	# Mass Wing D blast door on the Gravity Wing east wall (x=41), night 3.
 	_box(parent, "Wing D Locked Blast Door", Vector3(40.52, 1.25, 0),
 		Vector3(0.22, 2.5, 3.5), Color(0.05, 0.04, 0.03), 0.0, 0.5)
 	_add_label(parent, "Mass Wing D - opens on Night 3", Vector3(40.3, 2.8, 0),
-		Color(0.8, 0.65, 0.42))
+		Color(0.8, 0.65, 0.42), true)
 	# Causality Wing E sealed door on the Office west wall (x=-35).
 	_box(parent, "Causality Wing E Sealed Door", Vector3(-34.53, 1.25, 0),
 		Vector3(0.22, 2.5, 3.6), Color(0.055, 0.025, 0.025), 0.0, 0.5)
 	_add_label(parent, "Causality Wing E - do not schedule",
-		Vector3(-34.3, 2.8, 0), Color(0.95, 0.25, 0.18))
+		Vector3(-34.3, 2.8, 0), Color(0.95, 0.25, 0.18), true)
 
 
 func unlock_wing(wing: String) -> void:
@@ -579,7 +690,8 @@ func unlock_wing(wing: String) -> void:
 		door.queue_free()
 	var label_pos := Vector3(12.3, 2.35, -24) if "C" in wing \
 		else Vector3(40.3, 2.35, 0)
-	_add_label(root, "%s - OPEN" % wing, label_pos, Color(0.45, 0.95, 0.6))
+	# Replaces the notice removed with the door, so it inherits its layer too.
+	_add_label(root, "%s - OPEN" % wing, label_pos, Color(0.45, 0.95, 0.6), true)
 	# The wing was baked as unreachable; without this the Curator can never
 	# path into the half of the museum it spawns in on nights 2-3.
 	_bake_navigation()
@@ -997,6 +1109,41 @@ func _add_atrium_decor(parent: Node) -> void:
 	_box(parent,"Ось север-юг",Vector3(0,.015,0),Vector3(.10,.025,27),Color(.38,.31,.16),.2,.5,false)
 	_box(parent,"Ось запад-восток",Vector3(0,.016,0),Vector3(27,.025,.10),Color(.38,.31,.16),.2,.5,false)
 	for p:Vector3 in [Vector3(-10.8,0,10.8),Vector3(10.8,0,10.8)]:_add_plant(parent,p)
+	_add_atrium_power_panel(parent)
+
+
+## The museum's main distribution board, on the Atrium's south wall in the
+## south-east corner. It exists so CAM 08 has a subject: that feed aims at
+## Vector3(12.5, 1.2, 14.4) and used to find nothing there but floor. The
+## interior face of the south wall is at z = 14.65 (centre 14.825, thickness
+## 0.35), so a 0.22-deep cabinet sits flush against it with its door at 14.43 --
+## 3 cm behind the aim point, which puts the door in the middle of the frame.
+##
+## It is also the one prop in the Atrium the night shift has a reason to watch,
+## since the game opens by cutting the museum's power the moment the player
+## reaches the office.
+func _add_atrium_power_panel(parent: Node) -> void:
+	var steel := Color(0.30, 0.32, 0.34)
+	var dark := Color(0.10, 0.11, 0.12)
+	_box(parent, "Atrium Distribution Board", Vector3(12.5, 1.45, 14.54),
+		Vector3(0.94, 1.30, 0.22), steel, 0.0, 0.55)
+	_box(parent, "Atrium Distribution Board Door", Vector3(12.5, 1.45, 14.41),
+		Vector3(0.86, 1.20, 0.05), steel.darkened(0.18), 0.0, 0.6, false)
+	_box(parent, "Atrium Distribution Board Handle", Vector3(12.86, 1.45, 14.36),
+		Vector3(0.05, 0.24, 0.05), Color(0.55, 0.52, 0.44), 0.0, 0.7, false)
+	# Three indicator lamps: the only moving-looking thing in this feed, and the
+	# reason the shot reads as a live camera rather than a photograph of a wall.
+	var lamps := [Color(0.35, 0.95, 0.45), Color(0.95, 0.72, 0.2), Color(0.9, 0.15, 0.12)]
+	for i in range(lamps.size()):
+		_box(parent, "Atrium Distribution Lamp %d" % i,
+			Vector3(12.16 + float(i) * 0.16, 1.92, 14.37),
+			Vector3(0.06, 0.06, 0.03), lamps[i], 2.2, 0.0, false)
+	# Conduit up to the ceiling tray, so the board is fed from somewhere.
+	_box(parent, "Atrium Distribution Conduit", Vector3(12.5, 2.72, 14.58),
+		Vector3(0.12, 1.24, 0.12), dark, 0.0, 0.4, false)
+	# Keep-clear hatching on the floor in front of the doors.
+	_box(parent, "Atrium Distribution Keep Clear", Vector3(12.5, 0.014, 13.95),
+		Vector3(1.3, 0.02, 0.9), Color(0.62, 0.52, 0.16), 0.12, 0.0, false)
 
 
 func _add_entrance_details(parent: Node) -> void:
@@ -2002,8 +2149,9 @@ func _start_intro() -> void:
 	_intro_title.anchor_bottom = 0.88
 	_intro_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_intro_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_intro_title.add_theme_font_size_override("font_size", 24)
-	_intro_title.add_theme_color_override("font_color", Color(0.92, 0.90, 0.82))
+	# Letterbox caption: the largest text on screen at this moment, and the thing
+	# the shot is built around. TITLE, primary text colour.
+	UITheme.apply_text(_intro_title, UITheme.TITLE, UITheme.ON_SURFACE)
 	_intro_overlay.add_child(_intro_title)
 
 	var skip_hint := Label.new()
@@ -2013,8 +2161,9 @@ func _start_intro() -> void:
 	skip_hint.anchor_bottom = 0.985
 	skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	skip_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	skip_hint.add_theme_font_size_override("font_size", 14)
-	skip_hint.add_theme_color_override("font_color", Color(0.60, 0.60, 0.55))
+	# "Press SPACE to skip" is a hint about the interface, not part of the scene:
+	# LABEL, and MUTED so it stays legible without competing with the caption.
+	UITheme.apply_text(skip_hint, UITheme.LABEL, UITheme.MUTED)
 	_intro_overlay.add_child(skip_hint)
 
 	_intro_fade = ColorRect.new()
@@ -2156,6 +2305,38 @@ func _ready() -> void:
 	# _ready() also runs on every return to the menu and after the win screen.
 	if not Engine.is_editor_hint():
 		call_deferred("_start_intro")
+		# Deferred so it runs after the whole tree is ready. The tablet builds its
+		# Camera3D nodes in its own _ready(), which Godot runs before this one
+		# (children first), but relying on that ordering for a one-shot fixup is
+		# not worth the coupling.
+		call_deferred("_hide_signage_from_cctv")
+
+
+## Drop CCTV_HIDDEN_MASK from the cull_mask of every feed camera the security
+## tablet builds, so the monitors show a museum instead of a fan of billboarded
+## room names, mount tags and wing-door notices turning to face the lens.
+##
+## HAND-OFF: this belongs in SecurityCameraTablet._make_cameras(), one line next
+## to `cam.fov = 75.0`. It lives here only because that file is owned elsewhere
+## this round; the map is the side that knows which layer the signage is on.
+## Nothing breaks if the tablet takes it over -- clearing an already-clear bit is
+## a no-op -- so the move can happen whenever, and this function then deletes.
+func _hide_signage_from_cctv() -> void:
+	# The tablet is a plain Node beside the map in FirstMuseumMap.tscn; look at
+	# this node's children and its siblings rather than walking ten thousand
+	# generated meshes looking for eleven cameras.
+	var hosts: Array[Node] = get_children()
+	var host_parent := get_parent()
+	if host_parent != null:
+		hosts.append_array(host_parent.get_children())
+	for host in hosts:
+		var script := host.get_script() as Script
+		if script == null or script.resource_path != CCTV_TABLET_SCRIPT:
+			continue
+		for child in host.get_children():
+			var feed := child as Camera3D
+			if feed != null:
+				feed.cull_mask &= ~CCTV_HIDDEN_MASK
 
 
 func _process(delta: float) -> void:

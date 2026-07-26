@@ -33,7 +33,48 @@ const NON_UI_SOURCE_PREFIX := "test_"
 const CAMERA_TABLET_SCRIPT := "res://game/SecurityCameraTablet.gd"
 const CAMERA_TABLET_FEEDS_FALLBACK := 11
 
+## Owner of the exhibit -> required-camera mapping the night-2 scan depends on.
+const EXHIBIT_PUZZLE_SCRIPT := "res://game/ExhibitPuzzleController.gd"
+
+## Group every CCTV mount joins (FirstMuseumMap.SECURITY_CAMERA_GROUP). The mount
+## is either an imported .fbx root or a procedural pivot, so it can only be found
+## by group, never by class or by name.
+const SECURITY_CAMERA_GROUP := "security_camera"
+
+## A mount and the feed it drives are authored from the same literal, so this
+## tolerance exists to absorb float round-tripping, not to excuse a moved post.
+const CAMERA_POSITION_EPSILON := 0.01
+
+## The housing's yaw and the yaw implied by the feed's aim target must agree to
+## within a degree. Past that the operator watches one room while the prop on the
+## wall points at another, which is exactly what a node count cannot see.
+const CAMERA_YAW_EPSILON_DEG := 1.0
+
+## Mini-map rectangles are drawn from the same centres and sizes _add_room builds.
+const ROOM_RECT_EPSILON := 0.01
+
+## Anything a sightline ray meets within this radius of the exhibit's own anchor
+## is that exhibit's dressing, not an occluder: the glass case is 2.25 m across
+## (1.59 m corner to corner in plan) and the pedestal 2.8 m, and both carry
+## colliders. Hits further out than this are things standing in the way.
+const EXHIBIT_SELF_CLEARANCE := 1.7
+
+## How close a placed model's node has to sit to an exhibit's anchor to BE that
+## exhibit. MapModels.place() drops the model on the anchor outright, so this is
+## an equality test with room for float round-tripping only.
+const MODEL_ORIGIN_EPSILON := 0.01
+
+## Night handed to the exhibit chooser while reading the exhibit -> camera
+## mapping. Deliberately higher than any wing's unlock night so that every
+## exhibit is a candidate and none of them is missed.
+const ALL_WINGS_NIGHT := 9
+
+## Draws allowed while sampling that (random) chooser. Collecting a dozen
+## exhibits takes around forty draws; the cap only bounds a pathological run.
+const EXHIBIT_SAMPLE_DRAWS := 5000
+
 var _failed := false
+var _digits := RegEx.new()
 
 
 func _init() -> void:
@@ -63,6 +104,20 @@ func _init() -> void:
 	await process_frame  # let _ready() + build_map() complete
 
 	_verify(map_root)
+
+	var generated: Node = map_root.get_node_or_null("GeneratedMap")
+	if generated != null:
+		# Resolved once: both cross-checks below need the mounts, and a mount that
+		# cannot be identified should be reported once, not once per check.
+		var mounts := _camera_mounts(generated)
+		_verify_camera_geometry(mounts)
+		_verify_minimap_rooms(generated)
+		# The sightline sweep queries the physics world, which is only readable
+		# once a physics step has run and the freshly added static bodies have
+		# been flushed into the space.
+		await physics_frame
+		_verify_exhibit_sightlines(generated, mounts)
+
 	_verify_localization()
 
 	if _failed:
@@ -173,7 +228,7 @@ func _verify(map_root: Node) -> void:
 	# name is a display string. Scoped to GeneratedMap because get_nodes_in_group
 	# is tree-wide and other tests put a second museum under the same root.
 	var cams := 0
-	for node in get_nodes_in_group("security_camera"):
+	for node in get_nodes_in_group(SECURITY_CAMERA_GROUP):
 		if generated.is_ancestor_of(node):
 			cams += 1
 	# The contract is equality, not a floor: SecurityCameraTablet.CAMS addresses
@@ -285,6 +340,347 @@ func _tablet_feed_count() -> int:
 			% [CAMERA_TABLET_SCRIPT, CAMERA_TABLET_FEEDS_FALLBACK])
 		return CAMERA_TABLET_FEEDS_FALLBACK
 	return (feeds as Array).size()
+
+
+# One constant off a shipping script, or null. Every cross-check below reads its
+# numbers this way instead of keeping a second copy of them here, so the test
+# follows the game when a post moves and fails only when the two files disagree.
+func _script_constant(script_path: String, constant_name: String) -> Variant:
+	var script := load(script_path) as Script
+	if script == null:
+		_fail("Cannot load %s" % script_path)
+		return null
+	var constants := script.get_script_constant_map()
+	if constants.is_empty():
+		# A script with a parse error still loads, it just carries nothing.
+		_fail("%s declares no constants at all — it did not compile" % script_path)
+		return null
+	var value: Variant = constants.get(constant_name, null)
+	if value == null:
+		_fail("%s exposes no %s constant" % [script_path, constant_name])
+	return value
+
+
+# ---------------------------------------------------------------------------
+# 1. Geometry agreement between the tablet's feeds and the map's mounts.
+#
+# Counting cameras proves eleven mounts exist; it says nothing about where they
+# are or which way they face. The tablet builds each feed at CAMS[i].pos and
+# points it at CAMS[i].target, while _add_cameras builds the housing the player
+# sees from its own literals. When those drift apart the feed shows a room the
+# prop is not aimed at, and no count notices.
+func _verify_camera_geometry(mounts: Dictionary) -> void:
+	var feeds: Variant = _script_constant(CAMERA_TABLET_SCRIPT, "CAMS")
+	if typeof(feeds) != TYPE_ARRAY:
+		return
+	if mounts.is_empty():
+		_fail("Camera geometry: no mounts found in group '%s'" % SECURITY_CAMERA_GROUP)
+		return
+
+	var agreed := 0
+	for feed_variant in (feeds as Array):
+		var feed: Dictionary = feed_variant
+		var feed_id := str(feed.get("id", "?"))
+		var post := _post_number(feed_id)
+		if post < 0:
+			_fail("Camera geometry: feed id %s carries no post number" % feed_id)
+			continue
+		if not mounts.has(post):
+			_fail("Camera geometry: %s has no mount — the map builds no post %02d"
+				% [feed_id, post])
+			continue
+		var mount: Node3D = mounts[post]
+		var feed_pos: Vector3 = feed.get("pos", Vector3.ZERO)
+		var mount_pos := mount.global_position
+		var offset := mount_pos.distance_to(feed_pos)
+		var placed := offset <= CAMERA_POSITION_EPSILON
+		if not placed:
+			_fail("Camera geometry: %s feed sits at %v but its mount '%s' sits at %v (%.3f m apart)"
+				% [feed_id, feed_pos, mount.name, mount_pos, offset])
+
+		# Yaw the feed's aim target implies. The tablet aims with look_at(), which
+		# points -Z at the target, and a node yawed by θ has -Z = (-sin θ, 0, -cos θ).
+		var feed_target: Vector3 = feed.get("target", feed_pos)
+		var aim := Vector2(feed_target.x - feed_pos.x, feed_target.z - feed_pos.z)
+		if aim.length() < 0.001:
+			_fail("Camera geometry: %s aims at its own mount, so it implies no yaw" % feed_id)
+			continue
+		var feed_yaw := rad_to_deg(atan2(-aim.x, -aim.y))
+		# The housing's own yaw, as _camera() set it: the raw euler, not a value
+		# recomposed from the basis, because an imported .fbx root carries a pitch
+		# from its import and euler decomposition is ambiguous at +-90 deg of it.
+		var mount_yaw := mount.rotation_degrees.y
+		var drift := absf(wrapf(feed_yaw - mount_yaw, -180.0, 180.0))
+		if drift > CAMERA_YAW_EPSILON_DEG:
+			_fail("Camera geometry: %s feed looks along yaw %.2f deg (target %v) but its mount '%s' is yawed %.2f deg — %.2f deg apart"
+				% [feed_id, feed_yaw, feed_target, mount.name, mount_yaw, drift])
+		elif placed:
+			agreed += 1
+	if agreed == (feeds as Array).size():
+		_ok("Camera geometry: all %d feeds sit on their mount and aim where it points" % agreed)
+
+
+# Every CCTV mount under GeneratedMap, keyed by the post number in its name
+# ("Камера 07 - ..." -> 7). Scoped to GeneratedMap because get_nodes_in_group is
+# tree-wide and the tablet in the same scene builds its own Camera3D nodes.
+func _camera_mounts(generated: Node) -> Dictionary:
+	var mounts := {}
+	for node in get_nodes_in_group(SECURITY_CAMERA_GROUP):
+		var mount := node as Node3D
+		if mount == null or not generated.is_ancestor_of(mount):
+			continue
+		var post := _post_number(mount.name)
+		if post < 0:
+			_fail("Camera mount '%s' carries no post number in its name" % mount.name)
+			continue
+		if mounts.has(post):
+			_fail("Two camera mounts claim post %02d: '%s' and '%s'"
+				% [post, (mounts[post] as Node3D).name, mount.name])
+			continue
+		mounts[post] = mount
+	return mounts
+
+
+# First run of digits in a name: "CAM 07" and "Камера 07 - Space Wing C Door"
+# both answer 7. -1 when the name carries no number at all.
+func _post_number(text: String) -> int:
+	if _digits.get_pattern() == "" and _digits.compile("([0-9]+)") != OK:
+		return -1
+	var found := _digits.search(text)
+	if found == null:
+		return -1
+	return int(found.get_string(1))
+
+
+# ---------------------------------------------------------------------------
+# 2. Mini-map agreement. Every rectangle the tablet paints is a room the player
+# walks through, drawn from a centre and a size the tablet keeps in its own
+# ROOMS table. Move or resize a room in build_map and the mini-map silently
+# keeps painting the old footprint.
+func _verify_minimap_rooms(generated: Node) -> void:
+	var rooms: Variant = _script_constant(CAMERA_TABLET_SCRIPT, "ROOMS")
+	if typeof(rooms) != TYPE_ARRAY:
+		return
+	var built := _built_rooms(generated)
+	if built.is_empty():
+		_fail("Mini-map: no rooms found under GeneratedMap")
+		return
+
+	var matched := {}
+	var agreed := 0
+	for entry_variant in (rooms as Array):
+		var entry: Array = entry_variant
+		var key := str(entry[0])
+		var centre: Vector2 = entry[1]
+		var size: Vector2 = entry[2]
+		# ROOMS keys are catalogue keys and room nodes are named in English, so
+		# the two tables can only be paired by position: take the nearest room
+		# built and then demand that it actually coincides.
+		var nearest := ""
+		var nearest_gap := INF
+		for room_name in built:
+			var gap: float = (built[room_name]["centre"] as Vector2).distance_to(centre)
+			if gap < nearest_gap:
+				nearest_gap = gap
+				nearest = room_name
+		if nearest_gap > ROOM_RECT_EPSILON:
+			_fail("Mini-map: %s is drawn at %v but no room stands there — nearest is '%s' at %v (%.3f m away)"
+				% [key, centre, nearest, built[nearest]["centre"], nearest_gap])
+			continue
+		if matched.has(nearest):
+			_fail("Mini-map: %s and %s both claim room '%s' at %v"
+				% [matched[nearest], key, nearest, centre])
+			continue
+		matched[nearest] = key
+		var built_size: Vector2 = built[nearest]["size"]
+		if absf(built_size.x - size.x) > ROOM_RECT_EPSILON \
+				or absf(built_size.y - size.y) > ROOM_RECT_EPSILON:
+			_fail("Mini-map: %s is drawn %v but room '%s' is built %v"
+				% [key, size, nearest, built_size])
+			continue
+		agreed += 1
+	for room_name in built:
+		if not matched.has(room_name):
+			_fail("Mini-map: room '%s' at %v is built but the tablet draws no rectangle for it"
+				% [room_name, built[room_name]["centre"]])
+	if agreed == (rooms as Array).size() and matched.size() == built.size():
+		_ok("Mini-map: all %d rectangles match the room they stand for" % agreed)
+
+
+# Rooms as build_map left them: a direct Node3D child of GeneratedMap carrying
+# the "<name> Floor" slab _add_room lays down. The slab is what fixes the room's
+# footprint, so its BoxMesh is read for the size rather than the call literal.
+func _built_rooms(generated: Node) -> Dictionary:
+	var rooms := {}
+	for child in generated.get_children():
+		var room := child as Node3D
+		if room == null or room.get_class() != "Node3D":
+			continue
+		var slab := room.get_node_or_null(NodePath("%s Floor" % room.name)) as MeshInstance3D
+		if slab == null:
+			continue
+		var box := slab.mesh as BoxMesh
+		if box == null:
+			continue
+		rooms[room.name] = {
+			"centre": Vector2(room.global_position.x, room.global_position.z),
+			"size": Vector2(box.size.x, box.size.z),
+		}
+	return rooms
+
+
+# ---------------------------------------------------------------------------
+# 3. Line of sight. From night 2 the incident cannot be closed until the player
+# watches the affected exhibit on the camera ExhibitPuzzleController names for
+# it. If a wall stands between that camera and that exhibit the shift is
+# unwinnable, and nothing in the scene tree looks wrong: both nodes exist.
+func _verify_exhibit_sightlines(generated: Node, mounts: Dictionary) -> void:
+	var exhibits: Variant = _script_constant(EXHIBIT_PUZZLE_SCRIPT, "EXHIBITS")
+	if typeof(exhibits) != TYPE_DICTIONARY:
+		return
+	var feeds: Variant = _script_constant(CAMERA_TABLET_SCRIPT, "CAMS")
+	if typeof(feeds) != TYPE_ARRAY:
+		return
+	var required := _required_cameras(exhibits as Dictionary)
+	if required.is_empty():
+		return
+	var space := root.world_3d.direct_space_state
+	if space == null:
+		_fail("Sightlines: no 3D physics space to cast through")
+		return
+
+	var visible := 0
+	var checked := 0
+	for family_variant in (exhibits as Dictionary).values():
+		for entry_variant in (family_variant as Array):
+			var entry: Dictionary = entry_variant
+			var exhibit := str(entry.get("name", "?"))
+			checked += 1
+			if not required.has(exhibit):
+				_fail("Sightline: %s is never offered by ExhibitPuzzleController, so no camera is required for it"
+					% exhibit)
+				continue
+			var index: int = required[exhibit]
+			if index < 0 or index >= (feeds as Array).size():
+				_fail("Sightline: %s requires camera index %d but the tablet declares %d feeds"
+					% [exhibit, index, (feeds as Array).size()])
+				continue
+			var feed: Dictionary = (feeds as Array)[index]
+			var feed_id := str(feed.get("id", "?"))
+			var post := _post_number(feed_id)
+			if not mounts.has(post):
+				_fail("Sightline: %s requires %s but the map builds no mount for that post"
+					% [exhibit, feed_id])
+				continue
+			var mount: Node3D = mounts[post]
+			var anchor := generated.find_child(str(entry.get("anchor", "")), true, false) as Node3D
+			if anchor == null:
+				_fail("Sightline: %s has no anchor '%s' in the built map"
+					% [exhibit, entry.get("anchor", "")])
+				continue
+
+			var from := mount.global_position
+			var to := anchor.global_position
+			var query := PhysicsRayQueryParameters3D.create(from, to)
+			var hit := space.intersect_ray(query)
+			if hit.is_empty():
+				visible += 1
+				continue
+			var where: Vector3 = hit["position"]
+			var slack := where.distance_to(to)
+			var blocker := hit["collider"] as Node
+			# Reaching the exhibit counts as seeing it. That happens two ways:
+			# the ray lands on the exhibit's own plinth, case or body, all of
+			# which stand within a case-width of the anchor; or it lands on the
+			# exhibit's imported model, whose mesh may be far wider than the case
+			# and is split into several separately hulled parts. The second is
+			# recognised by ownership, not by distance: MapModels.place() drops
+			# the model in as one node of GeneratedMap sitting exactly on the
+			# anchor, so every collider under that node is the exhibit itself.
+			if slack <= EXHIBIT_SELF_CLEARANCE or _stands_at(generated, blocker, to):
+				visible += 1
+				continue
+			_fail("Sightline: %s cannot be seen from %s. Ray %v -> %v is stopped at %v by %s, %.2f m short of the exhibit (anything within %.2f m would be the exhibit itself)"
+				% [exhibit, feed_id, from, to, where, _blocker_name(generated, blocker),
+					slack, EXHIBIT_SELF_CLEARANCE])
+	if visible == checked:
+		_ok("Sightlines: all %d exhibits are visible from their required camera" % visible)
+
+
+# True when `blocker` belongs to the one piece of the map that build_map parented
+# straight to GeneratedMap at `spot`. Everything an imported model brings with it
+# -- its meshes and the convex hulls generated for them -- hangs under that one
+# node, however deeply nested.
+func _stands_at(generated: Node, blocker: Node, spot: Vector3) -> bool:
+	if blocker == null or not generated.is_ancestor_of(blocker):
+		return false
+	var owner_node := blocker
+	while owner_node.get_parent() != generated:
+		owner_node = owner_node.get_parent()
+	var placed := owner_node as Node3D
+	return placed != null \
+		and placed.global_position.distance_to(spot) <= MODEL_ORIGIN_EPSILON
+
+
+# What stopped the ray, in terms someone can act on. Procedural geometry names
+# its body after the mesh ("... Collision"), but collision generated for an
+# imported model is called "Mesh<N>_col", which says nothing on its own -- so the
+# path down from GeneratedMap is printed with it.
+func _blocker_name(generated: Node, blocker: Node) -> String:
+	if blocker == null:
+		return "<freed body>"
+	if generated.is_ancestor_of(blocker):
+		return "'%s' (%s)" % [blocker.name, generated.get_path_to(blocker)]
+	return "'%s' (%s)" % [blocker.name, blocker.get_path()]
+
+
+# The exhibit -> camera index mapping, read off ExhibitPuzzleController itself.
+# The mapping is not a constant: _choose_exhibit() stamps "camera" onto the
+# candidate it returns, so the table is sampled out of that function rather than
+# copied here, and it follows the shipping rule when the rule is rewritten.
+func _required_cameras(exhibits: Dictionary) -> Dictionary:
+	var mapping := {}
+	var total := 0
+	for family in exhibits.values():
+		total += (family as Array).size()
+	if total == 0:
+		_fail("Sightlines: ExhibitPuzzleController.EXHIBITS is empty")
+		return mapping
+	var script := load(EXHIBIT_PUZZLE_SCRIPT) as Script
+	if script == null:
+		_fail("Sightlines: cannot load %s" % EXHIBIT_PUZZLE_SCRIPT)
+		return mapping
+	var controller: Object = script.new()
+	if controller == null:
+		_fail("Sightlines: %s could not be instantiated" % EXHIBIT_PUZZLE_SCRIPT)
+		return mapping
+	if not controller.has_method("_choose_exhibit"):
+		_fail("Sightlines: %s no longer offers _choose_exhibit() — the test cannot read the exhibit -> camera mapping"
+			% EXHIBIT_PUZZLE_SCRIPT)
+		_release(controller)
+		return mapping
+	for i in range(EXHIBIT_SAMPLE_DRAWS):
+		var picked: Variant = controller.call("_choose_exhibit", ALL_WINGS_NIGHT)
+		if typeof(picked) != TYPE_DICTIONARY:
+			break
+		var name_key := str((picked as Dictionary).get("name", ""))
+		if name_key != "" and not mapping.has(name_key):
+			mapping[name_key] = int((picked as Dictionary).get("camera", -1))
+		if mapping.size() == total:
+			break
+	_release(controller)
+	if mapping.size() != total:
+		_fail("Sightlines: only %d of %d exhibits were ever offered by _choose_exhibit(night %d)"
+			% [mapping.size(), total, ALL_WINGS_NIGHT])
+	return mapping
+
+
+# script.new() on a Node script hands back a node that never entered the tree, so
+# nothing else will ever free it. A RefCounted one frees itself.
+func _release(instance: Object) -> void:
+	if instance == null or instance is RefCounted:
+		return
+	instance.free()
 
 
 # A key the code asks for that the catalogue cannot answer reaches the player as

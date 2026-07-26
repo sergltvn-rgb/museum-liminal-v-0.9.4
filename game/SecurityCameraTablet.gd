@@ -12,17 +12,55 @@ extends Node
 ## It finds the player through the "player" group and builds its own
 ## Camera3D nodes and UI at runtime. Positions mirror the CCTV bodies
 ## placed by FirstMuseumMap.gd (corner mounts).
+##
+## The mini-map is a read-out, not decoration: it carries the operator's own
+## position, the wedge the live feed is actually looking down (mount heading
+## plus whatever pan has been dialled in), and a ring on the camera the current
+## objective wants confirmed. All three are drawn, not built out of nodes, so
+## they cost nothing while the tablet is down.
 
 const MAP_SCALE := 3.2
 const MAP_ORIGIN := Vector2(35.0, 49.0)  # world offset -> map pixels
+## The CRT green the game's accent was taken from. Nothing here reads it any
+## more -- every Control in this file gets its green from UITheme.ACCENT, which
+## is this value -- but it stays: UITheme.gd names `SecurityCameraTablet.GREEN`
+## three times as the provenance of ACCENT and of ACCENT_DIM
+## (`GREEN.darkened(0.25)`), and a dangling citation is worse than a constant.
 const GREEN := Color(0.2, 0.78, 0.42)
 const PAN_SPEED := 55.0
 const TILT_SPEED := 40.0
+## Vertical opening of every feed. Shared with the mini-map view cone so the
+## wedge on the map and the picture on screen cannot drift apart.
+const CAM_FOV := 75.0
+
+# --- MINI-MAP GEOMETRY ------------------------------------------------------
+## Inset between the map panel's edge and the mapped floor plan.
+const MAP_PAD := 14.0
+## Nominal chip size. The real one is measured once the chips are in the tree
+## (see _build_ui) because a Button's minimum size depends on its theme.
+const MAP_CHIP_SIZE := Vector2(34, 22)
+## Content margins for the map chips. UITheme.PAD_X/PAD_Y would inflate a chip
+## past its slot -- see _map_chip_theme().
+const MAP_CHIP_PAD_X := 4
+const MAP_CHIP_PAD_Y := 2
+## Breathing room the separation pass leaves between two chips.
+const MAP_CHIP_GAP := 3.0
+## Upper bound on separation passes; the current mounts settle in 6.
+const MAP_LAYOUT_PASSES := 8
+## Penetrations below this are float noise, not an overlap.
+const MAP_LAYOUT_EPSILON := 0.01
+## How far the view cone reaches, in world metres.
+const CONE_REACH := 11.0
+const CONE_SEGMENTS := 12
+const PLAYER_MARK_RADIUS := 4.0
 # Tilt travel around each camera's mounted pitch. The mounts already aim down:
-# the steepest are CAM 07 (-20.8 deg) and CAM 08 (-20.6 deg), so anything under
-# 21 leaves those two feeds permanently staring at the floor with the horizon
-# out of reach. 28 clears the worst mount by 7 deg and is applied symmetrically,
-# which still gives every feed at least 34 deg of downward travel for detail.
+# the steepest is CAM 08 at -20.6 deg -- it looks at a distribution board 4.5 m
+# away -- so anything under 21 leaves that feed permanently staring at the floor
+# with the horizon out of reach. (CAM 07 used to sit beside it at -20.8 deg; now
+# that the post hangs inside Space Wing C and looks 11.8 m down the wing instead
+# of 4.3 m at a door, its mounted pitch is -9.2 deg.) 28 clears the worst mount
+# by 7 deg and is applied symmetrically, which still gives every feed at least
+# 34 deg of downward travel for detail.
 const TILT_LIMIT := 28.0
 
 const CAMS: Array = [
@@ -38,16 +76,28 @@ const CAMS: Array = [
 		"pos": Vector3(16.4, 3.0, -7.8), "target": Vector3(28, 1.0, 0)},
 	{"id": "CAM 06", "label": "CAM_WING_B_TIME",
 		"pos": Vector3(-11.8, 3.0, -16.4), "target": Vector3(0, 1.0, -24)},
+	# Post 07 hangs inside Space Wing C, in its south-east corner, looking back
+	# along the wing at the blast door. It used to hang in Time Wing B and frame
+	# that door from the far side of the wall at x = 13, which left the wing's
+	# three exhibits -- the ones ExhibitPuzzleController requires this feed for --
+	# behind solid geometry. Mount and target are the literals _add_cameras builds
+	# the housing from; test_map_verification pins the two together.
 	{"id": "CAM 07", "label": "CAM_WING_C_DOOR",
-		"pos": Vector3(9.6, 2.9, -20.6), "target": Vector3(12.5, 1.2, -24)},
+		"pos": Vector3(33.6, 2.9, -30.8), "target": Vector3(24, 1.0, -24)},
+	# CAM_BASEMENT_LIFT is a stale key id, not a stale label: the museum has no
+	# basement, and the catalogue row now reads "Atrium — Power Panel" /
+	# "Атриум — электрощит" in both columns. The feed frames the Atrium
+	# distribution board, which is the prop this aim point actually meets.
 	{"id": "CAM 08", "label": "CAM_BASEMENT_LIFT",
 		"pos": Vector3(8.8, 2.9, 11.8), "target": Vector3(12.5, 1.2, 14.4)},
 	{"id": "CAM 09", "label": "CAM_PLANETARIUM",
 		"pos": Vector3(-9.2, 3.0, -34.4), "target": Vector3(0, 1.2, -41)},
 	{"id": "CAM 10", "label": "CAM_RESTORATION",
 		"pos": Vector3(-33.8, 2.9, 18.4), "target": Vector3(-25, 1.0, 22)},
+	# South-west corner of Mass Wing D. From the north-west one the imported
+	# superheavy_sphere mesh stood between the post and the Mass Pendulum.
 	{"id": "CAM 11", "label": "CAM_WING_D_MASS",
-		"pos": Vector3(42.2, 2.9, -6.8), "target": Vector3(52, 1.0, 0)},
+		"pos": Vector3(42.2, 2.9, 6.8), "target": Vector3(52, 1.0, 0)},
 ]
 
 # Mini-map rooms: [name, world center (x,z), size (w,d), open from night N].
@@ -79,6 +129,11 @@ var _layer: CanvasLayer
 var _cam_label: Label
 var _rec_dot: ColorRect
 var _static_rect: ColorRect
+var _map_bounds := Vector2.ZERO
+var _chip_active: StyleBoxFlat
+var _cone: Control
+var _marks: Control
+var _enhancements: Node = null
 var _open := false
 var _active := 0
 var _time := 0.0
@@ -106,7 +161,7 @@ func _make_cameras() -> void:
 		# fills the screen as an unexplained circle.
 		cam.global_position += -cam.global_transform.basis.z * 0.55
 		cam.near = 0.15
-		cam.fov = 75.0
+		cam.fov = CAM_FOV
 		cam.current = false
 		_cams.append(cam)
 		_base_rot.append(cam.rotation_degrees)
@@ -142,41 +197,42 @@ func _build_ui() -> void:
 	_static_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_static_rect)
 
-	# Camera name, top-left, with a blinking REC dot.
+	# Camera name, top-left, with a blinking REC dot. DANGER is a fill token, and
+	# a recording tally is exactly that -- UITheme's header calls this dot out as
+	# the one legitimate use of the palette's red.
 	_rec_dot = ColorRect.new()
-	_rec_dot.color = Color(0.9, 0.12, 0.1)
+	_rec_dot.color = UITheme.DANGER
 	_rec_dot.position = Vector2(24, 28)
 	_rec_dot.size = Vector2(16, 16)
 	root.add_child(_rec_dot)
 
 	_cam_label = Label.new()
 	_cam_label.position = Vector2(52, 18)
-	_cam_label.add_theme_font_size_override("font_size", 30)
-	_cam_label.add_theme_color_override("font_color", GREEN)
+	UITheme.apply_text(_cam_label, UITheme.TITLE, UITheme.ACCENT)
 	root.add_child(_cam_label)
 
 	var hint := Label.new()
 	hint.text = tr("CAM_HINT_CONTROLS")
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", Color(0.6, 0.7, 0.6))
+	UITheme.apply_text(hint, UITheme.BODY, UITheme.MUTED)
 	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	hint.offset_left = 24
 	hint.offset_top = -44
 	root.add_child(hint)
 
-	# Mini-map panel, bottom-right.
-	var inner := Vector2((63.0 + MAP_ORIGIN.x) * MAP_SCALE,
-		(35.0 + MAP_ORIGIN.y) * MAP_SCALE)
-	var pad := 14.0
+	# Mini-map panel, bottom-right. SCRIM rather than a panel fill: this thing
+	# floats over the live picture and the operator has to keep reading the
+	# picture through it, which is what SCRIM (SURFACE at 88%) is -- the 0.88 it
+	# already carried, now sourced from the palette. The frame stays green
+	# because the map is live chrome: BORDER_ACCENT.
+	_map_bounds = Vector2((63.0 + MAP_ORIGIN.x) * MAP_SCALE + MAP_PAD * 2.0,
+		(35.0 + MAP_ORIGIN.y) * MAP_SCALE + MAP_PAD * 2.0)
 	var panel := Panel.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.01, 0.05, 0.03, 0.88)
-	sb.border_color = GREEN
-	sb.set_border_width_all(2)
-	panel.add_theme_stylebox_override("panel", sb)
+	panel.add_theme_stylebox_override("panel", UITheme.stylebox(
+		UITheme.SCRIM, UITheme.BORDER_ACCENT, UITheme.BORDER_WIDTH, UITheme.RADIUS_LG))
+	panel.theme = _map_chip_theme()
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	panel.offset_left = -(inner.x + pad * 2.0 + 16.0)
-	panel.offset_top = -(inner.y + pad * 2.0 + 16.0)
+	panel.offset_left = -(_map_bounds.x + 16.0)
+	panel.offset_top = -(_map_bounds.y + 16.0)
 	panel.offset_right = -16.0
 	panel.offset_bottom = -16.0
 	root.add_child(panel)
@@ -186,22 +242,28 @@ func _build_ui() -> void:
 	for r in ROOMS:
 		var rp := Panel.new()
 		var rsb := StyleBoxFlat.new()
-		rsb.set_border_width_all(1)
+		rsb.set_border_width_all(UITheme.BORDER_WIDTH)
 		rp.add_theme_stylebox_override("panel", rsb)
 		_room_boxes.append(rsb)
 		var c: Vector2 = r[1]
 		var s: Vector2 = r[2]
-		rp.position = _to_map(c - s * 0.5) + Vector2(pad, pad)
+		rp.position = _to_panel(c - s * 0.5)
 		rp.size = s * MAP_SCALE
 		rp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(rp)
 		var rl := Label.new()
 		rl.text = tr(String(r[0]))
-		rl.add_theme_font_size_override("font_size", 10)
-		rl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.6, 0.8))
+		UITheme.apply_text(rl, UITheme.CAPTION, UITheme.MUTED)
 		rl.position = rp.position + Vector2(4, 2)
 		rl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(rl)
+
+	# View cone for the live feed, under the chips so it never hides one.
+	_cone = Control.new()
+	_cone.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_cone.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cone.draw.connect(_draw_view_cone)
+	panel.add_child(_cone)
 
 	# Camera buttons on the map. These must be focusable: a pad has no cursor, so
 	# FOCUS_NONE left every feed but CAM 01 unreachable on a controller. TAB is
@@ -212,19 +274,122 @@ func _build_ui() -> void:
 		var btn := Button.new()
 		btn.text = "%02d" % (i + 1)
 		btn.focus_mode = Control.FOCUS_ALL
-		btn.add_theme_font_size_override("font_size", 12)
-		btn.size = Vector2(34, 22)
-		var wp: Vector3 = CAMS[i]["pos"]
-		btn.position = _to_map(Vector2(wp.x, wp.z)) + Vector2(pad, pad) - btn.size * 0.5
 		btn.pressed.connect(_switch_to.bind(i))
 		panel.add_child(btn)
 		_buttons.append(btn)
 
+	# Size is measured, not assumed. get_combined_minimum_size() only sees the
+	# map panel's Theme from inside the tree, and Control.set_size() silently
+	# clamps *up* to that minimum -- so a chip that turned out wider than
+	# MAP_CHIP_SIZE would quietly break the separation pass below, which is the
+	# one thing guaranteeing every chip stays clickable.
+	var slot := MAP_CHIP_SIZE
+	for btn in _buttons:
+		var minimum := btn.get_combined_minimum_size()
+		slot = Vector2(maxf(slot.x, minimum.x), maxf(slot.y, minimum.y))
+	var spots := _chip_positions(slot)
+	for i in range(_buttons.size()):
+		_buttons[i].size = slot
+		_buttons[i].position = spots[i]
+
+	# Player marker and the objective ring, on top of the chips. Mouse-ignoring,
+	# so drawing over a chip costs the chip nothing.
+	_marks = Control.new()
+	_marks.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_marks.draw.connect(_draw_map_marks)
+	panel.add_child(_marks)
+
 	_refresh_map_locks()
+
+
+## Theme for the eleven mini-map chips.
+##
+## UITheme.apply_button() is the right call for a normal screen and the wrong
+## one here: its PAD_X/PAD_Y (12/8) put a Button's minimum size at roughly
+## 38x31, Control.set_size() clamps up to the minimum, and the separation pass
+## then has to shove the fattened chips up to 15 px off their mounts -- 4.7 m of
+## museum, on a map whose whole job is saying where things are. Same tokens,
+## tighter content margins, and hung on the panel as a Theme so all eleven chips
+## share one set of resources instead of carrying five overrides each.
+func _map_chip_theme() -> Theme:
+	var theme := Theme.new()
+	theme.set_font_size("font_size", "Button", UITheme.CAPTION)
+	theme.set_color("font_color", "Button", UITheme.MUTED)
+	theme.set_color("font_hover_color", "Button", UITheme.ON_SURFACE)
+	theme.set_color("font_pressed_color", "Button", UITheme.ACCENT)
+	theme.set_color("font_focus_color", "Button", UITheme.ON_SURFACE)
+	theme.set_stylebox("normal", "Button", _chip_style(UITheme.SURFACE, UITheme.BORDER))
+	theme.set_stylebox("hover", "Button",
+		_chip_style(UITheme.SURFACE_RAISED, UITheme.BORDER_ACCENT))
+	# The live feed wears the pressed look permanently (see _switch_to), so the
+	# two share one resource rather than drifting apart.
+	_chip_active = _chip_style(UITheme.ACCENT_FILL, UITheme.ACCENT)
+	theme.set_stylebox("pressed", "Button", _chip_active)
+	var ring := UITheme.focus()
+	ring.set_corner_radius_all(UITheme.RADIUS_SM)
+	theme.set_stylebox("focus", "Button", ring)
+	return theme
+
+
+func _chip_style(bg: Color, border: Color) -> StyleBoxFlat:
+	return UITheme.stylebox(bg, border, UITheme.BORDER_WIDTH, UITheme.RADIUS_SM,
+		MAP_CHIP_PAD_X, MAP_CHIP_PAD_Y)
+
+
+## Where the eleven chips sit, in map-panel coordinates.
+##
+## CAM 03 and CAM 05 are mounted 5.5 m apart across the atrium, which is 17 px
+## at MAP_SCALE -- half a chip -- so their 34x22 rects overlapped by 25x7 px.
+## Godot hit-tests children front to back and CAM 05 is the later child, so that
+## whole band answered for CAM 05 and the bottom-right corner of CAM 03 could
+## not be clicked at all.
+##
+## Chips start on their true mapped position and are then pushed apart until no
+## two rects intersect: each pass separates an overlapping pair along its
+## shallower axis and moves both halves equally, so the outcome does not depend
+## on child order, then clamps them back inside the panel. For the current
+## mounts this settles in 6 passes and moves only CAM 03, 05 and 07, by at most
+## 6.2 px; the tightest surviving gap is 3.0 px and no pair intersects.
+func _chip_positions(size: Vector2) -> Array[Vector2]:
+	var spots: Array[Vector2] = []
+	for c in CAMS:
+		var wp: Vector3 = c["pos"]
+		spots.append(_clamp_to_map(_to_panel(Vector2(wp.x, wp.z)) - size * 0.5, size))
+	var span := size + Vector2(MAP_CHIP_GAP, MAP_CHIP_GAP)
+	for _pass in range(MAP_LAYOUT_PASSES):
+		var moved := false
+		for i in range(spots.size()):
+			for j in range(i + 1, spots.size()):
+				var delta := spots[j] - spots[i]
+				var pen := Vector2(span.x - absf(delta.x), span.y - absf(delta.y))
+				if pen.x <= MAP_LAYOUT_EPSILON or pen.y <= MAP_LAYOUT_EPSILON:
+					continue
+				moved = true
+				var push := Vector2.ZERO
+				if pen.x < pen.y:
+					push.x = pen.x * 0.5 * (1.0 if delta.x >= 0.0 else -1.0)
+				else:
+					push.y = pen.y * 0.5 * (1.0 if delta.y >= 0.0 else -1.0)
+				spots[i] = _clamp_to_map(spots[i] - push, size)
+				spots[j] = _clamp_to_map(spots[j] + push, size)
+		if not moved:
+			break
+	return spots
+
+
+func _clamp_to_map(point: Vector2, size: Vector2) -> Vector2:
+	return Vector2(clampf(point.x, 0.0, maxf(0.0, _map_bounds.x - size.x)),
+		clampf(point.y, 0.0, maxf(0.0, _map_bounds.y - size.y)))
 
 
 func _to_map(world: Vector2) -> Vector2:
 	return (world + MAP_ORIGIN) * MAP_SCALE
+
+
+## _to_map() in the map panel's own coordinates, i.e. past its inset.
+func _to_panel(world: Vector2) -> Vector2:
+	return _to_map(world) + Vector2(MAP_PAD, MAP_PAD)
 
 
 ## Repaint the mini-map's lock state. Called on every open, never baked: wings C
@@ -236,9 +401,96 @@ func _refresh_map_locks() -> void:
 	for i in range(_room_boxes.size()):
 		var box := _room_boxes[i]
 		var locked := night < int(ROOMS[i][3])
-		box.bg_color = Color(0.9, 0.2, 0.15, 0.10) if locked \
-			else Color(GREEN.r, GREEN.g, GREEN.b, 0.08)
-		box.border_color = Color(0.7, 0.25, 0.2) if locked else GREEN.darkened(0.25)
+		# Both fills keep the alpha they had: these are wash tints over the live
+		# picture, not surfaces, and at full strength they would bury the feed.
+		box.bg_color = Color(UITheme.DANGER, 0.10) if locked \
+			else Color(UITheme.ACCENT, 0.08)
+		box.border_color = UITheme.DANGER if locked else UITheme.ACCENT_DIM
+
+
+## The camera the current objective wants confirmed, or -1 when there is none.
+##
+## GameplayEnhancements owns the number, publishes itself in the
+## "gameplay_enhancements" group from its own _ready(), and is optional
+## furniture -- the tablet has to keep working in the map scene and in the test
+## suites, neither of which builds one -- so every hop is null-guarded and a
+## miss costs one group lookup per frame while the tablet is up. Reading a
+## private field is the contract already running in the other direction:
+## GameplayEnhancements._update_scan() polls this node's `_open` and `_active`.
+func _required_camera() -> int:
+	if not is_instance_valid(_enhancements):
+		_enhancements = get_tree().get_first_node_in_group("gameplay_enhancements")
+	if _enhancements == null:
+		return -1
+	# Confirmed already: stop pointing at a camera the operator is done with.
+	var done: Variant = _enhancements.get("_scan_complete")
+	if typeof(done) == TYPE_BOOL and bool(done):
+		return -1
+	var value: Variant = _enhancements.get("_required_camera")
+	if typeof(value) != TYPE_INT:
+		return -1
+	var index := int(value)
+	return index if index >= 0 and index < _buttons.size() else -1
+
+
+## Wedge for the live feed: where it is pointed right now, pan included.
+func _draw_view_cone() -> void:
+	if _active < 0 or _active >= _base_rot.size():
+		return
+	var wp: Vector3 = CAMS[_active]["pos"]
+	var origin := _to_panel(Vector2(wp.x, wp.z))
+	# A Godot camera looks down -Z, so a yaw of theta aims it at
+	# (-sin theta, -cos theta) in world XZ; _to_map() is a pure scale and offset,
+	# so that same vector is the heading on the map with no extra correction.
+	# Pan is added rather than read back off the Camera3D because the operator
+	# can be panning a feed whose transform this frame is still the old one.
+	var yaw := deg_to_rad(_base_rot[_active].y + _pan)
+	var facing := Vector2(-sin(yaw), -cos(yaw))
+	var half := _feed_half_angle()
+	var reach := CONE_REACH * MAP_SCALE
+	var fan := PackedVector2Array([origin])
+	for i in range(CONE_SEGMENTS + 1):
+		var t := float(i) / float(CONE_SEGMENTS)
+		fan.append(origin + facing.rotated(lerpf(-half, half, t)) * reach)
+	_cone.draw_colored_polygon(fan, Color(UITheme.ACCENT, 0.16))
+	_cone.draw_line(origin, origin + facing * reach, Color(UITheme.ACCENT, 0.55), 1.0)
+
+
+## Half the cone's opening, in radians. CAM_FOV is the *vertical* opening --
+## Camera3D defaults to KEEP_HEIGHT -- and a plan view needs the horizontal one,
+## which is the vertical widened by the viewport's aspect. 16:9 is the fallback
+## for the frame before the viewport exists.
+func _feed_half_angle() -> float:
+	var aspect := 16.0 / 9.0
+	var viewport := get_viewport()
+	if viewport != null:
+		var size := viewport.get_visible_rect().size
+		if size.y > 0.0:
+			aspect = size.x / size.y
+	return atan(tan(deg_to_rad(CAM_FOV) * 0.5) * aspect)
+
+
+## The two marks that go over the chips: the objective's camera, and the
+## operator's own position.
+func _draw_map_marks() -> void:
+	var required := _required_camera()
+	if required >= 0:
+		var chip := _buttons[required]
+		_marks.draw_rect(Rect2(chip.position, chip.size).grow(3.0),
+			UITheme.WARNING, false, 2.0)
+	if _player == null or not is_instance_valid(_player):
+		return
+	# Clamped, not hidden: the museum fits the map, but a player who somehow
+	# leaves it is better reported at the edge than dropped off the panel.
+	var here := _clamp_to_map(
+		_to_panel(Vector2(_player.global_position.x, _player.global_position.z))
+			- Vector2(PLAYER_MARK_RADIUS, PLAYER_MARK_RADIUS),
+		Vector2(PLAYER_MARK_RADIUS, PLAYER_MARK_RADIUS) * 2.0
+	) + Vector2(PLAYER_MARK_RADIUS, PLAYER_MARK_RADIUS)
+	# Dark collar first: the marker has to read on the green wash of an open room
+	# and on the red wash of a sealed one.
+	_marks.draw_circle(here, PLAYER_MARK_RADIUS + 1.5, UITheme.SURFACE)
+	_marks.draw_circle(here, PLAYER_MARK_RADIUS, UITheme.ON_SURFACE)
 
 
 ## Source of truth for the wing locks: GameManager's night counter. It is the
@@ -339,7 +591,7 @@ func _toggle() -> void:
 	if not _open and not _player_is_in_office():
 		var game := _game_manager()
 		if game != null and game.has_method("_flash"):
-			game.call("_flash", tr("CAM_ACCESS_OFFICE_ONLY"), Color(1.0, 0.62, 0.28))
+			game.call("_flash", tr("CAM_ACCESS_OFFICE_ONLY"), UITheme.WARNING)
 		_sfx("fail")
 		return
 	_open = not _open
@@ -392,8 +644,14 @@ func _switch_to(index: int, force: bool = false) -> void:
 	_cam_label.text = "%s — %s" % [CAMS[index]["id"], tr(String(CAMS[index]["label"]))]
 	_static_alpha = 0.85
 	_update_floodlight()
+	# The live feed's chip holds the pressed look. This replaces a `modulate` of
+	# 1.6 -- a multiply, which on the new near-black chip fill produced a chip
+	# that was still near-black.
 	for i in range(_buttons.size()):
-		_buttons[i].modulate = Color(1.6, 1.6, 1.2) if i == index else Color(1, 1, 1)
+		if i == index:
+			_buttons[i].add_theme_stylebox_override("normal", _chip_active)
+		else:
+			_buttons[i].remove_theme_stylebox_override("normal")
 	# Keep the focus ring on the live feed. Without this a pad player who cycled
 	# with the triggers would still have the ring parked on whatever button the
 	# D-pad last visited, and pressing A would yank them back to it.
@@ -430,6 +688,12 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	_rec_dot.visible = fmod(_time, 1.0) < 0.6
+	# The map overlays track the player, the pan and the objective, all of which
+	# move under us; redrawing two mouse-ignoring Controls is cheaper than
+	# working out which of the three changed, and neither runs while the tablet
+	# is down because this function returns above.
+	_cone.queue_redraw()
+	_marks.queue_redraw()
 	if _static_alpha > 0.0:
 		_static_alpha = maxf(0.0, _static_alpha - delta * 4.0)
 		_static_rect.color.a = _static_alpha * randf_range(0.6, 1.0)

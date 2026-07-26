@@ -263,25 +263,35 @@ static func apply_panel(control: Control, raised: bool = true) -> void:
 
 # --- THEME RESOURCE ---------------------------------------------------------
 #
-# HOW TO SWITCH THE GAME OVER -- the LAST step of the migration, not the first.
+# THE SWITCH-OVER IS DONE. All three steps have landed:
 #
-# project.godot is deliberately untouched today, `[gui]` section included.
-# Setting `theme/default_font_size=17` on its own lifts every Control that has
-# no explicit override from Godot's default 16 to BODY, while the 151
-# `add_theme_font_size_override` calls across the nine UI files keep their old
-# values: half a restyle, landing on whichever screens have not been migrated
-# yet. Both halves belong in one visible commit at the end of round 2:
-#
-#   1. Migrate the nine UI files onto apply_text/apply_button/apply_panel.
-#   2. Run `UITheme.save_theme()` once, from a tool script or the remote
-#      console, to write res://ui/museum_theme.tres, and let it import.
-#   3. Only then add to project.godot:
+#   1. The nine UI files are on apply_text/apply_button/apply_panel. Every
+#      `add_theme_font_size_override` outside this file is gone; the
+#      `add_theme_*` calls that remain are spacing constants (for which there
+#      is no token) and runtime-swapped styleboxes built from these tokens.
+#   2. `save_theme()` has been run and res://ui/museum_theme.tres is committed.
+#   3. project.godot carries:
 #          [gui]
 #          theme/custom="res://ui/museum_theme.tres"
 #          theme/default_font_size=17
-#      `theme/custom` must not be set before step 2 -- it takes a path to a
-#      .tres, and pointing it at a file that does not exist makes Godot log a
-#      load failure on every launch.
+#
+# Why the order mattered, kept for whoever regenerates this: `theme/custom`
+# takes a path, so pointing it at a .tres that does not exist logs a load
+# failure on every launch; and `theme/default_font_size` on its own would have
+# lifted only the Controls with no override, leaving the un-migrated screens on
+# their old sizes -- half a restyle.
+#
+# The project theme cannot fight the migrated screens: Godot resolves a theme
+# item from the control's own overrides first, then any Theme on an ancestor,
+# and only then the project default. Every Control built in game/ either goes
+# through the apply_* helpers or carries an explicit override, so this resource
+# is what NEW controls -- and Godot's own built-in sub-controls, e.g. a
+# ScrollContainer's bar or a LineEdit inside a popup -- inherit.
+#
+# REGENERATE after changing any token above: run `UITheme.save_theme()` once
+# (headless `--script` on a SceneTree, or the remote console) and re-import.
+# Nothing reads the tokens at runtime for a themed control, so a stale .tres
+# silently keeps the old palette on anything that has no override.
 #
 # This recipe lives here and not in project.godot because Godot rewrites that
 # file whenever any setting changes and discards every ";" comment when it does.
@@ -305,6 +315,17 @@ static func build_theme() -> Theme:
 	theme.set_stylebox("panel", "PanelContainer", panel_raised())
 	theme.set_stylebox("panel", "PopupPanel", panel_raised())
 
+	# Separators are the one hairline nothing overrides: SettingsPanel's dialog
+	# divider (its `separation` constant sets the gap, not the line) was drawing
+	# in Godot's stock separator grey while BORDER sat unused two pixels away --
+	# two greys doing the same job, which is the bug this file exists to kill.
+	for separator: String in ["HSeparator", "VSeparator"]:
+		var line := StyleBoxLine.new()
+		line.color = BORDER
+		line.thickness = BORDER_WIDTH
+		line.vertical = separator == "VSeparator"
+		theme.set_stylebox("separator", separator, line)
+
 	theme.set_font_size("font_size", "LineEdit", BODY)
 	theme.set_color("font_color", "LineEdit", ON_SURFACE)
 	theme.set_color("font_placeholder_color", "LineEdit", MUTED)
@@ -314,6 +335,19 @@ static func build_theme() -> Theme:
 
 	# Godot resolves theme items by exact type name -- CheckBox does NOT inherit
 	# Button's entries -- so every BaseButton subclass in use is listed.
+	#
+	# The five styleboxes are built ONCE and shared across all five type names.
+	# Calling the factories inside the loop produced 25 byte-identical
+	# StyleBoxFlat sub-resources in the saved .tres (and 25 objects at runtime)
+	# for five distinct looks. Sharing is safe because nothing mutates a
+	# stylebox it got from the theme -- the two callers that need a variant
+	# (SecurityCameraTablet's chip focus ring, SettingsPanel's rail) call the
+	# factories directly and get their own instance.
+	var btn_normal := button_normal()
+	var btn_hover := button_hover()
+	var btn_pressed := button_pressed()
+	var btn_disabled := button_disabled()
+	var btn_focus := focus()
 	for type_name: String in ["Button", "CheckBox", "CheckButton", "OptionButton", "MenuButton"]:
 		theme.set_font_size("font_size", type_name, BODY)
 		theme.set_color("font_color", type_name, ON_SURFACE)
@@ -321,11 +355,11 @@ static func build_theme() -> Theme:
 		theme.set_color("font_pressed_color", type_name, ACCENT)
 		theme.set_color("font_focus_color", type_name, ON_SURFACE)
 		theme.set_color("font_disabled_color", type_name, Color(MUTED, 0.4))
-		theme.set_stylebox("normal", type_name, button_normal())
-		theme.set_stylebox("hover", type_name, button_hover())
-		theme.set_stylebox("pressed", type_name, button_pressed())
-		theme.set_stylebox("disabled", type_name, button_disabled())
-		theme.set_stylebox("focus", type_name, focus())
+		theme.set_stylebox("normal", type_name, btn_normal)
+		theme.set_stylebox("hover", type_name, btn_hover)
+		theme.set_stylebox("pressed", type_name, btn_pressed)
+		theme.set_stylebox("disabled", type_name, btn_disabled)
+		theme.set_stylebox("focus", type_name, btn_focus)
 
 	return theme
 

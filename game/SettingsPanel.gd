@@ -3,14 +3,10 @@ extends Control
 
 signal closed
 
-const BG := Color("11161d")
-const SURFACE := Color("171e27")
-const SURFACE_HOVER := Color("202a35")
-const BORDER := Color("33414f")
-const TEXT := Color("edf3f5")
-const MUTED := Color("8fa1ad")
-const ACCENT := Color("55d6b3")
-const ACCENT_SOFT := Color("173a36")
+# The eight colour constants and the `_style()` factory that used to live here
+# were promoted wholesale into game/UITheme.gd -- that file is literally this
+# file's shape with the padding lifted into arguments. Everything below now
+# routes through UITheme, so there is one palette instead of two.
 
 var _settings: Node
 var _content: VBoxContainer
@@ -34,15 +30,23 @@ func _input(event: InputEvent) -> void:
 
 
 func _build() -> void:
+	# A modal dim over whatever is running behind, so SCRIM -- the same call
+	# MenuManager._open_pause_menu() makes for the same job.
 	var shade := ColorRect.new()
-	shade.color = Color(0.015, 0.025, 0.035, 0.94)
+	shade.color = UITheme.SCRIM
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(shade)
 
-	# Subtle museum-green glow behind the panel.
+	# Subtle glow behind the panel, retinted from the old one-off mint to the CRT
+	# green. Alpha drops 0.12 -> 0.05 because ACCENT is far brighter than that
+	# mint: this rect is larger than the dialog, so it IS the dialog's immediate
+	# surround, and at 0.12 it lifts the backdrop until SURFACE_RAISED reads only
+	# 1.209:1 above it -- under the 1.30 gate, i.e. the bug this stage removes,
+	# re-created by decoration. At 0.05 it is 1.356:1, matching the old mint's
+	# 1.357:1 exactly: same visual weight, palette hue, plane step intact.
 	var glow := ColorRect.new()
-	glow.color = Color(0.08, 0.35, 0.29, 0.12)
+	glow.color = Color(UITheme.ACCENT, 0.05)
 	glow.anchor_left = 0.16
 	glow.anchor_top = 0.12
 	glow.anchor_right = 0.84
@@ -54,9 +58,14 @@ func _build() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.add_child(center)
 
+	# PLANE 2 of 3 -- the dialog itself. Was BG #11161d, which the sidebar sat
+	# 1.04:1 from and the row cards 1.08:1 from: three planes, all the same
+	# colour. panel_raised() is SURFACE_RAISED, 1.44:1 above the SCRIM behind
+	# it and carrying the BORDER hairline, exactly like MenuManager's feedback
+	# dialog. Everything inside is now measured against this.
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(980, 610)
-	panel.add_theme_stylebox_override("panel", _style(BG, BORDER, 2, 14))
+	UITheme.apply_panel(panel)
 	center.add_child(panel)
 
 	var outer := VBoxContainer.new()
@@ -113,13 +122,11 @@ func _header() -> Control:
 	row.add_child(titles)
 	var eyebrow := Label.new()
 	eyebrow.text = tr("SET_EYEBROW")
-	eyebrow.add_theme_font_size_override("font_size", 12)
-	eyebrow.add_theme_color_override("font_color", ACCENT)
+	UITheme.apply_text(eyebrow, UITheme.CAPTION, UITheme.ACCENT)
 	titles.add_child(eyebrow)
 	var title := Label.new()
 	title.text = tr("MENU_SETTINGS")
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", TEXT)
+	UITheme.apply_text(title, UITheme.TITLE)
 	titles.add_child(title)
 	var close := Button.new()
 	close.text = tr("SET_BACK")
@@ -131,9 +138,16 @@ func _header() -> Control:
 
 
 func _sidebar() -> Control:
+	# PLANE 1 of 3 -- the rail, recessed. Was #0d1218 against BG #11161d: 1.04:1,
+	# i.e. nothing. SURFACE is 1.44:1 *below* the SURFACE_RAISED dialog, keeping
+	# the original intent (the rail is the darkest thing on screen) while making
+	# it an actual step. Hand-rolled rather than apply_panel(panel, false)
+	# because the rail is welded to the dialog's left edge: it needs radius 0 and
+	# no border, or it becomes a rounded box floating inside the frame.
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.x = 228
-	panel.add_theme_stylebox_override("panel", _style(Color("0d1218"), Color.TRANSPARENT, 0, 0))
+	panel.add_theme_stylebox_override("panel",
+		UITheme.stylebox(UITheme.SURFACE, Color.TRANSPARENT, 0, 0))
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 18)
 	margin.add_theme_constant_override("margin_right", 18)
@@ -159,8 +173,7 @@ func _sidebar() -> Control:
 	box.add_child(spacer)
 	var hint := Label.new()
 	hint.text = tr("SET_AUTOSAVE_HINT")
-	hint.add_theme_font_size_override("font_size", 13)
-	hint.add_theme_color_override("font_color", MUTED)
+	UITheme.apply_text(hint, UITheme.CAPTION, UITheme.MUTED)
 	box.add_child(hint)
 	return panel
 
@@ -243,13 +256,11 @@ func _build_accessibility() -> void:
 func _section_title(title_text: String, subtitle: String) -> void:
 	var title := Label.new()
 	title.text = title_text
-	title.add_theme_font_size_override("font_size", 28)
-	title.add_theme_color_override("font_color", TEXT)
+	UITheme.apply_text(title, UITheme.TITLE)
 	_content.add_child(title)
 	var sub := Label.new()
 	sub.text = subtitle
-	sub.add_theme_font_size_override("font_size", 14)
-	sub.add_theme_color_override("font_color", MUTED)
+	UITheme.apply_text(sub, UITheme.LABEL, UITheme.MUTED)
 	_content.add_child(sub)
 	var gap := Control.new()
 	gap.custom_minimum_size.y = 8
@@ -265,7 +276,7 @@ func _slider_row(title_text: String, description: String, key: String,
 	var value_label := Label.new()
 	value_label.custom_minimum_size.x = 58
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.add_theme_color_override("font_color", ACCENT)
+	UITheme.apply_text(value_label, UITheme.BODY, UITheme.ACCENT)
 	row.add_child(value_label)
 	var slider := HSlider.new()
 	slider.custom_minimum_size = Vector2(210, 34)
@@ -289,7 +300,9 @@ func _toggle_row(title_text: String, description: String, value: bool,
 	toggle.text = tr("SET_ON") if value else tr("SET_OFF")
 	toggle.button_pressed = value
 	toggle.custom_minimum_size = Vector2(92, 42)
-	toggle.add_theme_color_override("font_color", ACCENT)
+	# apply_text, not apply_button: a CheckButton draws its own switch graphic
+	# and the row card already supplies the surface, so it wants no stylebox.
+	UITheme.apply_text(toggle, UITheme.BODY, UITheme.ACCENT)
 	toggle.toggled.connect(func(on: bool) -> void:
 		toggle.text = tr("SET_ON") if on else tr("SET_OFF")
 		callback.call(on))
@@ -315,7 +328,7 @@ func _key_row(action: String, keyboard: String, gamepad: String) -> void:
 	var label := Label.new()
 	label.text = action
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", TEXT)
+	UITheme.apply_text(label, UITheme.BODY)
 	row.add_child(label)
 	for value in [keyboard, gamepad]:
 		var chip := Label.new()
@@ -323,15 +336,24 @@ func _key_row(action: String, keyboard: String, gamepad: String) -> void:
 		chip.custom_minimum_size = Vector2(92, 32)
 		chip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		chip.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		chip.add_theme_color_override("font_color", ACCENT)
-		chip.add_theme_stylebox_override("normal", _style(ACCENT_SOFT, Color(0.25, 0.65, 0.55, 0.45), 1, 6))
+		UITheme.apply_text(chip, UITheme.BODY, UITheme.ACCENT)
+		# Accent-tinted tag: no apply_* helper covers it, since apply_panel only
+		# offers the two neutral surfaces. RADIUS_SM is the chip radius by name.
+		chip.add_theme_stylebox_override("normal", UITheme.stylebox(
+			UITheme.ACCENT_FILL, UITheme.ACCENT_DIM, UITheme.BORDER_WIDTH, UITheme.RADIUS_SM))
 		row.add_child(chip)
 
 
 func _row_shell(height := 74) -> HBoxContainer:
+	# PLANE 3 of 3 -- the row cards. Was SURFACE #171e27 on BG #11161d: 1.08:1,
+	# with a BORDER only 1.61:1 from its own fill, so the cards were invisible
+	# twice over. panel() is SURFACE, 1.44:1 *below* the SURFACE_RAISED dialog,
+	# plus the BORDER hairline at 3.18:1 against the dialog and 4.58:1 against
+	# the card's own fill. Recessed rather than raised because the page they sit
+	# on is already the raised plane.
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.y = height
-	panel.add_theme_stylebox_override("panel", _style(SURFACE, BORDER, 1, 9))
+	UITheme.apply_panel(panel, false)
 	_content.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 18)
@@ -349,21 +371,22 @@ func _row_text(row: HBoxContainer, title_text: String, description: String) -> V
 	var box := VBoxContainer.new()
 	var title := Label.new()
 	title.text = title_text
-	title.add_theme_font_size_override("font_size", 17)
-	title.add_theme_color_override("font_color", TEXT)
+	UITheme.apply_text(title, UITheme.BODY)
 	box.add_child(title)
 	var sub := Label.new()
 	sub.text = description
-	sub.add_theme_font_size_override("font_size", 12)
-	sub.add_theme_color_override("font_color", MUTED)
+	UITheme.apply_text(sub, UITheme.CAPTION, UITheme.MUTED)
 	box.add_child(sub)
 	row.add_child(box)
 	return box
 
 
 func _info_card(title_text: String, body: String) -> void:
+	# Accent-tinted callout, so neither apply_panel surface fits. RADIUS_LG to
+	# match the row cards it is stacked with -- 9 was never on the shape scale.
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _style(ACCENT_SOFT, Color(0.2, 0.55, 0.47, 0.45), 1, 9))
+	panel.add_theme_stylebox_override("panel", UITheme.stylebox(
+		UITheme.ACCENT_FILL, UITheme.ACCENT_DIM, UITheme.BORDER_WIDTH, UITheme.RADIUS_LG))
 	_content.add_child(panel)
 	var margin := MarginContainer.new()
 	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
@@ -373,38 +396,26 @@ func _info_card(title_text: String, body: String) -> void:
 	margin.add_child(box)
 	var title := Label.new()
 	title.text = title_text
-	title.add_theme_font_size_override("font_size", 12)
-	title.add_theme_color_override("font_color", ACCENT)
+	UITheme.apply_text(title, UITheme.CAPTION, UITheme.ACCENT)
 	box.add_child(title)
 	var label := Label.new()
 	label.text = body
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", TEXT)
+	UITheme.apply_text(label, UITheme.CAPTION)
 	box.add_child(label)
 
 
 func _style_button(button: Button, active: bool) -> void:
-	button.add_theme_font_size_override("font_size", 15)
-	button.add_theme_color_override("font_color", ACCENT if active else TEXT)
-	button.add_theme_color_override("font_hover_color", TEXT)
-	button.add_theme_stylebox_override("normal", _style(ACCENT_SOFT if active else Color.TRANSPARENT,
-		Color(0.25, 0.7, 0.58, 0.35) if active else Color.TRANSPARENT, 1 if active else 0, 8))
-	button.add_theme_stylebox_override("hover", _style(SURFACE_HOVER, BORDER, 1, 8))
-	button.add_theme_stylebox_override("pressed", _style(ACCENT_SOFT, ACCENT, 1, 8))
-
-
-func _style(color: Color, border: Color, width: int, radius: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.border_color = border
-	style.set_border_width_all(width)
-	style.set_corner_radius_all(radius)
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	return style
+	# apply_button re-enables focus by default; pass through whatever the caller
+	# already decided, so the sidebar tabs keep the FOCUS_NONE set in _sidebar()
+	# while the close and reset buttons keep the tab order they always had.
+	UITheme.apply_button(button, UITheme.LABEL,
+		UITheme.ACCENT if active else UITheme.ON_SURFACE,
+		button.focus_mode != Control.FOCUS_NONE)
+	if active:
+		# UITheme has no "selected" state, but it has the pair the palette uses
+		# for one: ACCENT_FILL over an ACCENT border, i.e. button_pressed().
+		button.add_theme_stylebox_override("normal", UITheme.button_pressed())
 
 
 func _reset_defaults() -> void:

@@ -7,6 +7,49 @@ const STATE_ANOMALY := 2
 const SCAN_TIME := 2.5
 const EFFECT_RADIUS := 15.0
 
+# --- Curator proximity alert (stage 7.8) ------------------------------------
+#
+# Raising the CCTV tablet parks the operator: PlayerController.controls_enabled
+# goes false, the viewport camera moves to a wall mount, and from night 2 the
+# incident cannot be resolved until the operator has held a specific feed for
+# SCAN_TIME seconds. The Curator kept hunting through all of that, so the
+# mandatory scan was performed blind, deaf and immobile and the run could end
+# with the office door opening behind a screen the player was legally required
+# to be looking at.
+#
+# The fix is NOT to pause the Curator. The tablet is the one place the operator
+# is helpless, and that is the whole reason the tablet is frightening; make it a
+# safe room and the scan stops being a decision, the night stops having a cost,
+# and there is never a reason to put the tablet down again. What was actually
+# missing was information, not mercy: the player had no channel through which to
+# learn they were being approached, so a death was noise rather than a lesson.
+#
+# So the workstation gets a motion readout that only exists while the tablet is
+# up -- it pays back exactly the perception the tablet takes away and not one
+# metre more, and it vanishes the instant the feed is lowered. It reports range
+# AND bearing, because bearing is what makes it actionable: the Curator freezes
+# while it is looked at, so "12 m, behind you" tells the operator precisely
+# where to turn once they drop the tablet. Holding the scan for two more seconds
+# then becomes a bet the player understands and chooses to take.
+## Range at which the office motion sensor starts reporting the Curator.
+const WATCH_ALERT_RANGE := 24.0
+## Range at which the readout escalates: from here it is too late to finish a
+## scan, and the frame and the sting say so.
+const WATCH_CRITICAL_RANGE := 7.5
+## Seconds between pings at WATCH_ALERT_RANGE and at WATCH_CRITICAL_RANGE.
+const WATCH_PING_SLOW := 1.35
+const WATCH_PING_FAST := 0.22
+## Hysteresis on the escalation, so a Curator loitering on the boundary does not
+## re-trigger the one-shot sting every other frame.
+const WATCH_CRITICAL_RELEASE := 1.4
+## Screen-edge alert frame. UITheme has no token for this: BORDER_WIDTH (1) and
+## FOCUS_WIDTH (2) size hairlines around a control the player is already looking
+## at, and this band has to register in peripheral vision while the eye is on a
+## camera feed in the middle of the screen.
+const WATCH_FRAME_WIDTH := 6
+## Half-angle of the "ahead" and "behind" sectors, as a dot product: cos(45 deg).
+const WATCH_SECTOR_DOT := 0.7071
+
 ## Perceived-size window each local anomaly drives the operator through, as
 ## Vector2(min, max). _update_player_scale() only interpolates between these two
 ## bounds, so this table is the single source of truth for how big the player
@@ -41,6 +84,15 @@ var _base_flash_energy := 2.4
 var _effect_label: Label
 var _watcher: CuratorMonster
 var _scale_controller: Node
+var _player_camera: Camera3D
+var _watch_layer: CanvasLayer
+var _watch_frame: Panel
+var _watch_label: Label
+var _watch_style_near: StyleBoxFlat
+var _watch_style_critical: StyleBoxFlat
+var _watch_ping := 0.0
+var _watch_critical := false
+var _watch_pulse := 0.0
 var _incident_origin := Vector3.ZERO
 var _incident_name := ""
 var _rift_visual: Node3D
@@ -69,6 +121,7 @@ func _initialize() -> void:
 	if museum != null:
 		_map = museum.get_node_or_null("GeneratedMap") as Node3D
 	if _player != null:
+		_player_camera = _player.get_node_or_null("Player Camera") as Camera3D
 		_flashlight = _player.get_node_or_null("Player Camera/Player Flashlight") as SpotLight3D
 		_base_gravity = float(_player.get("gravity"))
 		_base_walk = float(_player.get("walk_speed"))
@@ -137,6 +190,7 @@ func _end_anomaly() -> void:
 	_restore_player()
 	if _effect_label != null:
 		_effect_label.visible = false
+	_hide_watch_alert()
 	if _watcher != null:
 		_watcher.visible = false
 		_watcher.active = false
@@ -160,6 +214,7 @@ func _update_anomaly(delta: float) -> void:
 			_update_void()
 	_update_player_scale()
 	_sync_watcher()
+	_update_watch_alert(delta)
 	_update_effect_label()
 
 
@@ -268,7 +323,144 @@ func _sync_watcher() -> void:
 	_watcher.night = _night
 	_watcher.slowed = _carried_tool() == "null_lantern"
 	# The museum is frozen while the operator is inside a pocket dimension.
+	#
+	# Stage 7.8: deliberately NOT also frozen while the CCTV tablet is open. See
+	# the WATCH_* block at the top of this file -- the tablet stays dangerous and
+	# _update_watch_alert() pays the player back in information instead. The
+	# weeping-angel rule agrees: CuratorMonster._is_observed() is false while the
+	# player's camera is not the one rendering, so the tablet never buys a freeze
+	# the operator could not have reasoned about.
 	_watcher.active = _watcher.visible and not bool(_game.get("_trial_active"))
+
+
+## Range and bearing to the Curator, or -1.0 when there is nothing to report.
+## Everything the alert needs to decide it should stay silent lives here.
+func _watch_distance() -> float:
+	if _tablet == null or not bool(_tablet.get("_open")):
+		# Eyes on the room: the operator can see for themselves, and a readout
+		# here would be a wallhack rather than compensation for being blinded.
+		return -1.0
+	if not is_instance_valid(_watcher) or not _watcher.active or _player == null:
+		return -1.0
+	var distance := _player.global_position.distance_to(_watcher.global_position)
+	return distance if distance <= WATCH_ALERT_RANGE else -1.0
+
+
+func _update_watch_alert(delta: float) -> void:
+	if _watch_layer == null:
+		return
+	var distance := _watch_distance()
+	if distance < 0.0:
+		_hide_watch_alert()
+		return
+
+	# 0 at the edge of sensor range, 1 once the Curator is inside the office.
+	var closeness := 1.0 - clampf(
+		(distance - WATCH_CRITICAL_RANGE) / (WATCH_ALERT_RANGE - WATCH_CRITICAL_RANGE), 0.0, 1.0)
+	_set_watch_critical(distance)
+
+	if not _watch_layer.visible:
+		_watch_layer.visible = true
+		# Ping immediately on the first frame of contact: a warning that waits up
+		# to 1.35 s to make its first sound is not a warning.
+		_watch_ping = 0.0
+		_watch_pulse = 0.0
+
+	_watch_ping -= delta
+	if _watch_ping <= 0.0:
+		_watch_ping = lerpf(WATCH_PING_SLOW, WATCH_PING_FAST, closeness)
+		# terminal_beep, not a scream: this is the workstation's own motion
+		# channel, and it has to stay separable from the trial and pickup beeps
+		# by rate and pitch rather than by being louder than everything else.
+		_sfx("terminal_beep", lerpf(-17.0, -4.0, closeness), lerpf(0.62, 1.32, closeness))
+
+	# The band breathes rather than strobes, and holds steady for players who
+	# have asked for reduced flashing.
+	_watch_pulse += delta * lerpf(2.2, 7.0, closeness)
+	var settings := get_tree().get_first_node_in_group("settings_manager")
+	var steady: bool = settings != null and bool(settings.get("reduced_flashes"))
+	_watch_frame.modulate.a = 1.0 if steady else 0.55 + 0.45 * (0.5 + 0.5 * sin(_watch_pulse))
+
+	var bearing := tr(_watch_bearing_key())
+	var text := Loc.fmt("HUD_WATCH_MOTION", [maxi(1, int(round(distance))), bearing])
+	if _watch_critical:
+		text += "\n" + tr("HUD_WATCH_CRITICAL")
+	_watch_label.text = text
+
+
+## Escalate once and only once per approach, with hysteresis on the way out.
+func _set_watch_critical(distance: float) -> void:
+	if _watch_critical:
+		if distance > WATCH_CRITICAL_RANGE * WATCH_CRITICAL_RELEASE:
+			_watch_critical = false
+			_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
+			UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
+		return
+	if distance > WATCH_CRITICAL_RANGE:
+		return
+	_watch_critical = true
+	_watch_frame.add_theme_stylebox_override("panel", _watch_style_critical)
+	UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.DANGER)
+	# One heavy sting at the boundary. The ping tells the operator something is
+	# coming; this tells them the decision is now.
+	_sfx("blackout", -5.0, 0.85)
+
+
+func _hide_watch_alert() -> void:
+	if _watch_layer == null or not _watch_layer.visible:
+		return
+	_watch_layer.visible = false
+	_watch_ping = 0.0
+	if _watch_critical:
+		_watch_critical = false
+		_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
+		UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
+
+
+## Which quarter of the operator's frozen field of view the Curator is in.
+##
+## The tablet froze the player mid-turn, so this bearing is exactly the one they
+## will be facing the moment they lower it -- which is what makes it a usable
+## instruction rather than trivia. Sectors instead of degrees: nobody parses
+## "137 deg" under a closing beep.
+func _watch_bearing_key() -> String:
+	var forward := _watch_forward()
+	var flat := _watcher.global_position - _player.global_position
+	flat.y = 0.0
+	if forward == Vector3.ZERO or flat.length_squared() < 0.0001:
+		return "HUD_WATCH_BEARING_AHEAD"
+	flat = flat.normalized()
+	var ahead := forward.dot(flat)
+	if ahead >= WATCH_SECTOR_DOT:
+		return "HUD_WATCH_BEARING_AHEAD"
+	if ahead <= -WATCH_SECTOR_DOT:
+		return "HUD_WATCH_BEARING_BEHIND"
+	# forward x UP is the operator's right hand: with Godot's -Z forward that
+	# cross product lands on +X, so a positive dot means "to your right".
+	return "HUD_WATCH_BEARING_RIGHT" if forward.cross(Vector3.UP).dot(flat) > 0.0 \
+		else "HUD_WATCH_BEARING_LEFT"
+
+
+## The operator's flattened facing. Prefer the camera, because it carries the
+## yaw the body has plus nothing the body does not; fall back to the body when
+## the camera is pitched far enough that flattening its forward is degenerate.
+func _watch_forward() -> Vector3:
+	if _player == null:
+		return Vector3.ZERO
+	var forward := Vector3.ZERO
+	if is_instance_valid(_player_camera):
+		forward = -_player_camera.global_transform.basis.z
+		forward.y = 0.0
+	if forward.length_squared() < 0.0001:
+		forward = -_player.global_transform.basis.z
+		forward.y = 0.0
+	return forward.normalized() if forward.length_squared() > 0.0001 else Vector3.ZERO
+
+
+func _sfx(sound: String, volume_db := 0.0, pitch := 1.0) -> void:
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_sfx"):
+		am.play_sfx(sound, volume_db, pitch)
 
 
 func _restore_player() -> void:
@@ -295,12 +487,68 @@ func _build_hud() -> void:
 	_effect_label.anchor_right = 0.98
 	_effect_label.anchor_bottom = 0.16
 	_effect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_effect_label.add_theme_font_size_override("font_size", 17)
-	_effect_label.add_theme_color_override("font_color", Color(0.75, 0.95, 0.8))
-	_effect_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	UITheme.apply_text(_effect_label, UITheme.BODY, UITheme.ACCENT)
+	# The readout is drawn straight onto the 3D view with no panel behind it, so
+	# it keeps its outline: UITheme has no token for glyph outlines, and without
+	# one this text is illegible over a lit exhibit. The outline colour is the
+	# page surface at the alpha it already used -- it stands in for the panel
+	# this label deliberately does not have.
+	_effect_label.add_theme_color_override("font_outline_color", Color(UITheme.SURFACE, 0.9))
 	_effect_label.add_theme_constant_override("outline_size", 5)
 	_effect_label.visible = false
 	layer.add_child(_effect_label)
+	_build_watch_alert()
+
+
+## Motion readout drawn over the camera feed. Its own CanvasLayer at 12, above
+## SecurityCameraTablet's UI (10) and the effect readout (11) -- the whole point
+## is that it is legible while the tablet owns the screen.
+func _build_watch_alert() -> void:
+	_watch_layer = CanvasLayer.new()
+	_watch_layer.name = "Curator Proximity Alert"
+	_watch_layer.layer = 12
+	_watch_layer.visible = false
+	add_child(_watch_layer)
+
+	_watch_style_near = _watch_border(UITheme.WARNING)
+	_watch_style_critical = _watch_border(UITheme.DANGER)
+
+	_watch_frame = Panel.new()
+	_watch_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_watch_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
+	_watch_layer.add_child(_watch_frame)
+
+	var banner := Panel.new()
+	banner.anchor_left = 0.22
+	banner.anchor_top = 0.055
+	banner.anchor_right = 0.78
+	banner.anchor_bottom = 0.155
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply_panel(banner)
+	_watch_layer.add_child(banner)
+
+	_watch_label = Label.new()
+	_watch_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Panel is not a container, so the stylebox's content margins do not lay the
+	# label out; inset it by hand on the same tokens.
+	_watch_label.offset_left = UITheme.PAD_X
+	_watch_label.offset_right = -UITheme.PAD_X
+	_watch_label.offset_top = UITheme.PAD_Y
+	_watch_label.offset_bottom = -UITheme.PAD_Y
+	_watch_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_watch_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_watch_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_watch_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
+	banner.add_child(_watch_label)
+
+
+## Screen-edge band: border only, so the camera feed underneath stays readable.
+func _watch_border(color: Color) -> StyleBoxFlat:
+	var style := UITheme.stylebox(Color.TRANSPARENT, color, WATCH_FRAME_WIDTH, 0)
+	style.draw_center = false
+	return style
 
 
 func _update_effect_label() -> void:
