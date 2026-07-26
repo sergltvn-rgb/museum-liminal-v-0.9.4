@@ -7,6 +7,20 @@ const STATE_ANOMALY := 2
 const SCAN_TIME := 2.5
 const EFFECT_RADIUS := 15.0
 
+## Perceived-size window each local anomaly drives the operator through, as
+## Vector2(min, max). _update_player_scale() only interpolates between these two
+## bounds, so this table is the single source of truth for how big the player
+## can get; test_incident_catalog.gd reads it to prove every curve still crosses
+## the "small" and "large" calibration thresholds. The test used to carry its own
+## copy of these numbers and could therefore never notice a change here.
+## Anomalies absent from this table do not touch the player's size at all.
+const ANOMALY_SCALE_SPAN := {
+	"gravity_surge": Vector2(0.72, 1.30),
+	"temporal_drift": Vector2(0.78, 1.28),
+	"radiation_bloom": Vector2(0.74, 1.30),
+	"void_rift": Vector2(0.72, 1.30),
+}
+
 var _game: Node
 var _map: Node3D
 var _player: CharacterBody3D
@@ -111,7 +125,7 @@ func _begin_anomaly(id: String) -> void:
 		_watcher.reset_at(Vector3(24, 0.0, -27) if _night == 2 else Vector3(53, 0.0, -5))
 	if not _scan_complete:
 		var cam_name := "CAM %02d" % (_required_camera + 1)
-		_game.set_objective("cctv", tr("OBJ_CCTV_CONFIRM") % [_incident_name, cam_name, SCAN_TIME], 40)
+		_game.set_objective("cctv", Loc.fmt("OBJ_CCTV_CONFIRM", [_incident_name, cam_name, SCAN_TIME]), 40)
 	_update_effect_label()
 
 
@@ -241,7 +255,7 @@ func can_resolve() -> bool:
 		return true
 	var remaining := maxf(0.0, SCAN_TIME - _scan_progress)
 	var cam_name := "CAM %02d" % (_required_camera + 1)
-	_game.call("_flash", tr("HUD_CONFIRM_SOURCE_FIRST") % [cam_name, remaining], Color(1.0, 0.65, 0.3))
+	_game.call("_flash", Loc.fmt("HUD_CONFIRM_SOURCE_FIRST", [cam_name, remaining]), Color(1.0, 0.65, 0.3))
 	return false
 
 
@@ -295,9 +309,9 @@ func _update_effect_label() -> void:
 	_effect_label.visible = _active
 	var effect := ""
 	match _anomaly:
-		"gravity_surge": effect = tr("HUD_EFFECT_GRAVITY") % (float(_player.get("gravity")) / _base_gravity * 100.0)
-		"temporal_drift": effect = tr("HUD_EFFECT_TEMPORAL") % (float(_player.get("walk_speed")) / _base_walk * 100.0)
-		"radiation_bloom": effect = tr("HUD_EFFECT_DOSE") % _exposure
+		"gravity_surge": effect = Loc.fmt("HUD_EFFECT_GRAVITY", [float(_player.get("gravity")) / _base_gravity * 100.0])
+		"temporal_drift": effect = Loc.fmt("HUD_EFFECT_TEMPORAL", [float(_player.get("walk_speed")) / _base_walk * 100.0])
+		"radiation_bloom": effect = Loc.fmt("HUD_EFFECT_DOSE", [_exposure])
 		"void_rift": effect = tr("HUD_EFFECT_VOID")
 		"echo_chamber": effect = tr("HUD_EFFECT_ECHO")
 		"glass_bridge": effect = tr("HUD_EFFECT_GLASS")
@@ -307,16 +321,16 @@ func _update_effect_label() -> void:
 		"ascent": effect = tr("HUD_EFFECT_ASCENT")
 	match _carried_tool():
 		"spectral_lens":
-			effect += "\n" + (tr("HUD_TOOL_LENS") % int(_player.global_position.distance_to(_incident_origin)))
+			effect += "\n" + Loc.fmt("HUD_TOOL_LENS", [int(_player.global_position.distance_to(_incident_origin))])
 		"thread_spool":
-			effect += "\n" + (tr("HUD_TOOL_THREAD") % int(_player.global_position.distance_to(_incident_origin)))
+			effect += "\n" + Loc.fmt("HUD_TOOL_THREAD", [int(_player.global_position.distance_to(_incident_origin))])
 		"phase_prism":
 			effect += "\n" + tr("HUD_TOOL_PRISM")
 		"null_lantern":
 			effect += "\n" + tr("HUD_TOOL_LANTERN")
 	var scan := ""
 	if not _scan_complete and _required_camera >= 0:
-		scan = "\n" + (tr("HUD_SCAN_PROGRESS") % (100.0 * _scan_progress / SCAN_TIME))
+		scan = "\n" + Loc.fmt("HUD_SCAN_PROGRESS", [100.0 * _scan_progress / SCAN_TIME])
 	_effect_label.text = effect + scan
 
 
@@ -327,16 +341,23 @@ func _update_player_scale() -> void:
 	if strength <= 0.01:
 		_scale_controller.set_target(1.0)
 		return
+	if not ANOMALY_SCALE_SPAN.has(_anomaly):
+		# echo_chamber, glass_bridge, mirror_maze, yellow_halls, scrap_run and
+		# ascent have no size curve; the operator keeps the size they already
+		# have, exactly as when the match below simply fell through.
+		return
+	var span: Vector2 = ANOMALY_SCALE_SPAN[_anomaly]
 	match _anomaly:
 		"gravity_surge":
-			_scale_controller.set_target(0.72 + 0.58 * (0.5 + 0.5 * sin(_phase * 0.75)))
+			_scale_controller.set_target(lerpf(span.x, span.y, 0.5 + 0.5 * sin(_phase * 0.75)))
 		"temporal_drift":
-			_scale_controller.set_target(0.78 if fmod(_phase, 12.0) < 6.0 else 1.28)
+			# Square wave rather than a sine: the two extremes only, 12 s per cycle.
+			_scale_controller.set_target(span.x if fmod(_phase, 12.0) < 6.0 else span.y)
 		"radiation_bloom":
 			# Breathing expansion/contraction keeps every calibration size reachable.
-			_scale_controller.set_target(1.02 + 0.28 * sin(_phase * 0.62))
+			_scale_controller.set_target(lerpf(span.x, span.y, 0.5 + 0.5 * sin(_phase * 0.62)))
 		"void_rift":
-			_scale_controller.set_target(1.01 + 0.29 * sin(_phase * 0.55))
+			_scale_controller.set_target(lerpf(span.x, span.y, 0.5 + 0.5 * sin(_phase * 0.55)))
 
 
 func _local_strength() -> float:

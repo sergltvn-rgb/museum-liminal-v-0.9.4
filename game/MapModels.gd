@@ -14,7 +14,39 @@ const MODEL_PATHS := {
 	"camera": "res://models/camera.fbx",
 	"security_camera": "res://models/camera.fbx",
 }
-const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashlight", "modern_grey_stone_tile_texture"]
+# Dressing that must never collide: wall-mounted CCTV, ceiling vents, the loose
+# flashlight, the huge tiling-texture plane, and the "арка дверь" arch that frames
+# the Atrium -> Time Wing B doorway.
+#
+# The arch entry is a deliberate trade, not a free win. Gained: the doorway keeps
+# the whole 1.8 m DOOR_GAP that _add_door_frame's wall segments, jambs and header
+# define, so the bake still carries 0.9 m of navmesh through it and the Curator can
+# follow the player into Time Wing B. Given up: the arch's own posts overhang that
+# opening and nothing stops the player or the Curator walking through stone.
+# Measured on the placed instance (scale 0.85 at z = -15.5), the post inner faces
+# stand at x = +-0.699 across the standing band and flare to +-0.649 at the base
+# plinth, against a 0.90 m half-gap -- roughly 0.20 m of visible intrusion per side,
+# 0.25 m at ankle height.
+#
+# An exact trimesh collider was tried and rejected: it shrinks the opening to its
+# true 1.30 m and lays a 0.19-0.22 m threshold slab across it. Navmesh erosion is
+# ceil(agent_radius 0.45 / cell_size 0.15) = 3 cells = 0.45 m per side, so 1.30 m
+# bakes to ~0.40 m of walkable width instead of 0.90 m; and since agent_max_climb is
+# 0.4 m, Recast paths straight over the slab, which CuratorMonster's plain
+# move_and_slide() -- no step-up, default 45-degree floor limit -- cannot mount. The
+# Curator would grind against a 0.19 m lip and be stranded on one side. A convex
+# hull is worse again: 2.18 m across a 1.80 m gap seals the doorway outright, which
+# is the regression test_blocker_regressions.gd now guards. Clipping a post is
+# cosmetic on one doorway; a Curator that cannot leave the Atrium breaks the chase.
+const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashlight",
+	"modern_grey_stone_tile_texture", "арка дверь"]
+# Large, mostly hollow meshes whose convex hull would be vastly bigger than the
+# geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
+# units: hulling it yields one solid wedge that swallows a big slice of Space
+# Wing C, even though the mesh itself is almost all empty air. An exact concave
+# collider follows the real surface instead. Static bodies only:
+# ConcavePolygonShape3D is not valid on anything that moves.
+const TRIMESH_COLLISION := ["portal_arch"]
 
 
 static func place(parent: Node, model_name: String, world_position: Vector3,
@@ -44,16 +76,22 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 	# meshes when the source GLB did not provide one; wall-mounted CCTV stays
 	# non-blocking so it cannot snag the player near doorways.
 	if model_name not in NON_BLOCKING:
-		_ensure_collisions(instance)
+		_ensure_collisions(instance, model_name in TRIMESH_COLLISION)
 	return instance
 
 
-static func _ensure_collisions(root: Node3D) -> void:
+static func _ensure_collisions(root: Node3D, use_trimesh := false) -> void:
 	if root.find_child("*Collision*", true, false) != null:
 		return
 	for child in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := child as MeshInstance3D
-		if mesh_instance != null and mesh_instance.mesh != null:
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		if use_trimesh:
+			# Exact concave collider: follows the real surface instead of the
+			# oversized solid hull a large hollow mesh would otherwise get.
+			mesh_instance.create_trimesh_collision()
+		else:
 			mesh_instance.create_convex_collision(true, true)
 
 

@@ -15,6 +15,12 @@ func _run() -> void:
 		_finish(); return
 	var scene := main.instantiate()
 	root.add_child(scene)
+	# The engine assigns current_scene when it boots run/main_scene; adding the
+	# scene by hand does not. RiftTrialManager._build_world() parents each pocket
+	# dimension under current_scene, so without this every trial builder aborted
+	# on a null and the "<kind> starts" checks were passing against a world that
+	# had never been built.
+	current_scene = scene
 	for i in range(5): await process_frame
 	var game := scene.get_node_or_null("GameManager")
 	var player := get_first_node_in_group("player")

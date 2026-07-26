@@ -21,8 +21,10 @@ extends CharacterBody3D
 @onready var camera: Camera3D = $"Player Camera"
 @onready var flashlight: SpotLight3D = $"Player Camera/Player Flashlight"
 
-# The security tablet flips this off while the camera feed is open so the
-# player cannot walk around blindly.
+# Off while the CCTV feed is open (so the player cannot walk around blindly),
+# while a rift trial is being set up, and while a fail / night-done / win overlay
+# is up. GameManager.player_controls_allowed() is the authority on the last case:
+# nothing here or elsewhere may assign true on a hunch.
 var controls_enabled := true
 
 var _pitch := 0.0
@@ -78,11 +80,16 @@ func _physics_process(delta: float) -> void:
 	var local_up := -gravity_direction.normalized(); up_direction = local_up
 	var grounded := is_on_floor()
 	_coyote_left = coyote_time if grounded else maxf(0.0, _coyote_left-delta)
-	_jump_buffer_left = jump_buffer_time if Input.is_action_just_pressed("jump") else maxf(0.0,_jump_buffer_left-delta)
 	if not grounded: velocity += gravity_direction.normalized()*gravity*delta
 	if not controls_enabled:
+		# Do not poll "jump" while control is off: the A button also drives
+		# "confirm" on the terminal overlays, and a buffered press would fire
+		# as a jump the instant control comes back. Clear rather than decay so
+		# nothing survives a disabled period however short it was.
+		_jump_buffer_left = 0.0
 		velocity = velocity.project(local_up)+velocity.slide(local_up).move_toward(Vector3.ZERO,ground_deceleration*delta)
 		move_and_slide(); return
+	_jump_buffer_left = jump_buffer_time if Input.is_action_just_pressed("jump") else maxf(0.0,_jump_buffer_left-delta)
 	var input_dir := Input.get_vector("move_left","move_right","move_forward","move_back")
 	var wants_run := Input.is_action_pressed("sprint") and input_dir.length()>0.08 and not _exhausted
 	if wants_run:
@@ -123,11 +130,17 @@ func _update_safe_transform(delta:float)->void:
 	if is_on_floor() and _safe_position_timer>=.25:
 		_last_safe_transform=global_transform; _safe_position_timer=0.0
 
+# Restores the control state that was in force on entry instead of forcing true:
+# gravity is applied above the "not controls_enabled" early-out in
+# _physics_process, so a player frozen behind a fail overlay keeps falling and
+# still trips GameManager's kill plane. Both RiftTrialManager callers teleport
+# mid-trial with control on, so they get it back exactly as before.
 func safe_teleport(target_position:Vector3,new_gravity:=Vector3.DOWN)->void:
+	var was_enabled := controls_enabled
 	controls_enabled=false; velocity=Vector3.ZERO; set_gravity_direction(new_gravity); global_position=target_position
 	_coyote_left=0.0; _jump_buffer_left=0.0
 	await get_tree().physics_frame
-	velocity=Vector3.ZERO; controls_enabled=true
+	velocity=Vector3.ZERO; controls_enabled=was_enabled
 
 func return_to_last_safe_position()->void:
 	if _last_safe_transform!=Transform3D.IDENTITY: await safe_teleport(_last_safe_transform.origin+Vector3.UP*.12)

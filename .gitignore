@@ -13,3 +13,12 @@ Thumbs.db
 export/
 build/
 *.pck
+
+# Node dependencies (notion_worker and any future tooling).
+# Also kept out of the Godot import scan by notion_worker/.gdignore.
+node_modules/
+
+# Agent worktrees: a full duplicate checkout of this repository.
+# Was previously hidden only by the machine-local .git/info/exclude,
+# so a fresh clone would have started tracking it.
+/.claude/worktrees/

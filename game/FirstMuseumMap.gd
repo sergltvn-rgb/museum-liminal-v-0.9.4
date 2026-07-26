@@ -491,6 +491,12 @@ func _door_leaves(parent: Node, center: Vector3, axis: String) -> void:
 				Vector3(0.06, leaf_h, leaf_w), leaf_color)
 
 
+# Every CCTV mount joins this group. Counting cameras must never depend on the
+# node name: the mount is either an imported .fbx root or a procedural pivot,
+# and its display name is a localizable string.
+const SECURITY_CAMERA_GROUP := "security_camera"
+
+
 func _add_cameras(parent: Node) -> void:
 	# Mounted in room corners like real CCTV, each yawed to sweep its room
 	# (they used to hang mid-wall staring straight ahead).
@@ -509,7 +515,12 @@ func _add_cameras(parent: Node) -> void:
 
 func _camera(parent: Node, camera_name: String, camera_position: Vector3,
 		yaw := 0.0) -> void:
-	if MuseumModels.place(parent, "security_camera", camera_position, 1.0, yaw) != null:
+	var model := MuseumModels.place(parent, "security_camera", camera_position, 1.0, yaw)
+	if model != null:
+		# The .fbx root carries the same name for all eleven placements, so Godot
+		# auto-suffixes them (@camera@2, ...). Name each mount after its post.
+		model.name = camera_name
+		model.add_to_group(SECURITY_CAMERA_GROUP, true)
 		_add_label(parent, camera_name, camera_position + Vector3(0, 0.3, 0),
 			Color(0.35, 0.95, 0.78))
 		return
@@ -520,6 +531,7 @@ func _camera(parent: Node, camera_name: String, camera_position: Vector3,
 	cam.position = camera_position
 	cam.rotation_degrees = Vector3(-14, yaw, 0)
 	parent.add_child(cam)
+	cam.add_to_group(SECURITY_CAMERA_GROUP, true)
 	_box(cam, "%s Mount Arm" % camera_name, Vector3(0, 0.24, 0.12),
 		Vector3(0.07, 0.2, 0.07), Color(0.04, 0.04, 0.04), 0.0, 0.0, false)
 	_box(cam, "%s Body" % camera_name, Vector3(0, 0, 0),
@@ -919,8 +931,12 @@ func _trigger_blackout() -> void:
 	var am := get_tree().get_first_node_in_group("audio_manager")
 	if am != null:
 		if am.has_method("play_sfx"):
-			am.play_sfx("blackout", 6.0)
-			am.play_sfx("power_down", 3.0)
+			# These two fire together on Master, so positive gain on samples that
+			# already sit near full scale drives the sum into clipping. Unity for
+			# the blackout hit and -3 dB for the power-down keeps the original
+			# 3 dB spread between them with no boost at all.
+			am.play_sfx("blackout", 0.0)
+			am.play_sfx("power_down", -3.0)
 	if is_instance_valid(_night_entrance_door):
 		create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN).tween_property(_night_entrance_door,"position:y",1.50,1.15)
 		if am!=null and am.has_method("play_at"):am.play_at("door_lock",Vector3(0,1.4,34.2),-2.0)
@@ -1731,10 +1747,30 @@ func _add_outdoor(parent: Node) -> void:
 
 	# Low perimeter walls keep the composition bounded while preserving the
 	# road-facing entrance and a clear view of the facade.
-	_box(parent, "Lot Wall East", Vector3(31.5, 0.6, 45), Vector3(0.4, 1.2, 22),
+	# Extents recap: "Forecourt Ground" above covers x -32..32, z 35..55 and
+	# "Street Road" in _add_street_extras() continues it over z 55..63. There is
+	# no floor anywhere outside that rectangle. The side walls used to be
+	# centred at z 45 with depth 22, i.e. they stopped at z 56 and left the
+	# whole road frontage open; run them from z 34 to z 63.5 instead, where they
+	# meet "Lot Wall South" (z 63.3..63.7).
+	_box(parent, "Lot Wall East", Vector3(31.5, 0.6, 48.75), Vector3(0.4, 1.2, 29.5),
 		Color(0.26, 0.27, 0.25))
-	_box(parent, "Lot Wall West", Vector3(-31.5, 0.6, 45), Vector3(0.4, 1.2, 22),
+	_box(parent, "Lot Wall West", Vector3(-31.5, 0.6, 48.75), Vector3(0.4, 1.2, 29.5),
 		Color(0.26, 0.27, 0.25))
+
+	# North edge. The Entrance Zone facade is only 22 m wide: its south wall
+	# spans x -11..11 at z 34.65..35.0 (room centre z 25, depth 20, walls inset
+	# by half of WALL_THICKNESS). Past either corner the ground simply ends at
+	# z = 35 with nothing underneath -- that is how the player walked into the
+	# void. Close both shoulders: x 11..32 and x -32..-11, standing on the
+	# ground at z 35.0..35.4 so nothing overhangs the drop, butted flush
+	# against the facade so the seam is zero-width (capsule radius is 0.35).
+	# 1.2 m matches the lot walls and is unclimbable: jump_velocity 6.0 under
+	# gravity 18.0 gives a 1.0 m apex, and _try_step_up() only runs grounded.
+	for side: float in [-1.0, 1.0]:
+		_box(parent, "Lot Wall North %s" % ("East" if side > 0.0 else "West"),
+			Vector3(side * 21.5, 0.6, 35.2), Vector3(21.0, 1.2, 0.4),
+			Color(0.26, 0.27, 0.25))
 
 
 func _add_street_extras(parent: Node) -> void:

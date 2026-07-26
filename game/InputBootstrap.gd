@@ -1,6 +1,21 @@
 extends Node
 ## Central input map with keyboard and gamepad bindings. Actions are created
 ## at runtime so the project no longer depends on hard-coded key polling.
+##
+## Gamepad layout — one action per control, with A as the single deliberate
+## double: it is the platform-conventional accept button, so it carries both
+## jump (during play) and confirm (on the terminal overlays). The two can never
+## fire together — GameManager switches the player's controls_enabled off while
+## a fail / night-done / win screen is up.
+##   Left stick  move_*        Right stick  camera_pan_* / camera_tilt_*
+##   A  jump + confirm         B  drop_item
+##   X  interact               Y  tablet
+##   LB radar_scan             RB flashlight
+##   L3 sprint                 START pause
+##   Free: BACK/SELECT, R3, both triggers, D-pad.
+## The engine keeps its own ui_* actions on A (ui_accept), B (ui_cancel),
+## Y (ui_select), the D-pad and the left stick; those are UI-only and are left
+## alone on purpose.
 
 
 func _ready() -> void:
@@ -14,9 +29,18 @@ func _ready() -> void:
 	_add_action("drop_item", [_key(KEY_G), _joy_button(JOY_BUTTON_B)])
 	_add_action("tablet", [_key(KEY_TAB), _joy_button(JOY_BUTTON_Y)])
 	_add_action("flashlight", [_key(KEY_F), _joy_button(JOY_BUTTON_RIGHT_SHOULDER)])
-	_add_action("radar", [_key(KEY_R), _joy_button(JOY_BUTTON_LEFT_SHOULDER)])
-	_add_action("radar_scan", [_mouse(MOUSE_BUTTON_LEFT), _joy_button(JOY_BUTTON_RIGHT_SHOULDER)])
+	# "radar" has no reader anywhere in game/ (only "radar_scan" is queried), so
+	# it must not occupy the last free shoulder button.
+	_add_action("radar", [_key(KEY_R)])
+	# Lidar scan moves off RB: it collided with the flashlight, which made the
+	# flashlight untoggleable during void_rift and the scan unreachable on a pad.
+	_add_action("radar_scan", [_mouse(MOUSE_BUTTON_LEFT), _joy_button(JOY_BUTTON_LEFT_SHOULDER)])
 	_add_action("pause", [_key(KEY_ESCAPE), _joy_button(JOY_BUTTON_START)])
+	# Stays on A: Back/Select is a cancel button and no player would look for
+	# "accept" there. Sharing A is safe because PlayerController only polls
+	# "jump" while controls_enabled is true, and GameManager clears that flag
+	# for STATE_FAILED / STATE_NIGHT_DONE / STATE_WIN — the only states where
+	# "confirm" does anything besides dismissing the protocol overlay.
 	_add_action("confirm", [_key(KEY_ENTER), _joy_button(JOY_BUTTON_A)])
 	_add_action("camera_pan_left", [_key(KEY_LEFT), _joy_axis(JOY_AXIS_RIGHT_X, -1.0)])
 	_add_action("camera_pan_right", [_key(KEY_RIGHT), _joy_axis(JOY_AXIS_RIGHT_X, 1.0)])

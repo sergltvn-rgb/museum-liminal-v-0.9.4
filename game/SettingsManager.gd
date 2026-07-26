@@ -5,6 +5,9 @@ signal settings_changed
 
 const PATH := "user://museum_settings.cfg"
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080)]
+## Contrast the accessibility toggle guarantees when it is ON. Applied as a
+## floor over the map's own grade, never as a replacement for it.
+const HIGH_CONTRAST_CONTRAST := 1.18
 
 var master_volume := 0.82
 var mouse_sensitivity := 0.0025
@@ -18,6 +21,14 @@ var subtitles := true
 var high_contrast := false
 var reduced_motion := false
 var language := "ru"
+
+# Colour grade authored by FirstMuseumMap (_add_world_env, later modified by
+# _trigger_blackout), captured the first time we touch the environment. High
+# contrast is an override on top of it, so turning the toggle OFF restores
+# these values instead of switching the whole adjustment stage off.
+var _grade_cached := false
+var _base_adjustment_enabled := true
+var _base_adjustment_contrast := 1.0
 
 
 func _ready() -> void:
@@ -81,7 +92,7 @@ func set_subtitles(value: bool) -> void:
 
 func set_high_contrast(value: bool) -> void:
 	high_contrast = value
-	_apply_ui_scale()
+	_apply_contrast()
 	_commit()
 
 
@@ -176,13 +187,31 @@ func _apply_quality() -> void:
 
 func _apply_ui_scale() -> void:
 	get_tree().root.content_scale_factor = 1.12 if large_text else 1.0
+	_apply_contrast()
+
+
+## High contrast is an override on top of the map's colour grade, never a
+## replacement for it. OFF restores exactly what FirstMuseumMap authored --
+## including the night-time desaturation applied by _trigger_blackout, which
+## used to be silently switched off with the whole adjustment stage. ON only
+## raises the contrast, leaving saturation and brightness to the art direction.
+func _apply_contrast() -> void:
 	var museum := get_tree().get_first_node_in_group("museum_map")
 	if museum == null:
 		return
 	var env: Variant = museum.get("_environment")
-	if env is Environment:
-		env.adjustment_enabled = high_contrast
-		env.adjustment_contrast = 1.18 if high_contrast else 1.0
+	if not (env is Environment):
+		return
+	if not _grade_cached:
+		_base_adjustment_enabled = env.adjustment_enabled
+		_base_adjustment_contrast = env.adjustment_contrast
+		_grade_cached = true
+	if high_contrast:
+		env.adjustment_enabled = true
+		env.adjustment_contrast = maxf(_base_adjustment_contrast, HIGH_CONTRAST_CONTRAST)
+	else:
+		env.adjustment_enabled = _base_adjustment_enabled
+		env.adjustment_contrast = _base_adjustment_contrast
 
 
 func _load_settings() -> void:

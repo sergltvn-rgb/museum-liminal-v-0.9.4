@@ -30,6 +30,10 @@ var _game: Node
 var _active_id := ""
 var _exhibit: Dictionary = {}
 var _last_exhibit := ""
+# Cached anomaly anchor: get_incident_origin() is polled every frame while a
+# device is carried, and resolving it means a find_child() over the whole map.
+var _anchor: Node3D = null
+var _anchor_key := ""
 
 func _ready() -> void:
 	add_to_group("exhibit_puzzle_controller")
@@ -53,7 +57,7 @@ func prepare_incident(anomaly_id: String, night: int) -> void:
 	_exhibit = _choose_exhibit(night)
 	_last_exhibit = str(_exhibit.get("name", ""))
 	if _game != null and _game.has_method("set_objective"):
-		_game.set_objective("incident", tr("OBJ_INCIDENT_EXHIBIT") % [tr(_exhibit["name"]), tr(_exhibit["wing"])], 30)
+		_game.set_objective("incident", Loc.fmt("OBJ_INCIDENT_EXHIBIT", [tr(_exhibit["name"]), tr(_exhibit["wing"])]), 30)
 
 func _choose_exhibit(night: int) -> Dictionary:
 	var candidates: Array = []
@@ -72,13 +76,23 @@ func _choose_exhibit(night: int) -> Dictionary:
 	return selected.duplicate(true)
 
 func get_incident_origin() -> Vector3:
-	var museum:=get_tree().get_first_node_in_group("museum_map")
-	if museum!=null:
-		var root:=museum.get_node_or_null("GeneratedMap")
-		if root!=null:
-			var anchor:=root.find_child(str(_exhibit.get("anchor","")),true,false) as Node3D
-			if anchor!=null:return anchor.global_position-Vector3(0,1.55,0)
+	var anchor_name:=str(_exhibit.get("anchor",""))
+	# Search once per incident, but only while the cache holds a live node.
+	# is_instance_valid(null) is false, so we retry both when the anchor was
+	# never resolved (map not built yet) and when it has since been freed.
+	if _anchor_key!=anchor_name or not is_instance_valid(_anchor):
+		_anchor_key=anchor_name
+		_anchor=_find_anchor(anchor_name)
+	if _anchor!=null:return _anchor.global_position-Vector3(0,1.55,0)
 	return _exhibit.get("origin",Vector3.ZERO) as Vector3
+
+func _find_anchor(anchor_name:String) -> Node3D:
+	if anchor_name=="":return null
+	var museum:=get_tree().get_first_node_in_group("museum_map")
+	if museum==null:return null
+	var root:=museum.get_node_or_null("GeneratedMap")
+	if root==null:return null
+	return root.find_child(anchor_name,true,false) as Node3D
 func get_incident_name() -> String: return tr(str(_exhibit.get("name", "EXHIBIT_UNKNOWN")))
 func get_required_camera() -> int: return int(_exhibit.get("camera", -1))
 
@@ -86,3 +100,5 @@ func _clear_incident() -> void:
 	if _game != null and _game.has_method("clear_objective"): _game.clear_objective("incident")
 	_active_id = ""
 	_exhibit.clear()
+	_anchor = null
+	_anchor_key = ""

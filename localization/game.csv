@@ -1,18 +1,383 @@
 keys,en,ru
-MENU_START,Start shift,Начать смену
-MENU_TUTORIAL,Tutorial,Обучение
-MENU_SETTINGS,Settings,Настройки
-MENU_QUIT,Quit,Выход
-FAIL_TITLE,SHIFT INTERRUPTED,СМЕНА ПРЕРВАНА
-FAIL_RETRY,ENTER — retry night,ENTER — повторить ночь
-TUTORIAL_TITLE,ORIENTATION SECTOR,СЕКТОР ОРИЕНТАЦИИ
-TUTORIAL_SKIP,Hold ESC — skip tutorial,Удерживайте ESC — пропустить обучение
-TUTORIAL_COMPLETE,ORIENTATION COMPLETE,ОРИЕНТАЦИЯ ЗАВЕРШЕНА
+ACCESS_HIGH_CONTRAST,High contrast,Высокий контраст
 ACCESS_LANGUAGE,Language,Язык
-ACCESS_SUBTITLES,Subtitles,Субтитры
+ACCESS_LARGE_UI,Large interface,Крупный интерфейс
 ACCESS_REDUCED_FLASHES,Reduce flashes,Уменьшить мерцание
 ACCESS_REDUCED_MOTION,Reduce motion,Уменьшить движение
-ACCESS_HIGH_CONTRAST,High contrast,Высокий контраст
-ACCESS_LARGE_UI,Large interface,Крупный интерфейс
-STORY_PROLOGUE,The museum remembers every night shift. The rifts remember every mistake.,Музей помнит каждую ночную смену. Разломы помнят каждую ошибку.
+ACCESS_SUBTITLES,Subtitles,Субтитры
+ADMIN_CLOSE,CLOSE · F9,ЗАКРЫТЬ · F9
+ADMIN_DESC_ASCENT,"Climb the ledges: checkpoints, moving tiles, fog","Подъём по уступам: контрольные точки, движущиеся плиты, туман"
+ADMIN_DESC_ECHO,Memorize and repeat the sequence of column flashes,Запомните и повторите последовательность вспышек колонн
+ADMIN_DESC_GLASS,Cross the bridge: one tile in every row is a phantom,Пройдите мост: в каждом ряду одна плита — фантом
+ADMIN_DESC_GRAVITY,"Three anchors turn gravity: floor, wall, depth","Три якоря поворачивают гравитацию: пол, стена, глубина"
+ADMIN_DESC_MIRROR,Find 3 defective reflections. 3 mistakes — the hall reshuffles,Найдите 3 дефектных отражения. 3 ошибки — зал перестроится
+ADMIN_DESC_RADIATION,Set the monoliths into their sockets and tune the frequencies,Расставьте монолиты по гнёздам и настройте частоты
+ADMIN_DESC_SCRAP,Carry 3 valuables to the extraction point past the scanner drone,Вынесите 3 ценности к точке извлечения мимо дрона-сканера
+ADMIN_DESC_TEMPORAL,Record three of your time echoes on the plates,Запишите три своих временных эха на плитах
+ADMIN_DESC_VOID,"Total darkness: paint the world with the lidar (LMB), avoid the monster","Полная тьма: рисуйте мир лидаром (ЛКМ), избегайте монстра"
+ADMIN_DESC_YELLOW,"Yellow halls: collect the tapes, don't get caught by the Wanderer","Жёлтые залы: соберите плёнки, не попадитесь Блуждающему"
+ADMIN_NOTE,Test mode: once you clear it you return to the museum with no consequences.,Режим теста: после прохождения вы вернётесь в музей без последствий.
+ADMIN_SUBTITLE,Pick a rift — you drop inside instantly. Night progress and saves are left untouched.,Выберите разлом — вы окажетесь внутри мгновенно. Прогресс ночи и сохранения не изменяются.
+ADMIN_TEST_DONE,TEST COMPLETE · F9 — pick the next dimension,ТЕСТ ЗАВЕРШЁН · F9 — выбрать следующее измерение
+ADMIN_TEST_PREFIX,TEST: %s,ТЕСТ: %s
+ADMIN_TITLE,SERVICE CONSOLE · DIMENSION TEST,СЛУЖЕБНАЯ КОНСОЛЬ · ТЕСТ ИЗМЕРЕНИЙ
+ANOMALY_ASCENT_READOUT,RISING FOG IN THE SHAFT\nSUPPORTS FRAGMENTED,ВОСХОДЯЩИЙ ТУМАН В ШАХТЕ\nОПОРЫ ФРАГМЕНТИРОВАНЫ
+ANOMALY_ASCENT_TITLE,VERTICAL RIFT,ВЕРТИКАЛЬНЫЙ РАЗЛОМ
+ANOMALY_ECHO_READOUT,ACOUSTIC LOOP CLOSED\nREPEATING FLASHES\nPROTOCOL: RESONANCE TUNER,АКУСТИЧЕСКИЙ КОНТУР ЗАМКНУТ\nПОВТОРЯЮЩИЕСЯ ВСПЫШКИ\nПРОТОКОЛ: РЕЗОНАНСНЫЙ НАСТРОЙЩИК
+ANOMALY_ECHO_TITLE,RESONANT ECHO,РЕЗОНАНСНОЕ ЭХО
+ANOMALY_GLASS_READOUT,LOAD-BEARING SURFACES UNSTABLE\nPHANTOM GEOMETRY\nPROTOCOL: PHASE PRISM,ОПОРНЫЕ ПОВЕРХНОСТИ НЕСТАБИЛЬНЫ\nФАНТОМНАЯ ГЕОМЕТРИЯ\nПРОТОКОЛ: ФАЗОВАЯ ПРИЗМА
+ANOMALY_GLASS_TITLE,PHASE COLLAPSE,ФАЗОВЫЙ ПРОВАЛ
+ANOMALY_GRAVITY_READOUT,MASS FLOW +340%\nOBJECTS LOSING WEIGHT\nPROTOCOL: GRAVITY ANCHOR,ПОТОК МАССЫ +340%\nОБЪЕКТЫ ТЕРЯЮТ ВЕС\nПРОТОКОЛ: ГРАВИТАЦИОННЫЙ ЯКОРЬ
+ANOMALY_GRAVITY_TITLE,GRAVITY SURGE,ГРАВИТАЦИОННЫЙ СКАЧОК
+ANOMALY_MIRROR_READOUT,REFLECTIONS DESYNCHRONIZED\nFALSE GEOMETRY IN THE MIRRORS,ОТРАЖЕНИЯ РАССИНХРОНИЗИРОВАНЫ\nЛОЖНАЯ ГЕОМЕТРИЯ В ЗЕРКАЛАХ
+ANOMALY_MIRROR_TITLE,MIRROR RIFT,ЗЕРКАЛЬНЫЙ РАЗЛОМ
+ANOMALY_RADIATION_READOUT,RADIATION 12.8 MSV/H AND RISING\nGREEN GLOW\nPROTOCOL: CONTAINMENT ROD,"РАДИАЦИЯ 12,8 МЗВ/Ч И РАСТЁТ\nЗЕЛЁНОЕ СВЕЧЕНИЕ\nПРОТОКОЛ: СТЕРЖЕНЬ СДЕРЖИВАНИЯ"
+ANOMALY_RADIATION_TITLE,RADIATION BLOOM,РАДИАЦИОННОЕ ЦВЕТЕНИЕ
+ANOMALY_SCRAP_READOUT,EXHIBITS DISPLACED TO THE SHADOW DEPOT\nEXTRACTION REQUIRED,ЭКСПОНАТЫ СМЕЩЕНЫ В ТЕНЕВОЙ СКЛАД\nТРЕБУЕТСЯ ИЗВЛЕЧЕНИЕ
+ANOMALY_SCRAP_TITLE,ASSET SEIZURE,ИЗЪЯТИЕ ЦЕННОСТЕЙ
+ANOMALY_TEMPORAL_READOUT,DESYNC 11.3 S/MIN\nLOCAL TIME UNSTABLE\nPROTOCOL: CHRONO STABILIZER,"РАССИНХРОНИЗАЦИЯ 11,3 С/МИН\nЛОКАЛЬНОЕ ВРЕМЯ НЕСТАБИЛЬНО\nПРОТОКОЛ: ХРОНОСТАБИЛИЗАТОР"
+ANOMALY_TEMPORAL_TITLE,TEMPORAL DRIFT,ВРЕМЕННОЙ СДВИГ
+ANOMALY_UNKNOWN,UNKNOWN ANOMALY,НЕИЗВЕСТНАЯ АНОМАЛИЯ
+ANOMALY_VOID_READOUT,MASS FLOW −270%\nLIGHT ABSORPTION DETECTED\nPROTOCOL: FIELD EMITTER,ПОТОК МАССЫ −270%\nОБНАРУЖЕНО ПОГЛОЩЕНИЕ СВЕТА\nПРОТОКОЛ: ПОЛЕВОЙ ИЗЛУЧАТЕЛЬ
+ANOMALY_VOID_TITLE,VOID RIFT,РАЗРЫВ ПУСТОТЫ
+ANOMALY_YELLOW_READOUT,CLASS 0 LIMINAL ZONE\nFLUORESCENT LAMP HUM,ЛИМИНАЛЬНАЯ ЗОНА КЛАССА 0\nГУЛ ЛЮМИНЕСЦЕНТНЫХ ЛАМП
+ANOMALY_YELLOW_TITLE,YELLOW LIMIT,ЖЁЛТЫЙ ПРЕДЕЛ
+CAM_ACCESS_OFFICE_ONLY,CCTV access is only available from the security office.,Доступ к CCTV возможен только из офиса охраны.
+CAM_ATRIUM_EAST,Atrium — East,Атриум — восток
+CAM_ATRIUM_WEST,Atrium — West,Атриум — запад
+CAM_BASEMENT_LIFT,Basement Lift,Лифт в подвал
+CAM_ENTRANCE,Entrance,Вход
+CAM_HINT_CONTROLS,TAB / Y — exit  |  WASD / right stick — camera  |  F / RB — floodlight,TAB / Y — выйти  |  WASD / правый стик — камера  |  F / RB — прожектор
+CAM_PLANETARIUM,Planetarium,Планетарий
+CAM_RESTORATION,Restoration Room,Реставрационная
+CAM_ROOM_ARCHIVE,Archive,Архив
+CAM_ROOM_ATRIUM,Atrium,Атриум
+CAM_ROOM_LAB,Lab,Реставрационная
+CAM_ROOM_OFFICE,Office,Офис
+CAM_ROOM_STORAGE,Storage,Склад
+CAM_ROOM_WING_A,Wing A,Крыло A
+CAM_ROOM_WING_B,Wing B,Крыло B
+CAM_ROOM_WING_C,Wing C,Крыло C
+CAM_ROOM_WING_D,Wing D,Крыло D
+CAM_WATCH_POST,Watcher Post,Пост наблюдателя
+CAM_WING_A_GRAVITY,Wing A — Gravity,Крыло A — гравитация
+CAM_WING_B_TIME,Wing B — Time,Крыло B — время
+CAM_WING_C_DOOR,Wing C Door,Дверь крыла C
+CAM_WING_D_MASS,Wing D — Mass,Крыло D — масса
+EXHIBIT_BROKEN_CLOCK,Broken Clock,Сломанные часы
+EXHIBIT_CENTRAL_CORE,the central core,центральное ядро
+EXHIBIT_CLOAKROOM,CLOAKROOM · SEARCH,ГАРДЕРОБ · ДОСМОТР
+EXHIBIT_CONTAINMENT_CORE,CONTAINMENT CORE,ЦЕНТР СДЕРЖИВАНИЯ
+EXHIBIT_DENSE_INGOT,Dense Ingot,Плотный слиток
+EXHIBIT_ENDLESS_HOURGLASS,Endless Hourglass,Бесконечные песочные часы
+EXHIBIT_FALLING_CUBE,Falling Cube,Падающий куб
+EXHIBIT_FIRST_FALL,The First Fall,Первое падение
+EXHIBIT_FROZEN_DROP,Frozen Drop,Замороженная капля
+EXHIBIT_HOVER_STONES,Hovering Stones,Парящие камни
+EXHIBIT_INVERSION_ROOM,Inversion Room,Инверсионная камера
+EXHIBIT_IRON_METEORITE,Iron Meteorite,Железный метеорит
+EXHIBIT_LAB_SIGN,Restoration lab — do not touch exhibit 9,Реставрационная — экспонат 9 не трогать
+EXHIBIT_LEVITATING_COLUMN,Levitating Column,Левитирующая колонна
+EXHIBIT_MAIN_ENTRANCE,MAIN ENTRANCE · CLOSING 20:00,ГЛАВНЫЙ ВХОД · ЗАКРЫТИЕ 20:00
+EXHIBIT_MASS_PENDULUM,Mass Pendulum,Маятник массы
+EXHIBIT_OPEN_HOURS,OPEN 09:00–20:00,ОТКРЫТО 09:00–20:00
+EXHIBIT_ORRERY,Orrery,Оррери
+EXHIBIT_PLANETARIUM_SIGN,Planetarium — projector switched off,Планетарий — проектор отключён
+EXHIBIT_PORTAL_ARCH,Portal Arch,Портальная арка
+EXHIBIT_RECEPTION,VISITOR RECEPTION,ПРИЁМ ПОСЕТИТЕЛЕЙ
+EXHIBIT_STAR_GLOBE,Star Globe,Звёздный глобус
+EXHIBIT_SUNDIAL,Sundial,Солнечные часы
+EXHIBIT_SUPERHEAVY_SPHERE,Superheavy Sphere,Сверхтяжёлая сфера
+EXHIBIT_TIME_LOOP,Time Loop,Временная петля
+EXHIBIT_UNKNOWN,unknown exhibit,неизвестный экспонат
+EXHIBIT_WING_A,Wing A — Gravity,Крыло A — Гравитация
+EXHIBIT_WING_A_SIGN,Wing A — gravity direction is unstable,Крыло A — направление гравитации нестабильно
+EXHIBIT_WING_B,Wing B — Time,Крыло B — Время
+EXHIBIT_WING_B_SIGN,"Wing B — acceleration, deceleration, rewind","Крыло B — ускорение, замедление, перемотка"
+EXHIBIT_WING_C,Wing C — Space,Крыло C — Пространство
+EXHIBIT_WING_C_SIGN,Wing C — spatial curvature · access from night 2,Крыло C — искривление пространства · доступ с ночи 2
+EXHIBIT_WING_D,Wing D — Mass,Крыло D — Масса
+EXHIBIT_WING_D_SIGN,Wing D — mass is not constant · access from night 3,Крыло D — масса непостоянна · доступ с ночи 3
+FAIL_PROGRESS,PROGRESS: night %d · anomalies left: %d,ПРОГРЕСС: ночь %d · осталось аномалий: %d
+FAIL_REASON,REASON: %s went out of control,ПРИЧИНА: %s вышла из-под контроля
+FAIL_RETRY,ENTER — retry night,ENTER — повторить ночь
+FAIL_TIP,TIP: %s,СОВЕТ: %s
+FAIL_TIP_DEFAULT,Check the terminal readout against the device label before you touch the rift.,Сверьте показания терминала с маркировкой прибора до контакта с разломом.
+FAIL_TITLE,SHIFT INTERRUPTED,СМЕНА ПРЕРВАНА
+HUD_ANOMALY_CLEARED,ANOMALY CLEARED. THE CORE IS STILL UNSTABLE,АНОМАЛИЯ УСТРАНЕНА. ЯДРО ВСЁ ЕЩЁ НЕСТАБИЛЬНО
+HUD_CONFIRM_SOURCE_FIRST,Confirm the source via %s first — %.1f sec. to go.,Сначала подтвердите источник через %s — ещё %.1f сек.
+HUD_CONTAINMENT_BREACHED,CONTAINMENT BREACHED,СДЕРЖИВАНИЕ НАРУШЕНО
+HUD_CRITICAL_DOSE,CRITICAL RADIATION DOSE,КРИТИЧЕСКАЯ ДОЗА ОБЛУЧЕНИЯ
+HUD_CURATOR_CAUGHT,THE WATCHER CAUGHT YOU,НАБЛЮДАТЕЛЬ ДОГНАЛ ВАС
+HUD_EFFECT_ASCENT,THE FOG IS RISING,ТУМАН ПОДНИМАЕТСЯ
+HUD_EFFECT_DOSE,DOSE: %.0f%%,ДОЗА: %.0f%%
+HUD_EFFECT_ECHO,RESONANCE RISING,РЕЗОНАНС НАРАСТАЕТ
+HUD_EFFECT_GLASS,SUPPORT GEOMETRY UNSTABLE,ОПОРНАЯ ГЕОМЕТРИЯ НЕСТАБИЛЬНА
+HUD_EFFECT_GRAVITY,GRAVITY: %.0f%%,ГРАВИТАЦИЯ: %.0f%%
+HUD_EFFECT_MIRROR,REFLECTIONS LIE,ОТРАЖЕНИЯ ЛГУТ
+HUD_EFFECT_SCRAP,VALUABLES DISPLACED,ЦЕННОСТИ СМЕЩЕНЫ
+HUD_EFFECT_TEMPORAL,TEMPORAL DRIFT: %.0f%%,ТЕМПОРАЛЬНЫЙ СДВИГ: %.0f%%
+HUD_EFFECT_VOID,LIGHT CIRCUIT UNSTABLE,СВЕТОВОЙ КОНТУР НЕСТАБИЛЕН
+HUD_EFFECT_YELLOW,LIMINAL BACKGROUND: LAMP HUM,ЛИМИНАЛЬНЫЙ ФОН: ГУЛ ЛАМП
+HUD_ENTER_POCKET,ENTERING POCKET DIMENSION,ПЕРЕХОД В КАРМАННОЕ ИЗМЕРЕНИЕ
+HUD_FALL_RESPAWN,You slipped over the edge — back on solid ground.,Вы сорвались с края — возврат на твёрдую землю.
+HUD_FINISH_TRIAL_FIRST,Finish the current dimension first.,Сначала завершите текущее измерение.
+HUD_HINT_APPLY,E - apply %s to the anomaly,E - применить %s к аномалии
+HUD_HINT_CARRYING,Carrying: %s (G - drop),В руках: %s (G - бросить)
+HUD_HINT_TAKE,E - take: %s,E - взять: %s
+HUD_HINT_TERMINAL,E - read the terminal,E - показания терминала
+HUD_INTRO_CHECK_HALLS,Check the halls before dark,Проверьте залы до наступления темноты
+HUD_INTRO_FIRST_NIGHT,First night on duty,Первая ночь дежурства
+HUD_INTRO_MUSEUM,MUSEUM OF NATURAL PHILOSOPHY,МУЗЕЙ ЕСТЕСТВЕННОЙ ФИЛОСОФИИ
+HUD_INTRO_SKIP,SPACE / ENTER / A — skip,ПРОБЕЛ / ENTER / A — пропустить
+HUD_MEMORY_REEL_BONUS,MEMORY REEL: +45 SECONDS ON THE TIMER,КАТУШКА ПАМЯТИ: +45 СЕКУНД К ТАЙМЕРУ
+HUD_NIGHT,NIGHT %d,НОЧЬ %d
+HUD_NIGHT_COMPLETE,NIGHT %d COMPLETE,НОЧЬ %d ПРОЙДЕНА
+HUD_NIGHT_WING_UNLOCKED,NIGHT %d. Wing unlocked: %s,НОЧЬ %d. Открыто крыло: %s
+HUD_PROTO_FOOTER,E / ENTER — close · The screen closes on its own,E / ENTER — закрыть · Экран закроется сам
+HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУЗЕЙ · СЛУЖБА НОЧНОГО СДЕРЖИВАНИЯ
+HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
+HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
+HUD_PROTO_TITLE,CONTAINMENT PROTOCOL: %s,ПРОТОКОЛ ЛОКАЛИЗАЦИИ: %s
+HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
+HUD_SOURCE_CONFIRMED,SOURCE CONFIRMED. PROTOCOL UNLOCKED.,ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.
+HUD_STAMINA,STAMINA,ВЫНОСЛИВОСТЬ
+HUD_STAMINA_EXHAUSTED,EXHAUSTED — CATCH YOUR BREATH,ИСТОЩЕНИЕ — ПЕРЕВЕДИТЕ ДЫХАНИЕ
+HUD_TERMINAL_BREACH,!! CONTAINMENT BREACH !!\n%s\n%s,!! НАРУШЕНИЕ СДЕРЖИВАНИЯ !!\n%s\n%s
+HUD_TERMINAL_IDLE,SYSTEM NOMINAL\nALL EXHIBITS STABLE,СИСТЕМА В НОРМЕ\nВСЕ ЭКСПОНАТЫ СТАБИЛЬНЫ
+HUD_TERMINAL_RESTORED,"SYSTEM: CONTAINMENT RESTORED\nGOOD NIGHT, OBSERVER","СИСТЕМА: СДЕРЖИВАНИЕ ВОССТАНОВЛЕНО\nДОБРОЙ НОЧИ, НАБЛЮДАТЕЛЬ"
+HUD_TOOL_LANTERN,NULL LANTERN: the Watcher is slowed near you,НУЛЬ-ФОНАРЬ: Наблюдатель замедлен рядом с вами
+HUD_TOOL_LENS,LENS: rift %d m away,ЛИНЗА: разрыв в %d м
+HUD_TOOL_PRISM,PRISM: anomaly influence weakened,ПРИЗМА: влияние аномалии ослаблено
+HUD_TOOL_TAKEN,Device taken: %s,Взят прибор: %s
+HUD_TOOL_THREAD,RETURN THREAD: %d m to the rift,НИТЬ ВОЗВРАТА: %d м до разрыва
+HUD_WIN,SHIFT OVER\nAll three nights are done. The museum sleeps again.\n\nENTER - start over,СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.\n\nENTER - начать заново
+HUD_WRONG_TOOL,The device has no effect. Check the terminal readout.,Прибор не действует. Проверьте показания терминала.
+MENU_BACK,Back,Назад
+MENU_CONTINUE_NIGHT,Continue — Night %d,Продолжить — Ночь %d
+MENU_FB_COMMENT,Feedback / Bug description:,Отзыв / Описание бага:
+MENU_FB_COMMENT_HINT,Describe your impressions or the bug you found...,Опишите ваши впечатления или найденную ошибку...
+MENU_FB_ERR_COMMENT,Enter your feedback text!,Введите текст отзыва!
+MENU_FB_ERR_NETWORK,Network error while sending the request,Сетевая ошибка при отправке запроса
+MENU_FB_ERR_NO_URL,Webhook URL is not configured. Set it in settings.,URL вебхука не настроен. Укажите его в настройках.
+MENU_FB_ERR_REQUEST,Failed to create HTTP request: %s,Ошибка создания HTTP-запроса: %s
+MENU_FB_ERR_SERVER,Server error (code %d): %s,Ошибка сервера (код %d): %s
+MENU_FB_ERR_URL,Please enter the webhook URL!,"Пожалуйста, введите URL вебхука!"
+MENU_FB_NAME,Your name:,Ваше имя:
+MENU_FB_NAME_HINT,Player,Игрок
+MENU_FB_SENDING,Sending...,Отправка...
+MENU_FB_SENT,Feedback sent successfully!,Отзыв успешно отправлен!
+MENU_FB_SUBMIT,Send,Отправить
+MENU_FB_URL,Notion Worker webhook URL:,URL вебхука Notion Worker:
+MENU_FEEDBACK,Feedback (Notion),Обратная связь (Notion)
+MENU_MAIN_MENU,Main menu,Главное меню
+MENU_NEW_TUTORIAL,NEW: take the tutorial,НОВОЕ: пройти обучение
+MENU_QUIT,Quit,Выход
+MENU_RESET_PROGRESS,Reset progress,Сбросить прогресс
+MENU_RESUME,Resume,Продолжить
+MENU_SETTINGS,Settings,Настройки
+MENU_START,Start shift,Начать смену
+MENU_SUBTITLE_FMT,%s · RELEASE 1.0 · PROLOGUE AND 10 DIMENSIONS,%s · RELEASE 1.0 · ПРОЛОГ И 10 ИЗМЕРЕНИЙ
+MENU_SUBTITLE_SHIFT,night shift,ночная смена
+MENU_TITLE,FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
+MENU_TUTORIAL,Tutorial,Обучение
+OBJ_BLACKOUT,The power is out. Something is happening in the atrium...,Питание пропало. Что-то происходит в атриуме...
+OBJ_CCTV_CONFIRM,%s: confirm the source via %s in the security office (%.1f sec.).,%s: подтвердите источник через %s в офисе охраны (%.1f сек.).
+OBJ_CORE_UNSTABLE,"The anomaly is contained, but the core is unstable. The next surge is close...","Аномалия устранена, но ядро нестабильно. Следующий выброс близко..."
+OBJ_INCIDENT,"INCIDENT: %s. Find the source, finish the protocol and apply the stabilizer at the exhibit. Remaining: %d","АВАРИЯ: %s. Найдите источник, завершите протокол и примените стабилизатор у экспоната. Осталось: %d"
+OBJ_INCIDENT_EXHIBIT,Anomaly at the %s exhibit in zone %s. Find a stabilizer and apply it to the rift.,Аномалия у экспоната «%s» в зоне «%s». Найдите стабилизатор и примените его к разрыву.
+OBJ_NIGHT_DONE,Night %d complete. ENTER - next night.,Ночь %d пройдена. ENTER - следующая ночь.
+OBJ_NIGHT_INTRO,Night %d. Look around the museum. The security office is in the west wing.,Ночь %d. Осмотрите музей. Офис охраны — в западном крыле.
+OBJ_NIGHT_RESTART,Night %d. The core is unstable again...,Ночь %d. Ядро снова нестабильно...
+OBJ_TRIAL,Clear the pocket dimension and forge the stabilization key.,Пройдите карманное измерение и создайте ключ стабилизации.
+SET_ACCESS_DESC,Reduce visual load and improve readability,Снизьте визуальную нагрузку и улучшите читаемость
+SET_AUDIO_DESC,Tune the museum's atmosphere and volume,Настройте атмосферу и громкость музея
+SET_AUTOSAVE_HINT,Changes are saved\nautomatically,Изменения сохраняются\nавтоматически
+SET_BACK,ESC   BACK,ESC   НАЗАД
+SET_BIND_DROP,Drop device,Бросить прибор
+SET_BIND_INTERACT,Interact,Взаимодействие
+SET_BIND_MOVE,Movement,Движение
+SET_BIND_PAUSE,Pause,Пауза
+SET_BIND_TABLET,Tablet,Планшет
+SET_CARD_AUDIO_BODY,"The alarm, the hum of anomalies and footsteps use spatial positioning. Headphones are recommended for the best effect.","Тревога, гул аномалий и шаги используют пространственное позиционирование. Для лучшего эффекта рекомендуется использовать наушники."
+SET_CARD_AUDIO_TITLE,DYNAMIC SOUND,ДИНАМИЧЕСКИЙ ЗВУК
+SET_CARD_GRAPHICS_BODY,High quality enables volumetric fog. On integrated graphics use the medium profile.,Высокое качество включает объёмный туман. На встроенной графике используйте средний профиль.
+SET_CARD_GRAPHICS_TITLE,RECOMMENDATION,РЕКОМЕНДАЦИЯ
+SET_CONTROLS_DESC,"Mouse, keyboard and gamepad","Мышь, клавиатура и геймпад"
+SET_EFFECT_QUALITY,Effect quality,Качество эффектов
+SET_EFFECT_QUALITY_DESC,"Fog, glow and contact shadows","Туман, свечение и контактные тени"
+SET_EYEBROW,MUSEUM SYSTEM  /  CONFIGURATION,СИСТЕМА МУЗЕЯ  /  КОНФИГУРАЦИЯ
+SET_FULLSCREEN,Fullscreen mode,Полноэкранный режим
+SET_FULLSCREEN_DESC,Use the entire available screen,Использовать весь доступный экран
+SET_GRAPHICS_DESC,Image quality and display mode,Качество изображения и режим отображения
+SET_HIGH_CONTRAST_DESC,Improves legibility of the interface and targets,Усиливает различимость интерфейса и целей
+SET_LANGUAGE_DESC,Interface and subtitle language,Язык интерфейса и субтитров
+SET_LARGE_UI_DESC,Increases the scale of text and elements,Увеличивает масштаб текста и элементов
+SET_MASTER_VOLUME,Master volume,Общая громкость
+SET_MASTER_VOLUME_DESC,"Music, ambience and sound effects","Музыка, окружение и звуковые эффекты"
+SET_MOUSE_SENS,Mouse sensitivity,Чувствительность мыши
+SET_MOUSE_SENS_DESC,First-person look speed,Скорость обзора от первого лица
+SET_OFF,OFF,ВЫКЛ
+SET_ON,ON,ВКЛ
+SET_PAD_LEFT_STICK,Left stick,Левый стик
+SET_QUALITY_HIGH,High,Высокое
+SET_QUALITY_LOW,Low,Низкое
+SET_QUALITY_MEDIUM,Medium,Среднее
+SET_REDUCED_FLASHES_DESC,Softens the emergency lighting and the void effect,Смягчает аварийный свет и эффект пустоты
+SET_REDUCED_MOTION_DESC,Disables camera shake and harsh transitions,Отключает тряску камеры и резкие переходы
+SET_RESET_DEFAULTS,Restore default settings,Восстановить настройки по умолчанию
+SET_RESOLUTION,Window resolution,Разрешение окна
+SET_RESOLUTION_DESC,Size of the test and windowed mode,Размер тестового и оконного режима
+SET_SUBTITLES_DESC,Shows text for speech and important sounds,Показывает текст для речи и важных звуков
+SET_TAB_ACCESS,Accessibility,Доступность
+SET_TAB_AUDIO,Audio,Аудио
+SET_TAB_CONTROLS,Controls,Управление
+SET_TAB_GRAPHICS,Graphics,Графика
+SET_VSYNC,Vertical sync,Вертикальная синхронизация
+SET_VSYNC_DESC,Eliminates screen tearing,Устраняет разрывы изображения
 STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.
+STORY_PROLOGUE,The museum remembers every night shift. The rifts remember every mistake.,Музей помнит каждую ночную смену. Разломы помнят каждую ошибку.
+TOOL_CHRONO_STABILIZER_HINT,Evens out the flow of time in the incident zone,Выравнивает ход времени в зоне аварии
+TOOL_CHRONO_STABILIZER_NAME,Chrono Stabilizer,Хроностабилизатор
+TOOL_CONTAINMENT_ROD_HINT,Damps the exhibit's radiation bloom,Гасит радиационное цветение экспоната
+TOOL_CONTAINMENT_ROD_NAME,Containment Rod,Стержень сдерживания
+TOOL_FIELD_EMITTER_HINT,Restores the light circuit in the dark sector,Восстанавливает световой контур в тёмном секторе
+TOOL_FIELD_EMITTER_NAME,Field Emitter,Полевой излучатель
+TOOL_GRAVITY_ANCHOR_HINT,Locks local gravity at the rift,Фиксирует локальную гравитацию у разлома
+TOOL_GRAVITY_ANCHOR_NAME,Gravity Anchor,Гравитационный якорь
+TOOL_MASS_CLAMP_HINT,Holds fragile valuables steady while you carry them,Удерживает хрупкие ценности при переноске
+TOOL_MASS_CLAMP_NAME,Mass Clamp,Зажим массы
+TOOL_MEMORY_REEL_NAME,Memory Reel,Катушка памяти
+TOOL_NULL_LANTERN_NAME,Null Lantern,Нуль-фонарь
+TOOL_PHASE_PRISM_HINT,Stabilizes the bridge's phantom supports,Стабилизирует фантомные опоры моста
+TOOL_PHASE_PRISM_NAME,Phase Prism,Фазовая призма
+TOOL_RESONANCE_TUNER_HINT,Tunes the echo chamber's resonance,Настраивает резонанс эхо-камеры
+TOOL_RESONANCE_TUNER_NAME,Resonance Tuner,Резонансный настройщик
+TOOL_SPECTRAL_LENS_HINT,Reveals defective reflections in the mirror hall,Выявляет дефектные отражения в зале зеркал
+TOOL_SPECTRAL_LENS_NAME,Spectral Lens,Спектральная линза
+TOOL_THERMAL_CHALK_HINT,Marks the ledges you have cleared on the ascent,Помечает пройденные уступы при восхождении
+TOOL_THERMAL_CHALK_NAME,Thermal Chalk,Термомел
+TOOL_THREAD_SPOOL_HINT,Keeps you from getting lost in the yellow halls,Не даёт потеряться в жёлтых залах
+TOOL_THREAD_SPOOL_NAME,Return Thread,Нить возврата
+TRIAL_ASCENT_CHECKPOINT,Checkpoint activated (altitude %d m),Контрольная точка активирована (высота %d м)
+TRIAL_ASCENT_FAILTIP,Keep a steady rhythm and hit every checkpoint.,Двигайтесь ритмично и активируйте каждую контрольную точку.
+TRIAL_ASCENT_FOG,The fog swallowed you — returning to the checkpoint,Туман поглотил вас — возврат к контрольной точке
+TRIAL_ASCENT_OBJECTIVE,"Climb the ledges! Green tiles are checkpoints, violet ones move.","Вверх по уступам! Зелёные плиты — контрольные точки, фиолетовые — движутся."
+TRIAL_ASCENT_RESPAWN,Returning to the checkpoint,Возврат к контрольной точке
+TRIAL_ASCENT_TITLE,THE ASCENT,ВОСХОЖДЕНИЕ
+TRIAL_ASCENT_TUTORIAL,The fog keeps rising - don't linger.\nActivate the green checkpoints on the way up.,Туман поднимается — не задерживайтесь.\nАктивируйте зелёные контрольные точки по пути.
+TRIAL_BRIDGE_FAILTIP,Remember which tiles were phantoms and avoid them.,"Запоминайте, какие плиты оказались фантомами, и обходите их."
+TRIAL_BRIDGE_OBJECTIVE,Half the tiles are phantoms that reset you. Reach the key.,Половина плит — фантомы: они возвращают на старт. Доберитесь до ключа.
+TRIAL_BRIDGE_TITLE,GLASS BRIDGE,ЗЫБКИЙ МОСТ
+TRIAL_BRIDGE_TUTORIAL,"Real tiles hold your weight, phantoms don't.\nTest one at a time and memorize the safe path.","Настоящие плиты держат вес, фантомные — нет.\nПробуйте по одной и запоминайте безопасный путь."
+TRIAL_ECHO_CORRECT,Correct: %d of %d,Верно: %d из %d
+TRIAL_ECHO_FAILTIP,"Wait for the full playback, then repeat the sequence calmly.","Дождитесь конца показа, затем повторяйте последовательность спокойно."
+TRIAL_ECHO_LOOK_TIMER,Look around: playback starts in %d s.,Осмотритесь: показ начнётся через %d сек.
+TRIAL_ECHO_MISTAKE,MISTAKE at step %d — watch the sequence again,ОШИБКА на шаге %d — смотрите последовательность заново
+TRIAL_ECHO_NOT_STARTED,Look around: the sequence playback hasn't started yet,Осмотритесь: показ последовательности ещё не начался
+TRIAL_ECHO_OBJECTIVE,Look around and memorize each column's position.,"Осмотритесь: запомните, где какая колонна."
+TRIAL_ECHO_ROUND_DONE,Round %d cleared!,Раунд %d пройден!
+TRIAL_ECHO_ROUND_REPEAT,ROUND %d/3 — repeat the order (E at the columns),РАУНД %d/3 — повторите порядок (E у колонн)
+TRIAL_ECHO_ROUND_WATCH,ROUND %d/3 — memorize the order of the flashes,РАУНД %d/3 — запоминайте порядок вспышек
+TRIAL_ECHO_TITLE,ECHO CHAMBER,ЭХО-КАМЕРА
+TRIAL_ECHO_TUTORIAL,Memorize the order the columns flash.\nRepeat it by pressing E at each column.,"Запомните порядок вспышек колонн.\nПовторите его, нажимая E у нужных колонн."
+TRIAL_ECHO_WAIT,Wait for the playback to finish...,Дождитесь конца показа...
+TRIAL_GRAVITY_ANCHOR_LOCKED,This anchor is not fixed in your coordinate frame yet.,Этот якорь ещё не закреплён в вашей системе координат.
+TRIAL_GRAVITY_FAILTIP,Move to the next anchor only after gravity flips.,Идите к следующему якорю только после смены гравитации.
+TRIAL_GRAVITY_OBJECTIVE,Rotate the archive: FLOOR -> WEST WALL -> FAR WALL. Look for the violet anchors.,Поверните архив: ПОЛ → ЗАПАДНАЯ СТЕНА → ДАЛЬНЯЯ СТЕНА. Ищите фиолетовые якоря.
+TRIAL_GRAVITY_STEP1,Gravity has rotated west. Walk along what used to be the wall.,Гравитация повёрнута на запад. Идите по бывшей стене.
+TRIAL_GRAVITY_STEP2,Gravity now points into the depth of the archive. Find the last anchor.,Гравитация направлена в глубину архива. Найдите последний якорь.
+TRIAL_GRAVITY_TITLE,GRAVITY ARCHIVE,ГРАВИТАЦИОННЫЙ АРХИВ
+TRIAL_GRAVITY_TUTORIAL,Each anchor changes the gravity direction.\nActivate them strictly in order (E).,Каждый якорь меняет направление гравитации.\nАктивируйте их строго по порядку (E).
+TRIAL_MIRROR_ALL_FOUND,All defects found — the exit is open at the entry point,Все дефекты найдены — выход открыт у точки входа
+TRIAL_MIRROR_FAILTIP,Watch for trembling silhouettes before you commit.,"Присмотритесь к дрожащим силуэтам, не спешите с выбором."
+TRIAL_MIRROR_OBJECTIVE,Find 3 defective mirrors: their silhouettes tremble (E). 3 mistakes reshuffle the hall.,Найдите 3 дефектных зеркала: их силуэты дрожат (E). 3 ошибки — зал перестроится.
+TRIAL_MIRROR_RESHUFFLE,"Three mistakes — the hall reshuffled, the defects moved!","Три ошибки — зал перестроился, дефекты сместились!"
+TRIAL_MIRROR_STABLE,This reflection is stable (mistake %d/3). Look for the trembling silhouette,Это отражение стабильно (ошибка %d/3). Ищите дрожащий силуэт
+TRIAL_MIRROR_TAGGED,Defective reflection tagged: %d/3,Дефектное отражение зафиксировано: %d/3
+TRIAL_MIRROR_TITLE,MIRROR MAZE,ЗАЛ ОТРАЖЕНИЙ
+TRIAL_MIRROR_TUTORIAL,Defective reflections tremble and flicker.\nTag only those - stable mirrors penalize you.,Дефектные отражения дрожат и мерцают.\nОтмечайте только их — стабильные зеркала штрафуют.
+TRIAL_MOVE_CLOSER,Move closer to an active node.,Подойдите ближе к активному узлу.
+TRIAL_PROP_ANCHOR_DEPTH,DEPTH ANCHOR,ЯКОРЬ ГЛУБИНЫ
+TRIAL_PROP_ANCHOR_FLOOR,FLOOR ANCHOR,ЯКОРЬ ПОЛА
+TRIAL_PROP_ANCHOR_WALL,WALL ANCHOR,ЯКОРЬ СТЕНЫ
+TRIAL_PROP_BUST,GILDED BUST,ПОЗОЛОЧЕННЫЙ БЮСТ
+TRIAL_PROP_CLOCK,ANTIQUE CLOCK,СТАРИННЫЕ ЧАСЫ
+TRIAL_PROP_COLUMN_BLUE,BLUE COLUMN,СИНЯЯ КОЛОННА
+TRIAL_PROP_COLUMN_GREEN,GREEN COLUMN,ЗЕЛЁНАЯ КОЛОННА
+TRIAL_PROP_COLUMN_RED,RED COLUMN,КРАСНАЯ КОЛОННА
+TRIAL_PROP_COLUMN_YELLOW,YELLOW COLUMN,ЖЁЛТАЯ КОЛОННА
+TRIAL_PROP_EVAC_PAD,EVACUATION PAD,ТОЧКА ЭВАКУАЦИИ
+TRIAL_PROP_EXIT,EXIT,ВЫХОД
+TRIAL_PROP_EXIT_STRIPED,EXIT (STRIPED),ВЫХОД (РАЗМЕТКА)
+TRIAL_PROP_EXTRACT_PAD,EXTRACTION PAD,ТОЧКА ИЗВЛЕЧЕНИЯ
+TRIAL_PROP_HALL_EXIT,HALL EXIT,ВЫХОД ИЗ ЗАЛА
+TRIAL_PROP_MIRROR,MIRROR %d,ЗЕРКАЛО %d
+TRIAL_PROP_MONOLITH,MONOLITH %s\nFREQUENCY %d · %s,МОНОЛИТ %s\nЧАСТОТА %d · %s
+TRIAL_PROP_MONOLITH_INIT,MONOLITH %s\nFREQUENCY 0 · TARGET %d,МОНОЛИТ %s\nЧАСТОТА 0 · ЦЕЛЬ %d
+TRIAL_PROP_POWER_NODE,POWER NODE %d,ПИТАЮЩИЙ УЗЕЛ %d
+TRIAL_PROP_SOCKET,SOCKET %s,ГНЕЗДО %s
+TRIAL_PROP_SOCKET_SPARE,SPARE SOCKET,РЕЗЕРВНОЕ ГНЕЗДО
+TRIAL_PROP_STAB_KEY,STABILIZATION KEY,КЛЮЧ СТАБИЛИЗАЦИИ
+TRIAL_PROP_TAPE,TAPE %d,ПЛЁНКА %d
+TRIAL_PROP_VASE,CRYSTAL VASE,ХРУСТАЛЬНАЯ ВАЗА
+TRIAL_RADIATION_ACT_PICK,E — pick up/swap · G — tune frequency,E — поднять/поменять местами · G — настроить частоту
+TRIAL_RADIATION_ACT_PLACE,E — place the monolith in the socket with the matching symbol,E — поставьте монолит в гнездо с таким же символом
+TRIAL_RADIATION_FAILTIP,"Place symbols first, then tune frequencies to lower the dose.","Сначала расставьте символы, потом настраивайте частоты — доза падает."
+TRIAL_RADIATION_HUD,%s\nSYMBOLS: %d/4 · RESONANCE: %d/4 · DOSE: %.0f%%,%s\nСИМВОЛЫ: %d/4 · РЕЗОНАНС: %d/4 · ДОЗА: %.0f%%
+TRIAL_RADIATION_NEAR_MONOLITH,Step up to a monolith to tune its frequency.,"Подойдите к монолиту, чтобы настроить частоту."
+TRIAL_RADIATION_NEED,NEED: %d,НУЖНО: %d
+TRIAL_RADIATION_OBJECTIVE,STEP 1: match identical symbols. STEP 2: press G to tune frequency to RESONANCE.,ШАГ 1: совместите одинаковые символы. ШАГ 2: клавишей G настройте частоту до РЕЗОНАНСА.
+TRIAL_RADIATION_RESET,Critical interference. The choir reverted to its initial configuration.,Критическая интерференция. Хор вернулся к исходной конфигурации.
+TRIAL_RADIATION_RESONANCE,RESONANCE,РЕЗОНАНС
+TRIAL_RADIATION_TITLE,CRITICAL MASS CHOIR,КРИТИЧЕСКАЯ МАССА
+TRIAL_RADIATION_TUTORIAL,E - carry a monolith to a socket with the same symbol.\nG - tune its frequency. Dose rises while wrong.,E — поднять и поставить монолит в гнездо с тем же символом.\nG — настроить частоту монолита. Доза растёт при ошибках.
+TRIAL_SCRAP_ALL_DONE,All valuables extracted: %d cr.,Все ценности извлечены: %d у.е.
+TRIAL_SCRAP_BRING,Bring a valuable exhibit (%d/3),Принесите ценный экспонат (%d/3)
+TRIAL_SCRAP_DRONE_CAUGHT,THE DRONE LOGGED THE REMOVAL! The exhibit is back on the shelf,ДРОН ЗАФИКСИРОВАЛ ВЫНОС! Экспонат вернулся на стеллаж
+TRIAL_SCRAP_DROPPED,The fragile exhibit slipped and returned to its place!,Хрупкий экспонат сорвался и вернулся на место!
+TRIAL_SCRAP_FAILTIP,"Wait for the drone beam to turn away, then dash in short bursts.","Ждите, пока луч дрона отвернётся, и перебегайте короткими рывками."
+TRIAL_SCRAP_HANDS_FULL,Hands full — deliver the exhibit first,Руки заняты — сначала сдайте экспонат
+TRIAL_SCRAP_HUD_CARRY,Carrying: %s · Delivered %d/3 (%d cr.) · Avoid the drone beam!,В руках: %s · Сдано %d/3 (%d у.е.) · Избегайте луча дрона!
+TRIAL_SCRAP_OBJECTIVE,Carry 3 valuables to the extraction pad one at a time. A scanner drone patrols!,Перенесите 3 ценности к точке извлечения по одной. Дрон-сканер патрулирует склад!
+TRIAL_SCRAP_PICKED,"Picked up: %s (%d cr.). Carry it to the extraction pad, avoiding the drone","Взято: %s (%d у.е.). Несите к точке извлечения, избегая дрона"
+TRIAL_SCRAP_PROGRESS,Extracted: %d/3 · Score: %d cr.,Извлечено: %d/3 · Счёт: %d у.е.
+TRIAL_SCRAP_TITLE,SCRAP RUN,СЛУЖБА ИЗВЛЕЧЕНИЯ
+TRIAL_SCRAP_TUTORIAL,"Carry valuables one by one (E), deliver on the green pad.\nThe drone beam returns your load to the shelf.","Носите ценности по одной (E), сдавайте на зелёной точке.\nЛуч дрона возвращает ношу на стеллаж."
+TRIAL_TIME_FAILTIP,Plan a route so earlier echoes stay on their plates.,"Планируйте маршрут так, чтобы прошлые эхо остались на плитах."
+TRIAL_TIME_HUD,LOOP: %.1f s  ECHOES: %d/2  PLATES: %s,ЦИКЛ: %.1f сек.  ЭХО: %d/2  ПЛИТЫ: %s
+TRIAL_TIME_OBJECTIVE,Record yourself on the plates. After 18 seconds your echo repeats the route. You need three of you at once.,Запишите себя на плитах. После 18 секунд ваше эхо повторит маршрут. Нужны три версии одновременно.
+TRIAL_TIME_TITLE,THE MISSING MINUTE,ПРОПАВШАЯ МИНУТА
+TRIAL_TIME_TUTORIAL,Three echoes must press the plates at once.\nRecord a different route each loop.,Плиты нужно нажать одновременно тремя эхо.\nЗапишите разные маршруты за каждый цикл.
+TRIAL_VOID_FAILTIP,Scan more often and skirt the red dots along the edges.,Сканируйте чаще и обходите красные точки по краю сектора.
+TRIAL_VOID_HUD,LMB — scan · NODES: %d/3 · red dots mean danger,ЛКМ — скан · УЗЛЫ: %d/3 · красные точки — опасность
+TRIAL_VOID_OBJECTIVE,LMB - lidar pulse. Activate 3 nodes and find the exit.,ЛКМ — импульс лидара · активируйте 3 узла и найдите выход.
+TRIAL_VOID_TITLE,NEGATIVE SPACE,ТЁМНЫЙ СЕКТОР
+TRIAL_VOID_TUTORIAL,"The sector is pitch black - fire the lidar (LMB) to see.\nRed dots are the Watcher, stay away from it.","Сектор чёрный — стреляйте лидаром (ЛКМ), чтобы видеть.\nКрасные точки — Наблюдатель, держитесь от него."
+TRIAL_YELLOW_CAUGHT,The Wanderer threw you back to the entrance. Keep your distance!,Блуждающий выбросил вас ко входу. Держите дистанцию!
+TRIAL_YELLOW_EXIT_LOCKED,The stripes are inactive: collect the tapes (%d/3),Разметка не активна: соберите плёнки (%d/3)
+TRIAL_YELLOW_FAILTIP,Don't rush the Wanderer - lure it away and loop around.,Не идите на Блуждающего в лоб — уводите его и петляйте.
+TRIAL_YELLOW_OBJECTIVE,"Collect 3 tapes, avoid the Wanderer and find the striped exit.","Соберите 3 плёнки, избегайте Блуждающего и найдите выход с разметкой."
+TRIAL_YELLOW_TAPE_FOUND,Tape found: %d/3,Найдена плёнка: %d/3
+TRIAL_YELLOW_TAPE_LOST,The Wanderer took a tape! Collected: %d/3,Блуждающий отобрал плёнку! Собрано: %d/3
+TRIAL_YELLOW_TITLE,YELLOW HALLS,ЖЁЛТЫЕ ЗАЛЫ
+TRIAL_YELLOW_TUTORIAL,The Wanderer steals a tape if it catches you.\nKeep your distance and listen for its steps.,"Блуждающий отнимает плёнку, если поймает.\nДержите дистанцию и слушайте его шаги."
+TUTORIAL_COMPLETE,ORIENTATION COMPLETE,ОРИЕНТАЦИЯ ЗАВЕРШЕНА
+TUTORIAL_SKIP,Hold ESC — skip tutorial,Удерживайте ESC — пропустить обучение
+TUTORIAL_TITLE,ORIENTATION SECTOR,СЕКТОР ОРИЕНТАЦИИ
+TUT_HINT_EXIT,The door is open. Approach and press E.,Дверь открыта. Подойдите и нажмите E.
+TUT_HINT_FLASHLIGHT,Press F to toggle the flashlight.,"Нажмите F, чтобы включить/выключить фонарик."
+TUT_HINT_INTERACT,Approach the console and press E.,Подойдите к консоли и нажмите E.
+TUT_HINT_JUMP,Press Space to jump.,"Нажмите Пробел, чтобы прыгнуть."
+TUT_HINT_LOOK,Move the mouse and look around the sector.,"Поводите мышью, осмотрите сектор."
+TUT_HINT_MOVE,Walk forward using W A S D.,Пройдите вперёд на клавишах W A S D.
+TUT_HINT_SPRINT,Hold Shift and run.,Зажмите Shift и бегите.
+TUT_STEP_EXIT,Exit to the shift (E) at the door,Выйти на смену (E) у двери
+TUT_STEP_FLASHLIGHT,Flashlight (F),Фонарик (F)
+TUT_STEP_INTERACT,Interact (E) at the console,Взаимодействие (E) у консоли
+TUT_STEP_JUMP,Jump (Space),Прыжок (Пробел)
+TUT_STEP_LOOK,Look around (mouse),Осмотреться (мышь)
+TUT_STEP_MOVE,Move (W A S D),Движение (W A S D)
+TUT_STEP_SPRINT,Sprint (Shift),Спринт (Shift)
+TUT_TARGET_CONSOLE,ORIENTATION CONSOLE,КОНСОЛЬ ОРИЕНТАЦИИ
+TUT_TARGET_EXIT,EXIT TO SHIFT,ВЫХОД НА СМЕНУ

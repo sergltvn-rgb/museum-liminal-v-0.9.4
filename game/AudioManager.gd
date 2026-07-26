@@ -66,12 +66,21 @@ func _stream(sound: String) -> AudioStream:
 		_streams[sound] = null
 		return null
 	var stream: AudioStream = load(path)
-	var wav := stream as AudioStreamWAV
-	if wav != null and sound in LOOPED:
-		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		wav.loop_begin = 0
-		# 16-bit mono PCM: two bytes per frame.
-		wav.loop_end = int(wav.data.size() / 2.0)
+	if sound in LOOPED:
+		var wav := stream as AudioStreamWAV
+		if wav != null:
+			wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+			wav.loop_begin = 0
+			# loop_end counts audio FRAMES, not bytes. These wavs import with
+			# compress/mode=2 (QOA), so data.size() is the size of the compressed
+			# payload - about a fifth of the PCM size. Deriving frames from it
+			# cut every loop short at ~20% of the sound. get_length() decodes the
+			# real duration whatever the format, so go through that instead.
+			wav.loop_end = roundi(wav.get_length() * wav.mix_rate)
+		elif stream != null:
+			# Only AudioStreamWAV exposes loop_begin / loop_end. Anything else
+			# would play once and stop, so say so instead of failing quietly.
+			push_warning("AudioManager: %s is %s, not AudioStreamWAV - not looped" % [path, stream.get_class()])
 	_streams[sound] = stream
 	return stream
 

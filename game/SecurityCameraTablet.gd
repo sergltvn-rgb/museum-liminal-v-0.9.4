@@ -222,14 +222,47 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+# GameManager owns PlayerController.controls_enabled. Sibling node in the main
+# scene, same lookup _toggle() already used to flash the office-only refusal.
+func _game_manager() -> Node:
+	var parent := get_parent()
+	if parent == null:
+		return null
+	return parent.get_node_or_null("GameManager")
+
+
+# The tablet must not decide on its own that the player may move again: while a
+# fail / night-done / win overlay is up GameManager freezes the player, because
+# gamepad A drives both "jump" and "confirm" and those overlays answer "confirm".
+# Standalone (no GameManager in the scene) the tablet keeps working on its own.
+func _controls_allowed() -> bool:
+	var game := _game_manager()
+	if game != null and game.has_method("player_controls_allowed"):
+		return bool(game.call("player_controls_allowed"))
+	return true
+
+
+# Called by GameManager when a transition takes control away: the tablet holds
+# the viewport camera while it is open, so it cannot outlive that transition.
+func close() -> void:
+	if _open:
+		_toggle()
+
+
 func _toggle() -> void:
 	if _player == null:
 		_player = get_tree().get_first_node_in_group("player") as CharacterBody3D
 		if _player == null:
 			return
+	# A terminal overlay is up: opening would steal the viewport camera and free
+	# the cursor behind a screen that only answers "confirm". No _flash() here --
+	# the fail overlay is drawn over GameManager's message label.
+	if not _open and not _controls_allowed():
+		_sfx("fail")
+		return
 	# CCTV is a fixed security workstation, not a portable supernatural tablet.
 	if not _open and not _player_is_in_office():
-		var game := get_parent().get_node_or_null("GameManager")
+		var game := _game_manager()
 		if game != null and game.has_method("_flash"):
 			game.call("_flash", tr("CAM_ACCESS_OFFICE_ONLY"), Color(1.0, 0.62, 0.28))
 		_sfx("fail")
@@ -243,7 +276,7 @@ func _toggle() -> void:
 		_switch_to(_active)
 	else:
 		_update_floodlight()
-		_player.controls_enabled = true
+		_player.controls_enabled = _controls_allowed()
 		var player_cam := _player.get_node_or_null("Player Camera") as Camera3D
 		if player_cam:
 			player_cam.current = true

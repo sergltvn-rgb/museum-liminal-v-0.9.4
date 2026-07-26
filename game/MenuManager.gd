@@ -20,6 +20,7 @@ var _main_box: VBoxContainer
 var _pause_box: VBoxContainer
 var _start_button: Button
 var _settings_panel
+var _settings_panel_ready := false
 var _return_to_pause := false
 var _in_main_menu := true
 
@@ -68,7 +69,7 @@ func _open_main_menu() -> void:
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if _tutorial_done():
-		_start_button.text = tr("MENU_CONTINUE_NIGHT") % _saved_night()
+		_start_button.text = Loc.fmt("MENU_CONTINUE_NIGHT", [_saved_night()])
 	else:
 		_start_button.text = tr("MENU_NEW_TUTORIAL")
 	if _settings_panel != null:
@@ -98,8 +99,21 @@ func _open_pause_menu() -> void:
 func _resume() -> void:
 	_layer.visible = false
 	get_tree().paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = _gameplay_mouse_mode()
 	_sfx("menu_select")
+
+
+## The mouse mode the world wants back once the pause menu closes.
+## The CCTV tablet is a cursor-driven overlay and owns the mouse while it is
+## open (see SecurityCameraTablet._toggle); capturing the cursor here left the
+## player inside the camera feed with nothing to click.
+func _gameplay_mouse_mode() -> Input.MouseMode:
+	var parent := get_parent()
+	if parent != null:
+		var tablet := parent.get_node_or_null("SecurityCameraTablet")
+		if tablet != null and bool(tablet.get("_open")):
+			return Input.MOUSE_MODE_VISIBLE
+	return Input.MOUSE_MODE_CAPTURED
 
 
 func _start_game() -> void:
@@ -116,19 +130,32 @@ func _open_tutorial() -> void:
 	get_tree().change_scene_to_file(TUTORIAL_SCENE)
 
 
+## True when the player may start the shift.
+## Deliberately done-OR-skipped: TutorialPrologue._write_progress(false) records a
+## skip as tutorial/skipped and leaves tutorial/done false on purpose (so a skipped
+## replay cannot downgrade an earlier honest completion). Checking "done" alone
+## sends anyone who held ESC out of the tutorial straight back into it on every
+## press of Start -- an infinite loop. Do not "simplify" this to a single key.
 func _tutorial_done() -> bool:
 	var config := ConfigFile.new()
 	if config.load(TUTORIAL_PROGRESS_PATH) != OK:
 		return false
-	return bool(config.get_value("tutorial", "done", false))
+	if bool(config.get_value("tutorial", "done", false)):
+		return true
+	return bool(config.get_value("tutorial", "skipped", false))
 
 
 func _reset_progress() -> void:
 	var config := ConfigFile.new()
 	config.set_value("progress", "night", 1)
 	config.save(SAVE_PATH)
+	# Both keys are cleared explicitly: _tutorial_done() gates on done-OR-skipped,
+	# so leaving a stale skipped=true behind would let Reset Progress skip the
+	# tutorial. (Today the fresh ConfigFile also overwrites the file wholesale,
+	# but that stops being true the moment someone adds a load() here.)
 	var tutorial_config := ConfigFile.new()
 	tutorial_config.set_value("tutorial", "done", false)
+	tutorial_config.set_value("tutorial", "skipped", false)
 	tutorial_config.save(TUTORIAL_PROGRESS_PATH)
 	_sfx("menu_select")
 	# Rebuild the whole scene so the GameManager picks up night 1.
@@ -151,6 +178,12 @@ func _settings() -> Node:
 
 
 func _open_settings() -> void:
+	# Late retry: on the first attempt the SettingsManager may not have been in
+	# the tree yet. Never show an unpopulated panel -- that used to soft-lock
+	# the menu, because MenuManager._input ignores ESC while it is visible.
+	if not _prepare_settings_panel():
+		_sfx("fail")
+		return
 	_return_to_pause = not _in_main_menu
 	_main_box.visible = false
 	_pause_box.visible = false
@@ -258,7 +291,7 @@ func _build_ui() -> void:
 	_backdrop.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = tr("MENU_SUBTITLE_FMT") % tr(SUBTITLE_TEXT)
+	subtitle.text = Loc.fmt("MENU_SUBTITLE_FMT", [tr(SUBTITLE_TEXT)])
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 22)
 	subtitle.add_theme_color_override("font_color", Color(0.5, 0.55, 0.6))
@@ -287,15 +320,31 @@ func _build_ui() -> void:
 	_settings_panel = SettingsPanelScript.new()
 	_settings_panel.visible = false
 	_backdrop.add_child(_settings_panel)
-	var settings := _settings()
-	if settings == null:
-		push_error("MenuManager: SettingsManager is missing")
-		return
-	_settings_panel.setup(settings)
+	# Wire the close handler before setup(): a panel that failed to populate
+	# must still answer ESC and its own Back button.
 	_settings_panel.closed.connect(_close_settings)
+	_prepare_settings_panel()
 
 	# Feedback panel
 	_build_feedback_panel()
+
+
+## Populates the settings panel. Split out of _build_ui() so that a missing
+## SettingsManager can no longer abort the rest of the menu construction (the
+## feedback panel used to be lost with it, leaving _feedback_panel null), and
+## so the lookup can be retried the next time the player opens Settings.
+func _prepare_settings_panel() -> bool:
+	if _settings_panel_ready:
+		return true
+	if _settings_panel == null:
+		return false
+	var settings := _settings()
+	if settings == null:
+		push_error("MenuManager: SettingsManager is missing")
+		return false
+	_settings_panel.setup(settings)
+	_settings_panel_ready = true
+	return true
 
 
 func _build_feedback_panel() -> void:

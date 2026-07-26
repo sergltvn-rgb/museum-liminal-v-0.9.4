@@ -3,11 +3,14 @@ extends Node3D
 ## teaches every core control through real actions before the night shift.
 ##
 ## Each step is confirmed by the player actually performing the action, then
-## fades out. Finishing writes the tutorial_done flag and loads the museum.
-## Reachable on first launch and from the main menu ("Обучение").
+## fades out. Finishing writes tutorial/done and loads the museum; holding ESC
+## bails out early and writes tutorial/skipped instead, so the two are never
+## confused on disk. Reachable on first launch and from the main menu.
 
 const PROGRESS_PATH := "user://museum_progress.cfg"
 const MAIN_SCENE := "res://scenes/FirstMuseumMap.tscn"
+# TUTORIAL_SKIP promises "Удерживайте ESC" / "Hold ESC", so require a real hold.
+const SKIP_HOLD_TIME := 1.2
 
 # Step ids drive both the checklist UI and the completion checks.
 const STEP_MOVE := 0
@@ -25,6 +28,11 @@ var _layer: CanvasLayer
 var _title: Label
 var _checklist: Label
 var _hint: Label
+# Hold-to-skip state and its progress meter.
+var _skip_track: ColorRect
+var _skip_fill: ColorRect
+var _skip_hold := 0.0
+var _leaving := false
 
 # Progress trackers for the current step.
 var _move_distance := 0.0
@@ -175,7 +183,30 @@ func _build_ui() -> void:
 	skip.anchor_bottom = 0.98
 	skip.add_theme_font_size_override("font_size", 14)
 	skip.add_theme_color_override("font_color", Color(0.55, 0.6, 0.66))
+	skip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.add_child(skip)
+
+	# Hold-progress meter under the caption. Purely graphical, so it adds no
+	# localization key while the catalogue is still being rebuilt.
+	# Anchors are set before add_child so the offsets stay at zero.
+	_skip_track = ColorRect.new()
+	_skip_track.color = Color(0.10, 0.12, 0.15, 0.85)
+	_skip_track.anchor_left = 0.40
+	_skip_track.anchor_right = 0.60
+	_skip_track.anchor_top = 0.962
+	_skip_track.anchor_bottom = 0.970
+	_skip_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_skip_track.visible = false
+	_layer.add_child(_skip_track)
+
+	_skip_fill = ColorRect.new()
+	_skip_fill.color = Color(0.95, 0.82, 0.35, 0.95)
+	_skip_fill.anchor_left = 0.0
+	_skip_fill.anchor_top = 0.0
+	_skip_fill.anchor_right = 0.0
+	_skip_fill.anchor_bottom = 1.0
+	_skip_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_skip_track.add_child(_skip_fill)
 
 
 func _step_rows() -> Array:
@@ -222,6 +253,11 @@ func _current_hint() -> String:
 # --- Loop -------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	# Skip polling comes first: it must work even if the player node is gone,
+	# and it must stop once the scene change is already requested.
+	_update_skip(delta)
+	if _leaving:
+		return
 	if _player == null or not is_instance_valid(_player):
 		return
 	match _step:
@@ -257,8 +293,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_advance()
 	if event.is_action_pressed("interact"):
 		_handle_interact()
-	if event.is_action_pressed("pause"):
-		_finish()
 
 
 func _handle_interact() -> void:
@@ -289,12 +323,69 @@ func _advance() -> void:
 	_refresh_ui()
 
 
+func _update_skip(delta: float) -> void:
+	if _leaving:
+		return
+	if Input.is_action_pressed("pause"):
+		_skip_hold += delta
+		_update_skip_bar()
+		if _skip_hold >= SKIP_HOLD_TIME:
+			_skip()
+		return
+	if _skip_hold > 0.0:
+		_skip_hold = 0.0
+		_update_skip_bar()
+		# PlayerController frees the cursor on "pause"; an aborted hold must not
+		# leave the tutorial running with an uncaptured mouse.
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _update_skip_bar() -> void:
+	if _skip_track == null or not is_instance_valid(_skip_track):
+		return
+	var ratio := clampf(_skip_hold / SKIP_HOLD_TIME, 0.0, 1.0)
+	_skip_track.visible = ratio > 0.0
+	# keep_offset must be false, otherwise the anchor change preserves the
+	# current rect and the bar never grows.
+	_skip_fill.set_anchor(SIDE_RIGHT, ratio, false)
+
+
 func _finish() -> void:
+	if _leaving:
+		return
+	_leaving = true
+	_write_progress(true)
+	_leave()
+
+
+func _skip() -> void:
+	if _leaving:
+		return
+	_leaving = true
+	_write_progress(false)
+	_leave()
+
+
+func _leave() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	get_tree().change_scene_to_file(MAIN_SCENE)
+
+
+func _write_progress(completed: bool) -> void:
 	var config := ConfigFile.new()
 	config.load(PROGRESS_PATH)
-	config.set_value("tutorial", "done", true)
+	if completed:
+		config.set_value("tutorial", "done", true)
+		config.set_value("tutorial", "skipped", false)
+	else:
+		# A skip is not a completion. "done" is deliberately left untouched: a
+		# first-time skip leaves it false, and a replay that is skipped does not
+		# downgrade an earlier honest completion.
+		# CONTRACT: the menu gate must accept done-or-skipped as "may start the
+		# shift" (MenuManager._tutorial_done), otherwise a skipping player is
+		# sent back into the tutorial every time they press Start.
+		config.set_value("tutorial", "skipped", true)
 	config.save(PROGRESS_PATH)
-	get_tree().change_scene_to_file(MAIN_SCENE)
 
 
 func _sfx(sound: String) -> void:

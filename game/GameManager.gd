@@ -22,6 +22,25 @@ const NIGHT_TIMER := 240.0
 const INTERACT_DISTANCE := 2.8
 const APPLY_DISTANCE := 3.4
 
+# --- Kill plane -------------------------------------------------------------
+# Every legitimate walkable surface in this game has its top face at y = 0.0:
+# room floors are boxes centred at y = -0.08 with height 0.16 (see
+# FirstMuseumMap._add_room) and "Forecourt Ground" is centred at y = -0.10
+# with height 0.2 (FirstMuseumMap._add_outdoor). The highest outdoor deck is
+# the top entrance step at y = 0.22; nothing legitimate is below zero.
+# -8.0 is therefore pure void: ~0.94 s of free fall at the player's gravity
+# of 18.0 -- fast enough to read as a slip, deep enough never to misfire on
+# step-up jitter (PlayerController.step_height is 0.38).
+# Pocket-dimension arenas are built around RiftTrialManager.ORIGIN (y = 72)
+# and run their own kill plane at ORIGIN.y - 14.0, so they never reach this.
+const KILL_PLANE_Y := -8.0
+# Marker3D created by FirstMuseumMap._add_player_spawn() at (0, 1.0, 46).
+const FALL_SPAWN_NAME := "Player Spawn - Street"
+const FALL_SPAWN_FALLBACK := Vector3(0, 1.0, 46)
+# Reject a "last safe spot" left over from a pocket dimension (those sit ~72 m
+# up) when picking where to drop the player back into the museum.
+const FALL_SAFE_MAX_Y := 20.0
+
 # Night progression: nights 2-3 open the locked wings and stack anomalies.
 const MAX_NIGHT := 3
 const SAVE_PATH := "user://museum_save.cfg"
@@ -162,6 +181,8 @@ var _memory_reel_used := false
 var _calm_time := 0.0
 var _trial_active := false
 var _trial_manager: Node
+# Cached exhibit puzzle controller: _update_hint() asks for it every frame.
+var _puzzle: Node = null
 
 var _devices: Dictionary = {}
 var _device_homes: Dictionary = {}
@@ -187,6 +208,9 @@ var _protocol_time := 0.0
 var _admin_layer: CanvasLayer = null
 var _admin_panel: PanelContainer = null
 var _test_mode := false
+# Состояние ввода на момент открытия консоли — восстанавливается при закрытии.
+var _admin_prev_mouse_mode := Input.MOUSE_MODE_CAPTURED
+var _admin_prev_controls := true
 var _pre_test_state := STATE_DAY
 var _pre_test_time_left := 0.0
 var _pre_test_calm := 0.0
@@ -233,13 +257,15 @@ func _initialize() -> void:
 	_build_terminal()
 	_build_protocol_screen()
 	_build_hud()
-	_build_test_admin()
+	# Тестовая консоль (F9) собирается только в отладочных сборках.
+	if OS.is_debug_build():
+		_build_test_admin()
 	var trial_script := load("res://game/RiftTrialManager.gd")
 	_trial_manager = trial_script.new() as Node
 	_trial_manager.name = "RiftTrialManager"
 	add_child(_trial_manager)
 	_trial_manager.call("setup", self)
-	_set_objective(tr("OBJ_NIGHT_INTRO") % _night)
+	_set_objective(Loc.fmt("OBJ_NIGHT_INTRO", [_night]))
 
 
 func _process(delta: float) -> void:
@@ -279,11 +305,66 @@ func _process(delta: float) -> void:
 				_fail()
 		_:
 			pass
+	# After the state machine, not before it: safe_teleport() captures
+	# controls_enabled, awaits a physics frame and then puts the captured value
+	# back. If the night timer expires on the very frame the falling player
+	# crosses the kill plane, running this first would capture "enabled", _fail()
+	# would freeze the player a few lines later, and the teleport would thaw them
+	# again behind the fail overlay. Running it last means the freeze is already
+	# in place when the capture happens.
+	_check_kill_plane()
 	_update_hint()
 
 
+# The forecourt is an open lot: past its edge there is no floor, so a player
+# who walks off falls forever and has to kill the process. This lives here
+# because _process() already ticks every frame, already holds _player, already
+# holds _map_root (which owns the spawn marker) and already knows whether a
+# pocket-dimension trial is running.
+func _check_kill_plane() -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+	if _player.global_position.y > KILL_PLANE_Y:
+		return
+	# Defence in depth, not the working mechanism: RiftTrialManager._process()
+	# runs its own kill plane at ORIGIN.y - 14.0 (y < 58), so a trial player who
+	# falls out of the arena is caught 66 m above KILL_PLANE_Y and never reaches
+	# this line. Kept in case that check ever stops running -- the trial owns the
+	# per-trial recovery rules, so delegate rather than respawn on the forecourt.
+	if _trial_manager != null and bool(_trial_manager.call("is_active")):
+		_trial_manager.call("recover_from_fall")
+		return
+	var target := _fall_respawn_point()
+	if _player.has_method("safe_teleport"):
+		# safe_teleport() zeroes velocity, restores DOWN gravity and one physics
+		# frame later restores whatever controls_enabled was on entry -- so a
+		# player who fell while a terminal overlay was up stays frozen.
+		_player.call("safe_teleport", target, Vector3.DOWN)
+	else:
+		_player.set("velocity", Vector3.ZERO)
+		_player.global_position = target
+	_flash(tr("HUD_FALL_RESPAWN"), Color(0.86, 0.74, 0.52))
+
+
+# Prefer the last spot the player actually stood on -- PlayerController samples
+# it into _last_safe_transform every 0.25 s while is_on_floor() is true -- and
+# fall back to the street spawn marker built by _add_player_spawn().
+func _fall_respawn_point() -> Vector3:
+	var safe: Variant = _player.get("_last_safe_transform")
+	if safe is Transform3D:
+		var origin: Vector3 = (safe as Transform3D).origin
+		if origin != Vector3.ZERO and origin.y > KILL_PLANE_Y \
+				and origin.y < FALL_SAFE_MAX_Y:
+			return origin + Vector3(0.0, 0.12, 0.0)
+	if _map_root != null:
+		var marker := _map_root.find_child(FALL_SPAWN_NAME, true, false) as Node3D
+		if marker != null:
+			return marker.global_position
+	return FALL_SPAWN_FALLBACK
+
+
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_F9 or event.keycode == KEY_F9):
+	if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_F9 or event.keycode == KEY_F9):
 		_toggle_test_admin()
 		get_viewport().set_input_as_handled()
 		return
@@ -340,9 +421,9 @@ func _start_accident() -> void:
 		env.volumetric_fog_albedo = color.lightened(0.2)
 	# Terminal readout (step 5).
 	if _terminal_label != null:
-		_terminal_label.text = tr("HUD_TERMINAL_BREACH") % [tr(str(info["title"])), tr(str(info["readout"]))]
+		_terminal_label.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), tr(str(info["readout"]))])
 	_set_screen_color(color)
-	_set_objective(tr("OBJ_INCIDENT") % [_incident_name(), _anomalies_left])
+	_set_objective(Loc.fmt("OBJ_INCIDENT", [_incident_name(), _anomalies_left]))
 	_flash(tr("HUD_CONTAINMENT_BREACHED"), Color(1.0, 0.35, 0.3))
 	_show_protocol(info, color)
 	var am := _audio()
@@ -397,16 +478,63 @@ func _resolve() -> void:
 		_win()
 	else:
 		_state = STATE_NIGHT_DONE
+		_set_player_controls(false)
 		_save_night(_night + 1)
-		_set_objective(tr("OBJ_NIGHT_DONE") % _night)
-		_flash(tr("HUD_NIGHT_COMPLETE") % _night, Color(0.5, 1.0, 0.6))
+		_set_objective(Loc.fmt("OBJ_NIGHT_DONE", [_night]))
+		_flash(Loc.fmt("HUD_NIGHT_COMPLETE", [_night]), Color(0.5, 1.0, 0.6))
+
+
+# The fail / night-done / win screens are read-only panels the player can only
+# answer with "confirm", which shares the gamepad A button with "jump". Freezing
+# the player keeps the two apart (PlayerController only polls "jump" while
+# controls_enabled is true) and stops them walking around behind the overlay.
+#
+# This query is the single owner of that rule. Nothing outside may decide on its
+# own that control is due back: the CCTV tablet asks here when it closes, and
+# PlayerController.safe_teleport() restores what it captured instead of forcing
+# true. Without one owner a terminal overlay can be up while the player is
+# mobile, and a single gamepad A press is polled as "jump" by
+# PlayerController._physics_process and as "confirm" by _input() below.
+func player_controls_allowed() -> bool:
+	return _state != STATE_FAILED and _state != STATE_NIGHT_DONE \
+		and _state != STATE_WIN
+
+
+# Callers must move _state first, so `enabled` always agrees with
+# player_controls_allowed(). _admin_prev_controls is kept in sync so closing the
+# F9 console cannot restore control that an overlay revoked while the console
+# was open.
+func _set_player_controls(enabled: bool) -> void:
+	_admin_prev_controls = enabled
+	if not enabled:
+		_close_camera_tablet()
+	if _player != null and is_instance_valid(_player):
+		_player.set("controls_enabled", enabled)
+
+
+# The CCTV tablet owns the viewport camera and the free cursor while it is open,
+# and hands control back when it closes, so a transition that revokes control
+# must not leave it up: the overlay would sit over a frozen wall-mount feed, and
+# _retry() / _advance_night() would resume the night with that camera still
+# current instead of the player's. Closing it here (one place, on the way down)
+# is what keeps those two resume paths clean. Sibling lookup, mirroring the way
+# SecurityCameraTablet._toggle() reaches back for this node.
+func _close_camera_tablet() -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	var tablet := parent.get_node_or_null("SecurityCameraTablet")
+	if tablet != null and tablet.has_method("close"):
+		tablet.call("close")
 
 
 func _fail() -> void:
 	if _trial_manager != null:
+		# abort() hands control back to the player; disable it again below.
 		_trial_manager.call("abort")
 	_trial_active = false
 	_state = STATE_FAILED
+	_set_player_controls(false)
 	var am := _audio()
 	if am != null:
 		if am.has_method("set_alarm"):
@@ -424,14 +552,18 @@ func _fail() -> void:
 		if _trial_manager != null and _trial_manager.has_method("trial_fail_tip"):
 			tip = str(_trial_manager.call("trial_fail_tip"))
 		_fail_label.text = "%s\n\n%s\n%s\n\n%s\n\n%s" % [tr("FAIL_TITLE"),
-			tr("FAIL_REASON") % anomaly_title,
-			tr("FAIL_PROGRESS") % [_night, _anomalies_left],
-			tr("FAIL_TIP") % tip, tr("FAIL_RETRY")]
+			Loc.fmt("FAIL_REASON", [anomaly_title]),
+			Loc.fmt("FAIL_PROGRESS", [_night, _anomalies_left]),
+			Loc.fmt("FAIL_TIP", [tip]), tr("FAIL_RETRY")]
 	if _timer_label != null:
 		_timer_label.visible = false
 
 
 func _retry() -> void:
+	# Retry restarts the night in place (no scene reload), so this is the path
+	# that resumes play. Control comes back last, once _start_accident() has left
+	# STATE_FAILED: player_controls_allowed() answers from _state, so enabling
+	# earlier would contradict the query the tablet and the kill plane now trust.
 	if _fail_overlay != null:
 		_fail_overlay.visible = false
 	# Return the carried device to its pedestal.
@@ -448,6 +580,7 @@ func _retry() -> void:
 	_respawn_devices()
 	_anomalies_left = int(NIGHT_CONFIG[_night]["count"])
 	_start_accident()
+	_set_player_controls(true)
 
 
 # --- Night progression ------------------------------------------------------
@@ -460,16 +593,22 @@ func _advance_night() -> void:
 	_anomalies_left = int(NIGHT_CONFIG[_night]["count"])
 	_state = STATE_COUNTDOWN
 	_accident_in = 8.0
-	_set_objective(tr("OBJ_NIGHT_RESTART") % _night)
+	# After the state leaves STATE_NIGHT_DONE, so the assignment agrees with
+	# player_controls_allowed() (see _retry()).
+	_set_player_controls(true)
+	_set_objective(Loc.fmt("OBJ_NIGHT_RESTART", [_night]))
 	var wing := str(NIGHT_CONFIG[_night].get("unlock", ""))
 	if wing != "":
-		_flash(tr("HUD_NIGHT_WING_UNLOCKED") % [_night, wing], Color(0.7, 0.85, 1.0))
+		_flash(Loc.fmt("HUD_NIGHT_WING_UNLOCKED", [_night, wing]), Color(0.7, 0.85, 1.0))
 	else:
-		_flash(tr("HUD_NIGHT") % _night, Color(0.7, 0.85, 1.0))
+		_flash(Loc.fmt("HUD_NIGHT", [_night]), Color(0.7, 0.85, 1.0))
 
 
 func _win() -> void:
 	_state = STATE_WIN
+	# Confirm reloads the scene from here, so control is restored by the fresh
+	# PlayerController rather than by an explicit re-enable.
+	_set_player_controls(false)
 	if _timer_label != null:
 		_timer_label.visible = false
 	if _win_overlay != null:
@@ -501,15 +640,23 @@ func _audio() -> Node:
 	return get_tree().get_first_node_in_group("audio_manager")
 
 
+func _puzzle_controller() -> Node:
+	# _update_hint() calls _incident_position() every frame while a device is
+	# carried; re-query the group only when the cached node is gone or freed.
+	if not is_instance_valid(_puzzle) or not _puzzle.is_inside_tree():
+		_puzzle = get_tree().get_first_node_in_group("exhibit_puzzle_controller")
+	return _puzzle
+
+
 func _incident_position() -> Vector3:
-	var puzzle := get_tree().get_first_node_in_group("exhibit_puzzle_controller")
+	var puzzle := _puzzle_controller()
 	if puzzle != null and puzzle.has_method("get_incident_origin"):
 		return puzzle.get_incident_origin()
 	return DOME_POS
 
 
 func _incident_name() -> String:
-	var puzzle := get_tree().get_first_node_in_group("exhibit_puzzle_controller")
+	var puzzle := _puzzle_controller()
 	if puzzle != null and puzzle.has_method("get_incident_name"):
 		return puzzle.get_incident_name()
 	return tr("EXHIBIT_CENTRAL_CORE")
@@ -591,7 +738,7 @@ func _pick_up(id: String) -> void:
 	body.rotation = Vector3.ZERO
 	body.scale = Vector3(0.8, 0.8, 0.8)
 	_set_collision(body, false)
-	_flash(tr("HUD_TOOL_TAKEN") % tr(str(EQUIPMENT[id]["name"])), Color(0.85, 0.9, 0.8))
+	_flash(Loc.fmt("HUD_TOOL_TAKEN", [tr(str(EQUIPMENT[id]["name"]))]), Color(0.85, 0.9, 0.8))
 	if id == "memory_reel" and not _memory_reel_used and _state == STATE_ANOMALY:
 		# Катушка памяти: одноразовый бонус времени за ночную смену.
 		_memory_reel_used = true
@@ -887,9 +1034,22 @@ func _toggle_test_admin() -> void:
 	var opening := not _admin_layer.visible
 	_admin_layer.visible = opening
 	# Пока консоль открыта, игрок не вращает камеру и не перехватывает мышь.
-	if _player != null:
-		_player.set("controls_enabled", not opening)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if opening else Input.MOUSE_MODE_CAPTURED
+	# При закрытии возвращаем ровно то состояние ввода, что было при открытии:
+	# консоль могли вызвать поверх пульта видеонаблюдения, где курсор виден,
+	# а управление игроком отключено (см. SecurityCameraTablet._toggle).
+	if opening:
+		_admin_prev_mouse_mode = Input.mouse_mode
+		_admin_prev_controls = true
+		if _player != null:
+			var prev: Variant = _player.get("controls_enabled")
+			if prev != null:
+				_admin_prev_controls = bool(prev)
+			_player.set("controls_enabled", false)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		if _player != null:
+			_player.set("controls_enabled", _admin_prev_controls)
+		Input.mouse_mode = _admin_prev_mouse_mode
 	_sfx("tablet_click", -8.0)
 
 
@@ -897,8 +1057,6 @@ func _admin_select_dimension(id: String) -> void:
 	if _trial_active or not ANOMALIES.has(id):
 		return
 	_admin_layer.visible = false
-	if _player != null:
-		_player.set("controls_enabled", true)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_pre_test_state = _state
 	_pre_test_time_left = _time_left
@@ -910,12 +1068,15 @@ func _admin_select_dimension(id: String) -> void:
 	_time_left = 999999.0
 	_pulse = 0.0
 	_state = STATE_ANOMALY
+	# Через того же владельца и уже после смены состояния: консоль F9 могли
+	# открыть поверх экрана провала, где управление отключено намеренно.
+	_set_player_controls(true)
 	if _fail_overlay != null:
 		_fail_overlay.visible = false
 	if _win_overlay != null:
 		_win_overlay.visible = false
 	_hide_protocol()
-	_flash(tr("ADMIN_TEST_PREFIX") % tr(str(ANOMALIES[id]["title"])), ANOMALIES[id]["color"] as Color)
+	_flash(Loc.fmt("ADMIN_TEST_PREFIX", [tr(str(ANOMALIES[id]["title"]))]), ANOMALIES[id]["color"] as Color)
 	_begin_trial()
 
 
@@ -1047,12 +1208,12 @@ func _show_protocol(info: Dictionary, accent: Color) -> void:
 	var equip_name := equip_id
 	if EQUIPMENT.has(equip_id):
 		equip_name = tr(str(EQUIPMENT[equip_id]["name"]))
-	_proto_title.text = tr("HUD_PROTO_TITLE") % tr(str(info["title"]))
+	_proto_title.text = Loc.fmt("HUD_PROTO_TITLE", [tr(str(info["title"]))])
 	_proto_item.text = equip_name.to_upper()
 	_proto_item.add_theme_color_override("font_color", accent.lightened(0.4))
 	var hint_key := str(TOOL_HINTS.get(equip_id, ""))
 	_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
-	_proto_status.text = tr("HUD_PROTO_STATUS") % [_night, _incident_name()]
+	_proto_status.text = Loc.fmt("HUD_PROTO_STATUS", [_night, _incident_name()])
 	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(accent))
 	_protocol_layer.visible = true
 	_protocol_time = 10.0
@@ -1093,13 +1254,13 @@ func _update_hint() -> void:
 		if _carried_id != "":
 			var carried_name := tr(str(EQUIPMENT[_carried_id]["name"]))
 			if _state == STATE_ANOMALY and _near(_incident_position(), APPLY_DISTANCE):
-				hint = tr("HUD_HINT_APPLY") % carried_name
+				hint = Loc.fmt("HUD_HINT_APPLY", [carried_name])
 			else:
-				hint = tr("HUD_HINT_CARRYING") % carried_name
+				hint = Loc.fmt("HUD_HINT_CARRYING", [carried_name])
 		else:
 			var target := _raycast_body()
 			if target != null and target.is_in_group("equipment"):
-				hint = tr("HUD_HINT_TAKE") % tr(str(target.get_meta("device_name")))
+				hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
 			elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
 				hint = tr("HUD_HINT_TERMINAL")
 	_hint_label.text = hint

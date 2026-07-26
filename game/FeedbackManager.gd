@@ -44,7 +44,7 @@ func send_feedback(player_name: String, comment: String, version: String = "0.9.
 
 	var err := http.request(webhook_url, headers, HTTPClient.METHOD_POST, body_str)
 	if err != OK:
-		request_completed.emit(false, tr("MENU_FB_ERR_REQUEST") % error_string(err))
+		request_completed.emit(false, Loc.fmt("MENU_FB_ERR_REQUEST", [error_string(err)]))
 		http.queue_free()
 
 func _on_request_completed(http: HTTPRequest, result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
@@ -58,4 +58,4 @@ func _on_request_completed(http: HTTPRequest, result: int, response_code: int, _
 		request_completed.emit(true, tr("MENU_FB_SENT"))
 	else:
 		var response_text := body.get_string_from_utf8()
-		request_completed.emit(false, tr("MENU_FB_ERR_SERVER") % [response_code, response_text])
+		request_completed.emit(false, Loc.fmt("MENU_FB_ERR_SERVER", [response_code, response_text]))

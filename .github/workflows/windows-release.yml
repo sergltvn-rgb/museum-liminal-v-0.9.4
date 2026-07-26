@@ -38,6 +38,17 @@ jobs:
         run: godot --headless --path . --script res://game/test_incident_catalog.gd
       - name: Full game cycle
         run: godot --headless --path . --script res://game/test_full_game_cycle.gd
+      - name: Blocker regressions
+        run: godot --headless --path . --script res://game/test_blocker_regressions.gd
+      # Cheap and engine-free: catches a key the code asks for that the catalogue
+      # cannot answer, and a row whose format specifiers disagree with its call
+      # site. Verified on Godot 4.7, the latter always logs an engine error and
+      # leaves a raw "%s" (or a bare KEY) on the player's screen, and additionally
+      # aborts the calling function where the validated `%` operator does not
+      # apply -- i.e. when an operand is an untyped Variant. Neither failure shows
+      # up in the export step, so it is worth gating on here.
+      - name: Localization catalogue
+        run: python3 tools/check_localization.py
       - name: Export Windows release
         run: |
           mkdir -p build/windows

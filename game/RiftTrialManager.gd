@@ -270,7 +270,7 @@ func _update_time_loop(delta:float)->void:
 		for echo in _echoes:
 			if echo.global_position.distance_to(_plates[i])<1.45: occupied[i]=true
 	if occupied[0] and occupied[1] and occupied[2]: _complete(); return
-	_status.text=tr("TRIAL_TIME_HUD")%[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)]
+	_status.text=Loc.fmt("TRIAL_TIME_HUD",[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)])
 	if _loop_time>=LOOP_DURATION: _finish_loop()
 
 func _finish_loop()->void:
@@ -301,10 +301,10 @@ func _build_critical_mass() -> void:
 		var socket_text := tr("TRIAL_PROP_SOCKET_SPARE")
 		for monolith_index in range(4):
 			if _target_sockets[monolith_index] == i:
-				socket_text = tr("TRIAL_PROP_SOCKET") % symbols[monolith_index]
+				socket_text = Loc.fmt("TRIAL_PROP_SOCKET", [symbols[monolith_index]])
 		var s:=_target(i,_sockets[i],Color(.15,.5,.2),socket_text); s.set_meta("type","socket")
 	for i in range(4):
-		var text := tr("TRIAL_PROP_MONOLITH_INIT") % [symbols[i], _target_frequencies[i]]
+		var text := Loc.fmt("TRIAL_PROP_MONOLITH_INIT", [symbols[i], _target_frequencies[i]])
 		var m:=_target(i,_sockets[i]+Vector3(0,1,0),Color(.25,1,.35),text); m.set_meta("type","monolith"); _monoliths.append(m)
 
 func _radiation_interact(body:StaticBody3D)->void:
@@ -328,8 +328,8 @@ func _tune_nearest()->void:
 	if body==null: _status.text=tr("TRIAL_RADIATION_NEAR_MONOLITH"); return
 	var i:=int(body.get_meta("index",-1)); _frequencies[i]=(int(_frequencies[i])+1)%4
 	var symbols := ["▲", "●", "◆", "■"]
-	var feedback := tr("TRIAL_RADIATION_RESONANCE") if _frequencies[i] == _target_frequencies[i] else tr("TRIAL_RADIATION_NEED") % _target_frequencies[i]
-	_find_label(body).text=tr("TRIAL_PROP_MONOLITH")%[symbols[i],_frequencies[i],feedback]; _check_radiation_solution()
+	var feedback := tr("TRIAL_RADIATION_RESONANCE") if _frequencies[i] == _target_frequencies[i] else Loc.fmt("TRIAL_RADIATION_NEED", [_target_frequencies[i]])
+	_find_label(body).text=Loc.fmt("TRIAL_PROP_MONOLITH",[symbols[i],_frequencies[i],feedback]); _check_radiation_solution()
 
 func _update_radiation(delta:float)->void:
 	if not is_instance_valid(_player): return
@@ -343,7 +343,7 @@ func _update_radiation(delta:float)->void:
 		if _monolith_socket[i] == _target_sockets[i]: placed += 1
 		if _frequencies[i] == _target_frequencies[i]: tuned += 1
 	var action := tr("TRIAL_RADIATION_ACT_PLACE") if _carried_monolith >= 0 else tr("TRIAL_RADIATION_ACT_PICK")
-	_status.text=tr("TRIAL_RADIATION_HUD")%[action,placed,tuned,_dose]
+	_status.text=Loc.fmt("TRIAL_RADIATION_HUD",[action,placed,tuned,_dose])
 	if _dose>=100.: _reset_radiation()
 
 func _check_radiation_solution()->void:
@@ -363,7 +363,7 @@ func _build_negative_space()->void:
 	_checkpoints=[_spawn_position()];_checkpoint=0;_void_exit=ORIGIN+Vector3(11,1,-24);_void_nodes.clear();_void_activated=0
 	var positions:Array[Vector3]=[Vector3(-10,1,-3),Vector3(10,1,-10),Vector3(-7,1,-22)]
 	for i in range(3):
-		var node:StaticBody3D=_target(i,ORIGIN+positions[i],Color(.25,.75,1),tr("TRIAL_PROP_POWER_NODE")%(i+1))
+		var node:StaticBody3D=_target(i,ORIGIN+positions[i],Color(.25,.75,1),Loc.fmt("TRIAL_PROP_POWER_NODE",[i+1]))
 		node.set_meta("type","radar_node");_void_nodes.append(node)
 	var exit_node:=_target(3,_void_exit,Color(.25,1,.45),tr("TRIAL_PROP_EXIT"));exit_node.set_meta("type","radar_exit")
 	_void_monster=CharacterBody3D.new();_void_monster.position=ORIGIN+Vector3(10,0,-4);_world.add_child(_void_monster)
@@ -426,7 +426,7 @@ func _update_negative_space(_delta:float)->void:
 		if _game!=null and str(_game.get("_carried_id"))=="thread_spool":monster_speed*=.75
 		if d.length()>.1:_void_monster.velocity=d.normalized()*monster_speed;_void_monster.move_and_slide()
 		if d.length()<1.15:_reset_after_fall()
-	_status.text=tr("TRIAL_VOID_HUD")%_void_activated
+	_status.text=Loc.fmt("TRIAL_VOID_HUD",[_void_activated])
 	if _void_activated>=3 and _player.global_position.distance_to(_void_exit)<1.8:_complete()
 
 
@@ -451,15 +451,15 @@ func _start_echo_round()->void:
 	_echo_input=0;_echo_showing=false;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.2
 	if _echo_look<=0.0:
 		_echo_showing=true
-		_status.text=tr("TRIAL_ECHO_ROUND_WATCH")%_echo_round
+		_status.text=Loc.fmt("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
 
 func _update_echo(delta:float)->void:
 	if _echo_look>0.0:
 		_echo_look-=delta
-		_status.text=tr("TRIAL_ECHO_LOOK_TIMER")%maxi(1,int(ceil(_echo_look)))
+		_status.text=Loc.fmt("TRIAL_ECHO_LOOK_TIMER",[maxi(1,int(ceil(_echo_look)))])
 		if _echo_look<=0.0:
 			_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.0
-			_status.text=tr("TRIAL_ECHO_ROUND_WATCH")%_echo_round
+			_status.text=Loc.fmt("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
 		return
 	if not _echo_showing:return
 	_echo_show_timer-=delta
@@ -470,7 +470,7 @@ func _update_echo(delta:float)->void:
 		return
 	_echo_show_index+=1
 	if _echo_show_index>=_echo_sequence.size():
-		_echo_showing=false;_status.text=tr("TRIAL_ECHO_ROUND_REPEAT")%_echo_round
+		_echo_showing=false;_status.text=Loc.fmt("TRIAL_ECHO_ROUND_REPEAT",[_echo_round])
 		return
 	_set_pad_glow(_echo_pads[_echo_sequence[_echo_show_index]],true)
 	_echo_glow_on=true;_echo_show_timer=.85
@@ -506,16 +506,16 @@ func _echo_interact(index:int)->void:
 			if _echo_round>=3:
 				_complete()
 				return
-			_status.text=tr("TRIAL_ECHO_ROUND_DONE")%_echo_round
+			_status.text=Loc.fmt("TRIAL_ECHO_ROUND_DONE",[_echo_round])
 			_dim_all_pads()
 			_start_echo_round()
-		else:_status.text=tr("TRIAL_ECHO_CORRECT")%[_echo_input,_echo_sequence.size()]
+		else:_status.text=Loc.fmt("TRIAL_ECHO_CORRECT",[_echo_input,_echo_sequence.size()])
 	else:
 		var failed_step:=_echo_input+1
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-6.0)
 		_dim_all_pads()
 		_echo_input=0;_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.8
-		_status.text=tr("TRIAL_ECHO_MISTAKE")%failed_step
+		_status.text=Loc.fmt("TRIAL_ECHO_MISTAKE",[failed_step])
 
 # --- Зыбкий мост (фантомные плиты) ---------------------------------------
 func _build_glass_bridge()->void:
@@ -574,7 +574,7 @@ func _build_mirror_maze()->void:
 	var pool:Array[int]=[0,1,2,3,4,5];pool.shuffle()
 	for k in range(3):_mirror_defective.append(pool[k])
 	for i in range(6):
-		var frame:=_target(i,ORIGIN+spots[i],Color(.7,.8,.95),tr("TRIAL_PROP_MIRROR")%(i+1))
+		var frame:=_target(i,ORIGIN+spots[i],Color(.7,.8,.95),Loc.fmt("TRIAL_PROP_MIRROR",[i+1]))
 		frame.set_meta("type","mirror_frame");_mirror_frames.append(frame)
 	_mirror_errors=0;_mirror_ghosts.clear()
 	for i in range(6):
@@ -609,7 +609,7 @@ func _mirror_interact(body:StaticBody3D,index:int)->void:
 			var exit_pad:=_target(9,ORIGIN+Vector3(0,1,4),Color(.25,1,.45),tr("TRIAL_PROP_HALL_EXIT"))
 			exit_pad.set_meta("type","mirror_exit")
 			_status.text=tr("TRIAL_MIRROR_ALL_FOUND")
-		else:_status.text=tr("TRIAL_MIRROR_TAGGED")%_mirror_found
+		else:_status.text=Loc.fmt("TRIAL_MIRROR_TAGGED",[_mirror_found])
 	else:
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-8.0)
 		_mirror_errors+=1
@@ -618,7 +618,7 @@ func _mirror_interact(body:StaticBody3D,index:int)->void:
 			_reshuffle_mirrors()
 			_status.text=tr("TRIAL_MIRROR_RESHUFFLE")
 		else:
-			_status.text=tr("TRIAL_MIRROR_STABLE")%_mirror_errors
+			_status.text=Loc.fmt("TRIAL_MIRROR_STABLE",[_mirror_errors])
 
 # --- Жёлтые залы (Backrooms Level 0) --------------------------------------
 func _build_yellow_halls()->void:
@@ -635,7 +635,7 @@ func _build_yellow_halls()->void:
 		var lamp:=OmniLight3D.new();lamp.name="Люминесцентная лампа %d"%i;lamp.position=ORIGIN+Vector3(lx,2.9,lz);lamp.light_color=Color(1,.94,.72);lamp.light_energy=.9;lamp.omni_range=9.0;_world.add_child(lamp)
 	var tape_spots:Array[Vector3]=[Vector3(-12,.6,-15),Vector3(12,.6,6),Vector3(4,.6,-16)]
 	for i in range(3):
-		var tape:=_target(i,ORIGIN+tape_spots[i],Color(.25,.2,.14),tr("TRIAL_PROP_TAPE")%(i+1))
+		var tape:=_target(i,ORIGIN+tape_spots[i],Color(.25,.2,.14),Loc.fmt("TRIAL_PROP_TAPE",[i+1]))
 		tape.set_meta("type","vhs_tape");_yellow_tapes.append(tape)
 	var exit_pad:=_target(7,ORIGIN+Vector3(-14,1,-16),Color(.9,.8,.2),tr("TRIAL_PROP_EXIT_STRIPED"))
 	exit_pad.set_meta("type","yellow_exit")
@@ -689,7 +689,7 @@ func _update_yellow(delta:float)->void:
 				if is_instance_valid(tape) and not tape.visible:
 					tape.visible=true;tape.collision_layer=1
 					break
-			_status.text=tr("TRIAL_YELLOW_TAPE_LOST")%_tapes_found
+			_status.text=Loc.fmt("TRIAL_YELLOW_TAPE_LOST",[_tapes_found])
 		else:_status.text=tr("TRIAL_YELLOW_CAUGHT")
 		var am:=get_tree().get_first_node_in_group("audio_manager")
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-4.0)
@@ -722,7 +722,7 @@ func _build_scrap_run()->void:
 
 func _update_scrap(delta:float)->void:
 	if _scrap_carrying>=0 and is_instance_valid(_scrap_items[_scrap_carrying]):
-		_status.text=tr("TRIAL_SCRAP_HUD_CARRY")%[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value]
+		_status.text=Loc.fmt("TRIAL_SCRAP_HUD_CARRY",[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value])
 	if not is_instance_valid(_scrap_drone) or not is_instance_valid(_player):return
 	_drone_angle+=delta*.55
 	var sweep:Vector3=ORIGIN+Vector3(cos(_drone_angle)*10.0,4.4,-6.0+sin(_drone_angle*2.0)*11.0)
@@ -744,20 +744,20 @@ func _valuable_interact(body:StaticBody3D,index:int)->void:
 		return
 	_scrap_carrying=index;body.visible=false;body.collision_layer=0
 	_set_carry_visual(Color(.95,.8,.35))
-	_status.text=tr("TRIAL_SCRAP_PICKED")%[str(body.name),int(body.get_meta("value",0))]
+	_status.text=Loc.fmt("TRIAL_SCRAP_PICKED",[str(body.name),int(body.get_meta("value",0))])
 
 func _extract_interact()->void:
 	if _scrap_carrying<0:
-		_status.text=tr("TRIAL_SCRAP_BRING")%_scrap_delivered
+		_status.text=Loc.fmt("TRIAL_SCRAP_BRING",[_scrap_delivered])
 		return
 	if is_instance_valid(_scrap_items[_scrap_carrying]):_scrap_value+=int(_scrap_items[_scrap_carrying].get_meta("value",0))
 	_scrap_carrying=-1;_scrap_delivered+=1
 	_drop_carry_visual()
 	if _scrap_delivered>=3:
-		_status.text=tr("TRIAL_SCRAP_ALL_DONE")%_scrap_value
+		_status.text=Loc.fmt("TRIAL_SCRAP_ALL_DONE",[_scrap_value])
 		_complete()
 		return
-	_status.text=tr("TRIAL_SCRAP_PROGRESS")%[_scrap_delivered,_scrap_value]
+	_status.text=Loc.fmt("TRIAL_SCRAP_PROGRESS",[_scrap_delivered,_scrap_value])
 
 # --- Восхождение (PEAK: туман поднимается) ------------------------------
 func _build_ascent()->void:
@@ -794,7 +794,7 @@ func _update_ascent(delta:float)->void:
 	for cp in _ascent_cps:
 		if cp.y>_ascent_checkpoint.y and _player.global_position.distance_to(cp)<1.7:
 			_ascent_checkpoint=cp
-			_status.text=tr("TRIAL_ASCENT_CHECKPOINT")%int(cp.y-ORIGIN.y)
+			_status.text=Loc.fmt("TRIAL_ASCENT_CHECKPOINT",[int(cp.y-ORIGIN.y)])
 	if _player.global_position.y<ORIGIN.y+_fog_y-.2:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.velocity=Vector3.ZERO
@@ -862,9 +862,9 @@ func _interact()->void:
 	elif type=="bridge_exit":_complete()
 	elif type=="mirror_frame":_mirror_interact(body,index)
 	elif type=="mirror_exit":_complete()
-	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_status.text=tr("TRIAL_YELLOW_TAPE_FOUND")%_tapes_found
+	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_status.text=Loc.fmt("TRIAL_YELLOW_TAPE_FOUND",[_tapes_found])
 	elif type=="yellow_exit" and _tapes_found>=3:_complete()
-	elif type=="yellow_exit":_status.text=tr("TRIAL_YELLOW_EXIT_LOCKED")%_tapes_found
+	elif type=="yellow_exit":_status.text=Loc.fmt("TRIAL_YELLOW_EXIT_LOCKED",[_tapes_found])
 	elif type=="valuable":_valuable_interact(body,index)
 	elif type=="extract_pad":_extract_interact()
 	elif type=="ascent_exit":_complete()
@@ -878,6 +878,13 @@ func _nearest_target(type_filter:String)->StaticBody3D:
 		var d:=_player.global_position.distance_to(body.global_position)
 		if d<distance: found=body; distance=d
 	return found
+
+# Public entry point for GameManager's global kill plane. Inside a trial the
+# player belongs to this manager, so the global respawn must not yank them back
+# to the forecourt -- delegate to the per-trial recovery rules below instead.
+func recover_from_fall()->void:
+	if not _active: return
+	_reset_after_fall()
 
 func _reset_after_fall()->void:
 	if not is_instance_valid(_player): return

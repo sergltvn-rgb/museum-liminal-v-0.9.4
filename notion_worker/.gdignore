@@ -1,0 +1,5 @@
+# Godot: do not scan or import anything under notion_worker/.
+# This directory is Notion/MCP tooling, not game content. Without this file
+# Godot walks notion_worker/node_modules and imports stray assets found there
+# into the game project (see notion_worker/docs/custom-tool.png.import).
+# Godot only checks that this file exists; its contents are never parsed.
