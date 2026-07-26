@@ -25,7 +25,6 @@ var _layer: CanvasLayer
 var _title: Label
 var _checklist: Label
 var _hint: Label
-var _use_en := false
 
 # Progress trackers for the current step.
 var _move_distance := 0.0
@@ -39,16 +38,11 @@ var _console_read := false
 
 
 func _ready() -> void:
-	_use_en = TranslationServer.get_locale().begins_with("en")
 	_build_room()
 	_spawn_player()
 	_build_ui()
 	_refresh_ui()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-
-func _t(ru: String, en: String) -> String:
-	return en if _use_en else ru
 
 
 # --- Room -------------------------------------------------------------------
@@ -85,10 +79,10 @@ func _build_room() -> void:
 
 	# Orientation console (interact target).
 	_console_body = _target(Vector3(4.5, 1.0, -10), Color(0.3, 0.8, 1.0),
-		_t("КОНСОЛЬ ОРИЕНТАЦИИ", "ORIENTATION CONSOLE"))
+		"OrientationConsole", tr("TUT_TARGET_CONSOLE"))
 	# Exit door pad (final step).
 	_exit_pad = _target(Vector3(0, 1.0, -17), Color(0.3, 1.0, 0.45),
-		_t("ВЫХОД НА СМЕНУ", "EXIT TO SHIFT"))
+		"ExitPad", tr("TUT_TARGET_EXIT"))
 	_exit_pad.visible = false
 
 
@@ -153,7 +147,7 @@ func _build_ui() -> void:
 	margin.add_child(box)
 
 	_title = Label.new()
-	_title.text = _t("ОБУЧЕНИЕ — СЕКТОР ОРИЕНТАЦИИ", "TUTORIAL — ORIENTATION SECTOR")
+	_title.text = tr("TUTORIAL_TITLE")
 	_title.add_theme_font_size_override("font_size", 20)
 	_title.add_theme_color_override("font_color", Color(0.65, 0.82, 1.0))
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -173,7 +167,7 @@ func _build_ui() -> void:
 
 	# Skip hint (bottom-center), so returning players are never trapped.
 	var skip := Label.new()
-	skip.text = _t("Esc — пропустить обучение", "Esc — skip tutorial")
+	skip.text = tr("TUTORIAL_SKIP")
 	skip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	skip.anchor_left = 0.0
 	skip.anchor_right = 1.0
@@ -186,13 +180,13 @@ func _build_ui() -> void:
 
 func _step_rows() -> Array:
 	return [
-		{"id": STEP_MOVE, "ru": "Движение (W A S D)", "en": "Move (W A S D)"},
-		{"id": STEP_LOOK, "ru": "Осмотреться (мышь)", "en": "Look around (mouse)"},
-		{"id": STEP_SPRINT, "ru": "Спринт (Shift)", "en": "Sprint (Shift)"},
-		{"id": STEP_JUMP, "ru": "Прыжок (Пробел)", "en": "Jump (Space)"},
-		{"id": STEP_FLASHLIGHT, "ru": "Фонарик (F)", "en": "Flashlight (F)"},
-		{"id": STEP_INTERACT, "ru": "Взаимодействие (E) у консоли", "en": "Interact (E) at the console"},
-		{"id": STEP_EXIT, "ru": "Выйти на смену (E) у двери", "en": "Exit to the shift (E) at the door"},
+		{"id": STEP_MOVE, "key": "TUT_STEP_MOVE"},
+		{"id": STEP_LOOK, "key": "TUT_STEP_LOOK"},
+		{"id": STEP_SPRINT, "key": "TUT_STEP_SPRINT"},
+		{"id": STEP_JUMP, "key": "TUT_STEP_JUMP"},
+		{"id": STEP_FLASHLIGHT, "key": "TUT_STEP_FLASHLIGHT"},
+		{"id": STEP_INTERACT, "key": "TUT_STEP_INTERACT"},
+		{"id": STEP_EXIT, "key": "TUT_STEP_EXIT"},
 	]
 
 
@@ -201,7 +195,7 @@ func _refresh_ui() -> void:
 	for row in _step_rows():
 		var id: int = int(row["id"])
 		var mark := "[x]" if id < _step else ("[>]" if id == _step else "[ ]")
-		lines.append("%s %s" % [mark, _t(String(row["ru"]), String(row["en"]))])
+		lines.append("%s %s" % [mark, tr(String(row["key"]))])
 	_checklist.text = "\n".join(lines)
 	_hint.text = _current_hint()
 
@@ -209,24 +203,19 @@ func _refresh_ui() -> void:
 func _current_hint() -> String:
 	match _step:
 		STEP_MOVE:
-			return _t("Пройдите вперёд на клавишах W A S D.",
-				"Walk forward using W A S D.")
+			return tr("TUT_HINT_MOVE")
 		STEP_LOOK:
-			return _t("Поводите мышью, осмотрите сектор.",
-				"Move the mouse and look around the sector.")
+			return tr("TUT_HINT_LOOK")
 		STEP_SPRINT:
-			return _t("Зажмите Shift и бегите.", "Hold Shift and run.")
+			return tr("TUT_HINT_SPRINT")
 		STEP_JUMP:
-			return _t("Нажмите Пробел, чтобы прыгнуть.", "Press Space to jump.")
+			return tr("TUT_HINT_JUMP")
 		STEP_FLASHLIGHT:
-			return _t("Нажмите F, чтобы включить/выключить фонарик.",
-				"Press F to toggle the flashlight.")
+			return tr("TUT_HINT_FLASHLIGHT")
 		STEP_INTERACT:
-			return _t("Подойдите к консоли и нажмите E.",
-				"Approach the console and press E.")
+			return tr("TUT_HINT_INTERACT")
 		STEP_EXIT:
-			return _t("Дверь открыта. Подойдите и нажмите E.",
-				"The door is open. Approach and press E.")
+			return tr("TUT_HINT_EXIT")
 	return ""
 
 
@@ -337,9 +326,9 @@ func _box(box_name: String, pos: Vector3, size: Vector3, color: Color) -> Static
 	return body
 
 
-func _target(pos: Vector3, color: Color, text: String) -> StaticBody3D:
+func _target(pos: Vector3, color: Color, body_name: String, text: String) -> StaticBody3D:
 	var body := StaticBody3D.new()
-	body.name = text
+	body.name = body_name
 	body.position = pos
 	add_child(body)
 	var collision := CollisionShape3D.new()

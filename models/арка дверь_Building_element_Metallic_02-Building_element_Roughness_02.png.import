@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dpqg5iijdgh5p"
-path="res://.godot/imported/арка дверь_Building_element_Metallic_02-Building_element_Roughness_02.png-5e143d31ad3721dbadec64d4e0990b07.ctex"
+path.s3tc="res://.godot/imported/арка дверь_Building_element_Metallic_02-Building_element_Roughness_02.png-5e143d31ad3721dbadec64d4e0990b07.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "3c0ab0a50f0e6728a8dd62c154998679"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/арка дверь_Building_element_Metallic_02-Building_element_Roughness_02.png"
-dest_files=["res://.godot/imported/арка дверь_Building_element_Metallic_02-Building_element_Roughness_02.png-5e143d31ad3721dbadec64d4e0990b07.ctex"]
+dest_files=["res://.godot/imported/арка дверь_Building_element_Metallic_02-Building_element_Roughness_02.png-5e143d31ad3721dbadec64d4e0990b07.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

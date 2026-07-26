@@ -155,7 +155,7 @@ func _build_stamina_ui() -> void:
 	box.add_theme_constant_override("separation", 5)
 	panel.add_child(box)
 	_stamina_label = Label.new()
-	_stamina_label.text = "ВЫНОСЛИВОСТЬ"
+	_stamina_label.text = tr("HUD_STAMINA")
 	_stamina_label.add_theme_font_size_override("font_size", 13)
 	_stamina_label.add_theme_color_override("font_color", Color(0.72, 0.86, 0.82))
 	box.add_child(_stamina_label)
@@ -184,7 +184,7 @@ func _update_stamina_ui() -> void:
 	var fill := _stamina_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	if fill != null:
 		fill.bg_color = Color(0.92, 0.30, 0.22) if _exhausted else (Color(0.92, 0.66, 0.25) if ratio < 0.3 else Color(0.30, 0.82, 0.62))
-	_stamina_label.text = "ИСТОЩЕНИЕ — ПЕРЕВЕДИТЕ ДЫХАНИЕ" if _exhausted else "ВЫНОСЛИВОСТЬ"
+	_stamina_label.text = tr("HUD_STAMINA_EXHAUSTED") if _exhausted else tr("HUD_STAMINA")
 
 
 func _update_footsteps(delta: float, running: bool, was_falling: bool) -> void:

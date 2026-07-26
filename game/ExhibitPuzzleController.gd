@@ -5,24 +5,24 @@ extends Node
 const STATE_ANOMALY := 2
 const EXHIBITS := {
 	"gravity_surge": [
-		{"name":"Падающий куб", "wing":"Крыло A — Гравитация", "origin":Vector3(21.5,0,-4.5), "anchor":"Anomaly Anchor - Falling Cube Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"Инверсионная камера", "wing":"Крыло A — Гравитация", "origin":Vector3(28,0,-4.5), "anchor":"Anomaly Anchor - Inversion Room Exhibit", "rule":"descending", "scale":"small"},
-		{"name":"Левитирующая колонна", "wing":"Крыло A — Гравитация", "origin":Vector3(35.5,0,-4.5), "anchor":"Anomaly Anchor - Levitating Column Exhibit", "rule":"outside", "scale":"large"},
+		{"name":"EXHIBIT_FALLING_CUBE", "wing":"EXHIBIT_WING_A", "origin":Vector3(21.5,0,-4.5), "anchor":"Anomaly Anchor - Falling Cube Exhibit", "rule":"ascending", "scale":"large"},
+		{"name":"EXHIBIT_INVERSION_ROOM", "wing":"EXHIBIT_WING_A", "origin":Vector3(28,0,-4.5), "anchor":"Anomaly Anchor - Inversion Room Exhibit", "rule":"descending", "scale":"small"},
+		{"name":"EXHIBIT_LEVITATING_COLUMN", "wing":"EXHIBIT_WING_A", "origin":Vector3(35.5,0,-4.5), "anchor":"Anomaly Anchor - Levitating Column Exhibit", "rule":"outside", "scale":"large"},
 	],
 	"temporal_drift": [
-		{"name":"Сломанные часы", "wing":"Крыло B — Время", "origin":Vector3(-8,0,-27.5), "anchor":"Anomaly Anchor - Broken Clock Exhibit", "rule":"ascending", "scale":"small"},
-		{"name":"Замороженная капля", "wing":"Крыло B — Время", "origin":Vector3(0,0,-27.5), "anchor":"Anomaly Anchor - Frozen Drop Exhibit", "rule":"odd_even", "scale":"small"},
-		{"name":"Временная петля", "wing":"Крыло B — Время", "origin":Vector3(8,0,-27.5), "anchor":"Anomaly Anchor - Time Loop Exhibit", "rule":"descending", "scale":"normal"},
+		{"name":"EXHIBIT_BROKEN_CLOCK", "wing":"EXHIBIT_WING_B", "origin":Vector3(-8,0,-27.5), "anchor":"Anomaly Anchor - Broken Clock Exhibit", "rule":"ascending", "scale":"small"},
+		{"name":"EXHIBIT_FROZEN_DROP", "wing":"EXHIBIT_WING_B", "origin":Vector3(0,0,-27.5), "anchor":"Anomaly Anchor - Frozen Drop Exhibit", "rule":"odd_even", "scale":"small"},
+		{"name":"EXHIBIT_TIME_LOOP", "wing":"EXHIBIT_WING_B", "origin":Vector3(8,0,-27.5), "anchor":"Anomaly Anchor - Time Loop Exhibit", "rule":"descending", "scale":"normal"},
 	],
 	"void_rift": [
-		{"name":"Портальная арка", "wing":"Крыло C — Пространство", "origin":Vector3(24,0,-20.5), "anchor":"Anomaly Anchor - Portal Arch Exhibit", "rule":"outside", "scale":"normal"},
-		{"name":"Звёздный глобус", "wing":"Крыло C — Пространство", "origin":Vector3(18.5,0,-27.5), "anchor":"Anomaly Anchor - Star Globe Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"Оррери", "wing":"Крыло C — Пространство", "origin":Vector3(29.5,0,-27.5), "anchor":"Anomaly Anchor - Orrery Exhibit", "rule":"odd_even", "scale":"small"},
+		{"name":"EXHIBIT_PORTAL_ARCH", "wing":"EXHIBIT_WING_C", "origin":Vector3(24,0,-20.5), "anchor":"Anomaly Anchor - Portal Arch Exhibit", "rule":"outside", "scale":"normal"},
+		{"name":"EXHIBIT_STAR_GLOBE", "wing":"EXHIBIT_WING_C", "origin":Vector3(18.5,0,-27.5), "anchor":"Anomaly Anchor - Star Globe Exhibit", "rule":"ascending", "scale":"large"},
+		{"name":"EXHIBIT_ORRERY", "wing":"EXHIBIT_WING_C", "origin":Vector3(29.5,0,-27.5), "anchor":"Anomaly Anchor - Orrery Exhibit", "rule":"odd_even", "scale":"small"},
 	],
 	"radiation_bloom": [
-		{"name":"Сверхтяжёлая сфера", "wing":"Крыло D — Масса", "origin":Vector3(52,0,-3), "anchor":"Anomaly Anchor - Superheavy Sphere Exhibit", "rule":"descending", "scale":"large"},
-		{"name":"Плотный слиток", "wing":"Крыло D — Масса", "origin":Vector3(46.5,0,4), "anchor":"Anomaly Anchor - Dense Ingot Exhibit", "rule":"ascending", "scale":"large"},
-		{"name":"Маятник массы", "wing":"Крыло D — Масса", "origin":Vector3(58,0,4), "anchor":"Anomaly Anchor - Mass Pendulum Exhibit", "rule":"odd_even", "scale":"normal"},
+		{"name":"EXHIBIT_SUPERHEAVY_SPHERE", "wing":"EXHIBIT_WING_D", "origin":Vector3(52,0,-3), "anchor":"Anomaly Anchor - Superheavy Sphere Exhibit", "rule":"descending", "scale":"large"},
+		{"name":"EXHIBIT_DENSE_INGOT", "wing":"EXHIBIT_WING_D", "origin":Vector3(46.5,0,4), "anchor":"Anomaly Anchor - Dense Ingot Exhibit", "rule":"ascending", "scale":"large"},
+		{"name":"EXHIBIT_MASS_PENDULUM", "wing":"EXHIBIT_WING_D", "origin":Vector3(58,0,4), "anchor":"Anomaly Anchor - Mass Pendulum Exhibit", "rule":"odd_even", "scale":"normal"},
 	],
 }
 
@@ -53,17 +53,17 @@ func prepare_incident(anomaly_id: String, night: int) -> void:
 	_exhibit = _choose_exhibit(night)
 	_last_exhibit = str(_exhibit.get("name", ""))
 	if _game != null and _game.has_method("set_objective"):
-		_game.set_objective("incident", "Аномалия у экспоната «%s» в зоне «%s». Найдите стабилизатор и примените его к разрыву." % [_exhibit["name"], _exhibit["wing"]], 30)
+		_game.set_objective("incident", tr("OBJ_INCIDENT_EXHIBIT") % [tr(_exhibit["name"]), tr(_exhibit["wing"])], 30)
 
 func _choose_exhibit(night: int) -> Dictionary:
 	var candidates: Array = []
 	for family in EXHIBITS.values():
 		for entry in family:
 			var wing := str(entry.get("wing", ""))
-			var minimum_night := 3 if "Крыло D" in wing else (2 if "Крыло C" in wing else 1)
+			var minimum_night := 3 if "EXHIBIT_WING_D" in wing else (2 if "EXHIBIT_WING_C" in wing else 1)
 			if night >= minimum_night:
 				var candidate: Dictionary = entry.duplicate(true)
-				candidate["camera"] = 10 if "Крыло D" in wing else (6 if "Крыло C" in wing else (5 if "Крыло B" in wing else 4))
+				candidate["camera"] = 10 if "EXHIBIT_WING_D" in wing else (6 if "EXHIBIT_WING_C" in wing else (5 if "EXHIBIT_WING_B" in wing else 4))
 				candidates.append(candidate)
 	var selected: Dictionary = candidates.pick_random()
 	if candidates.size() > 1:
@@ -79,7 +79,7 @@ func get_incident_origin() -> Vector3:
 			var anchor:=root.find_child(str(_exhibit.get("anchor","")),true,false) as Node3D
 			if anchor!=null:return anchor.global_position-Vector3(0,1.55,0)
 	return _exhibit.get("origin",Vector3.ZERO) as Vector3
-func get_incident_name() -> String: return str(_exhibit.get("name", "неизвестный экспонат"))
+func get_incident_name() -> String: return tr(str(_exhibit.get("name", "EXHIBIT_UNKNOWN")))
 func get_required_camera() -> int: return int(_exhibit.get("camera", -1))
 
 func _clear_incident() -> void:

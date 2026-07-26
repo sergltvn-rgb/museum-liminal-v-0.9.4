@@ -45,99 +45,102 @@ const STATE_NIGHT_DONE := 6
 const STATE_WIN := 7
 
 # Anomaly types (step 2): terminal readout + required equipment id.
+# title/readout — ключи перевода (const нельзя оборачивать в tr()),
+# tr() вызывается там, где строки выводятся на экран.
 const ANOMALIES := {
 	"gravity_surge": {
-		"title": "ГРАВИТАЦИОННЫЙ СКАЧОК",
-		"readout": "ПОТОК МАССЫ +340%\nОБЪЕКТЫ ТЕРЯЮТ ВЕС\nПРОТОКОЛ: ГРАВИТАЦИОННЫЙ ЯКОРЬ",
+		"title": "ANOMALY_GRAVITY_TITLE",
+		"readout": "ANOMALY_GRAVITY_READOUT",
 		"equipment": "gravity_anchor",
 		"color": Color(0.62, 0.35, 0.95),
 	},
 	"temporal_drift": {
-		"title": "ВРЕМЕННОЙ СДВИГ",
-		"readout": "РАССИНХРОНИЗАЦИЯ 11,3 С/МИН\nЛОКАЛЬНОЕ ВРЕМЯ НЕСТАБИЛЬНО\nПРОТОКОЛ: ХРОНОСТАБИЛИЗАТОР",
+		"title": "ANOMALY_TEMPORAL_TITLE",
+		"readout": "ANOMALY_TEMPORAL_READOUT",
 		"equipment": "chrono_stabilizer",
 		"color": Color(0.95, 0.68, 0.25),
 	},
 	"radiation_bloom": {
-		"title": "РАДИАЦИОННОЕ ЦВЕТЕНИЕ",
-		"readout": "РАДИАЦИЯ 12,8 МЗВ/Ч И РАСТЁТ\nЗЕЛЁНОЕ СВЕЧЕНИЕ\nПРОТОКОЛ: СТЕРЖЕНЬ СДЕРЖИВАНИЯ",
+		"title": "ANOMALY_RADIATION_TITLE",
+		"readout": "ANOMALY_RADIATION_READOUT",
 		"equipment": "containment_rod",
 		"color": Color(0.35, 0.90, 0.35),
 	},
 	"void_rift": {
-		"title": "РАЗРЫВ ПУСТОТЫ",
-		"readout": "ПОТОК МАССЫ −270%\nОБНАРУЖЕНО ПОГЛОЩЕНИЕ СВЕТА\nПРОТОКОЛ: ПОЛЕВОЙ ИЗЛУЧАТЕЛЬ",
+		"title": "ANOMALY_VOID_TITLE",
+		"readout": "ANOMALY_VOID_READOUT",
 		"equipment": "field_emitter",
 		"color": Color(0.25, 0.45, 0.95),
 	},
 	"echo_chamber": {
-		"title": "РЕЗОНАНСНОЕ ЭХО",
-		"readout": "АКУСТИЧЕСКИЙ КОНТУР ЗАМКНУТ\nПОВТОРЯЮЩИЕСЯ ВСПЫШКИ\nПРОТОКОЛ: РЕЗОНАНСНЫЙ НАСТРОЙЩИК",
+		"title": "ANOMALY_ECHO_TITLE",
+		"readout": "ANOMALY_ECHO_READOUT",
 		"equipment": "resonance_tuner",
 		"color": Color(0.95, 0.42, 0.22),
 	},
 	"glass_bridge": {
-		"title": "ФАЗОВЫЙ ПРОВАЛ",
-		"readout": "ОПОРНЫЕ ПОВЕРХНОСТИ НЕСТАБИЛЬНЫ\nФАНТОМНАЯ ГЕОМЕТРИЯ\nПРОТОКОЛ: ФАЗОВАЯ ПРИЗМА",
+		"title": "ANOMALY_GLASS_TITLE",
+		"readout": "ANOMALY_GLASS_READOUT",
 		"equipment": "phase_prism",
 		"color": Color(0.78, 0.38, 0.92),
 	},
 	"mirror_maze": {
-		"title": "ЗЕРКАЛЬНЫЙ РАЗЛОМ",
-		"readout": "ОТРАЖЕНИЯ РАССИНХРОНИЗИРОВАНЫ\nЛОЖНАЯ ГЕОМЕТРИЯ В ЗЕРКАЛАХ",
+		"title": "ANOMALY_MIRROR_TITLE",
+		"readout": "ANOMALY_MIRROR_READOUT",
 		"equipment": "spectral_lens",
 		"color": Color(0.55, 0.78, 0.95),
 	},
 	"yellow_halls": {
-		"title": "ЖЁЛТЫЙ ПРЕДЕЛ",
-		"readout": "ЛИМИНАЛЬНАЯ ЗОНА КЛАССА 0\nГУЛ ЛЮМИНЕСЦЕНТНЫХ ЛАМП",
+		"title": "ANOMALY_YELLOW_TITLE",
+		"readout": "ANOMALY_YELLOW_READOUT",
 		"equipment": "thread_spool",
 		"color": Color(0.90, 0.80, 0.30),
 	},
 	"scrap_run": {
-		"title": "ИЗЪЯТИЕ ЦЕННОСТЕЙ",
-		"readout": "ЭКСПОНАТЫ СМЕЩЕНЫ В ТЕНЕВОЙ СКЛАД\nТРЕБУЕТСЯ ИЗВЛЕЧЕНИЕ",
+		"title": "ANOMALY_SCRAP_TITLE",
+		"readout": "ANOMALY_SCRAP_READOUT",
 		"equipment": "mass_clamp",
 		"color": Color(0.55, 0.90, 0.75),
 	},
 	"ascent": {
-		"title": "ВЕРТИКАЛЬНЫЙ РАЗЛОМ",
-		"readout": "ВОСХОДЯЩИЙ ТУМАН В ШАХТЕ\nОПОРЫ ФРАГМЕНТИРОВАНЫ",
+		"title": "ANOMALY_ASCENT_TITLE",
+		"readout": "ANOMALY_ASCENT_READOUT",
 		"equipment": "thermal_chalk",
 		"color": Color(0.95, 0.55, 0.65),
 	},
 }
 
-# Короткое назначение ключевых приборов для экрана протокола.
+# Короткое назначение ключевых приборов для экрана протокола (ключи перевода).
 const TOOL_HINTS := {
-	"gravity_anchor": "Фиксирует локальную гравитацию у разлома",
-	"chrono_stabilizer": "Выравнивает ход времени в зоне аварии",
-	"containment_rod": "Гасит радиационное цветение экспоната",
-	"field_emitter": "Восстанавливает световой контур в тёмном секторе",
-	"resonance_tuner": "Настраивает резонанс эхо-камеры",
-	"phase_prism": "Стабилизирует фантомные опоры моста",
-	"spectral_lens": "Выявляет дефектные отражения в зале зеркал",
-	"thread_spool": "Не даёт потеряться в жёлтых залах",
-	"mass_clamp": "Удерживает хрупкие ценности при переноске",
-	"thermal_chalk": "Помечает пройденные уступы при восхождении",
+	"gravity_anchor": "TOOL_GRAVITY_ANCHOR_HINT",
+	"chrono_stabilizer": "TOOL_CHRONO_STABILIZER_HINT",
+	"containment_rod": "TOOL_CONTAINMENT_ROD_HINT",
+	"field_emitter": "TOOL_FIELD_EMITTER_HINT",
+	"resonance_tuner": "TOOL_RESONANCE_TUNER_HINT",
+	"phase_prism": "TOOL_PHASE_PRISM_HINT",
+	"spectral_lens": "TOOL_SPECTRAL_LENS_HINT",
+	"thread_spool": "TOOL_THREAD_SPOOL_HINT",
+	"mass_clamp": "TOOL_MASS_CLAMP_HINT",
+	"thermal_chalk": "TOOL_THERMAL_CHALK_HINT",
 }
 
 # Equipment (step 3): pedestal row along z=13 in Equipment Storage,
 # clear of the ladder (z10), barrels (z15.8), racks (x-16.2) and the
 # door corridor at x=-25.
+# "name" — ключ перевода; tr() вызывается на месте вывода (метки, подсказки).
 const EQUIPMENT := {
-	"gravity_anchor":{"name":"Гравитационный якорь","color":Color(.62,.35,.95),"position":Vector3(-33.4,0,9.2)},
-	"chrono_stabilizer":{"name":"Хроностабилизатор","color":Color(.95,.68,.25),"position":Vector3(-30.75,0,9.2)},
-	"containment_rod":{"name":"Стержень сдерживания","color":Color(.35,.90,.35),"position":Vector3(-28.1,0,9.2)},
-	"field_emitter":{"name":"Полевой излучатель","color":Color(.25,.45,.95),"position":Vector3(-21.9,0,9.2)},
-	"spectral_lens":{"name":"Спектральная линза","color":Color(.35,.85,.92),"position":Vector3(-19.25,0,9.2)},
-	"phase_prism":{"name":"Фазовая призма","color":Color(.78,.38,.92),"position":Vector3(-16.6,0,9.2)},
-	"resonance_tuner":{"name":"Резонансный настройщик","color":Color(.95,.42,.22),"position":Vector3(-33.4,0,15)},
-	"mass_clamp":{"name":"Зажим массы","color":Color(.72,.70,.62),"position":Vector3(-30.75,0,15)},
-	"thermal_chalk":{"name":"Термомел","color":Color(.95,.28,.18),"position":Vector3(-28.1,0,15)},
-	"memory_reel":{"name":"Катушка памяти","color":Color(.32,.72,.95),"position":Vector3(-21.9,0,15)},
-	"null_lantern":{"name":"Нуль-фонарь","color":Color(.32,.25,.58),"position":Vector3(-19.25,0,15)},
-	"thread_spool":{"name":"Нить возврата","color":Color(.92,.82,.48),"position":Vector3(-16.6,0,15)},
+	"gravity_anchor":{"name":"TOOL_GRAVITY_ANCHOR_NAME","color":Color(.62,.35,.95),"position":Vector3(-33.4,0,9.2)},
+	"chrono_stabilizer":{"name":"TOOL_CHRONO_STABILIZER_NAME","color":Color(.95,.68,.25),"position":Vector3(-30.75,0,9.2)},
+	"containment_rod":{"name":"TOOL_CONTAINMENT_ROD_NAME","color":Color(.35,.90,.35),"position":Vector3(-28.1,0,9.2)},
+	"field_emitter":{"name":"TOOL_FIELD_EMITTER_NAME","color":Color(.25,.45,.95),"position":Vector3(-21.9,0,9.2)},
+	"spectral_lens":{"name":"TOOL_SPECTRAL_LENS_NAME","color":Color(.35,.85,.92),"position":Vector3(-19.25,0,9.2)},
+	"phase_prism":{"name":"TOOL_PHASE_PRISM_NAME","color":Color(.78,.38,.92),"position":Vector3(-16.6,0,9.2)},
+	"resonance_tuner":{"name":"TOOL_RESONANCE_TUNER_NAME","color":Color(.95,.42,.22),"position":Vector3(-33.4,0,15)},
+	"mass_clamp":{"name":"TOOL_MASS_CLAMP_NAME","color":Color(.72,.70,.62),"position":Vector3(-30.75,0,15)},
+	"thermal_chalk":{"name":"TOOL_THERMAL_CHALK_NAME","color":Color(.95,.28,.18),"position":Vector3(-28.1,0,15)},
+	"memory_reel":{"name":"TOOL_MEMORY_REEL_NAME","color":Color(.32,.72,.95),"position":Vector3(-21.9,0,15)},
+	"null_lantern":{"name":"TOOL_NULL_LANTERN_NAME","color":Color(.32,.25,.58),"position":Vector3(-19.25,0,15)},
+	"thread_spool":{"name":"TOOL_THREAD_SPOOL_NAME","color":Color(.92,.82,.48),"position":Vector3(-16.6,0,15)},
 }
 
 var _map: Node = null
@@ -236,7 +239,7 @@ func _initialize() -> void:
 	_trial_manager.name = "RiftTrialManager"
 	add_child(_trial_manager)
 	_trial_manager.call("setup", self)
-	_set_objective("Ночь %d. Осмотрите музей. Офис охраны — в западном крыле." % _night)
+	_set_objective(tr("OBJ_NIGHT_INTRO") % _night)
 
 
 func _process(delta: float) -> void:
@@ -251,7 +254,7 @@ func _process(delta: float) -> void:
 			if bool(_map.get("_blackout_done")):
 				_state = STATE_COUNTDOWN
 				_accident_in = ACCIDENT_DELAY
-				_set_objective("Питание пропало. Что-то происходит в атриуме...")
+				_set_objective(tr("OBJ_BLACKOUT"))
 		STATE_COUNTDOWN:
 			_accident_in -= delta
 			if _accident_in <= 0.0:
@@ -337,10 +340,10 @@ func _start_accident() -> void:
 		env.volumetric_fog_albedo = color.lightened(0.2)
 	# Terminal readout (step 5).
 	if _terminal_label != null:
-		_terminal_label.text = "!! НАРУШЕНИЕ СДЕРЖИВАНИЯ !!\n%s\n%s" % [info["title"], info["readout"]]
+		_terminal_label.text = tr("HUD_TERMINAL_BREACH") % [tr(str(info["title"])), tr(str(info["readout"]))]
 	_set_screen_color(color)
-	_set_objective("АВАРИЯ: %s. Найдите источник, завершите протокол и примените стабилизатор у экспоната. Осталось: %d" % [_incident_name(), _anomalies_left])
-	_flash("СДЕРЖИВАНИЕ НАРУШЕНО", Color(1.0, 0.35, 0.3))
+	_set_objective(tr("OBJ_INCIDENT") % [_incident_name(), _anomalies_left])
+	_flash(tr("HUD_CONTAINMENT_BREACHED"), Color(1.0, 0.35, 0.3))
 	_show_protocol(info, color)
 	var am := _audio()
 	if am != null:
@@ -373,7 +376,7 @@ func _resolve() -> void:
 				l.visible = true
 				l.light_energy = l.light_energy * 0.45
 	if _terminal_label != null:
-		_terminal_label.text = "СИСТЕМА: СДЕРЖИВАНИЕ ВОССТАНОВЛЕНО\nДОБРОЙ НОЧИ, НАБЛЮДАТЕЛЬ"
+		_terminal_label.text = tr("HUD_TERMINAL_RESTORED")
 	_set_screen_color(Color(0.2, 0.8, 0.5))
 	var am := _audio()
 	if am != null:
@@ -388,15 +391,15 @@ func _resolve() -> void:
 		_state = STATE_CALM
 		_calm_time = CALM_TIME
 		_respawn_devices()
-		_set_objective("Аномалия устранена, но ядро нестабильно. Следующий выброс близко...")
-		_flash("АНОМАЛИЯ УСТРАНЕНА. ЯДРО ВСЁ ЕЩЁ НЕСТАБИЛЬНО", Color(0.85, 0.95, 0.6))
+		_set_objective(tr("OBJ_CORE_UNSTABLE"))
+		_flash(tr("HUD_ANOMALY_CLEARED"), Color(0.85, 0.95, 0.6))
 	elif _night >= MAX_NIGHT:
 		_win()
 	else:
 		_state = STATE_NIGHT_DONE
 		_save_night(_night + 1)
-		_set_objective("Ночь %d пройдена. ENTER - следующая ночь." % _night)
-		_flash("НОЧЬ %d ПРОЙДЕНА" % _night, Color(0.5, 1.0, 0.6))
+		_set_objective(tr("OBJ_NIGHT_DONE") % _night)
+		_flash(tr("HUD_NIGHT_COMPLETE") % _night, Color(0.5, 1.0, 0.6))
 
 
 func _fail() -> void:
@@ -415,12 +418,15 @@ func _fail() -> void:
 	if _fail_overlay != null:
 		_fail_overlay.visible = true
 	if _fail_label != null:
-		var anomaly_title := "НЕИЗВЕСТНАЯ АНОМАЛИЯ"
-		if ANOMALIES.has(_anomaly_id): anomaly_title = str(ANOMALIES[_anomaly_id]["title"])
-		var tip := "Сверьте показания терминала с маркировкой прибора до контакта с разломом."
+		var anomaly_title := tr("ANOMALY_UNKNOWN")
+		if ANOMALIES.has(_anomaly_id): anomaly_title = tr(str(ANOMALIES[_anomaly_id]["title"]))
+		var tip := tr("FAIL_TIP_DEFAULT")
 		if _trial_manager != null and _trial_manager.has_method("trial_fail_tip"):
 			tip = str(_trial_manager.call("trial_fail_tip"))
-		_fail_label.text = "СМЕНА ПРЕРВАНА\n\nПРИЧИНА: %s вышла из-под контроля\nПРОГРЕСС: ночь %d · осталось аномалий: %d\n\nСОВЕТ: %s\n\nENTER — повторить ночь" % [anomaly_title, _night, _anomalies_left, tip]
+		_fail_label.text = "%s\n\n%s\n%s\n\n%s\n\n%s" % [tr("FAIL_TITLE"),
+			tr("FAIL_REASON") % anomaly_title,
+			tr("FAIL_PROGRESS") % [_night, _anomalies_left],
+			tr("FAIL_TIP") % tip, tr("FAIL_RETRY")]
 	if _timer_label != null:
 		_timer_label.visible = false
 
@@ -454,12 +460,12 @@ func _advance_night() -> void:
 	_anomalies_left = int(NIGHT_CONFIG[_night]["count"])
 	_state = STATE_COUNTDOWN
 	_accident_in = 8.0
-	_set_objective("Ночь %d. Ядро снова нестабильно..." % _night)
+	_set_objective(tr("OBJ_NIGHT_RESTART") % _night)
 	var wing := str(NIGHT_CONFIG[_night].get("unlock", ""))
 	if wing != "":
-		_flash("НОЧЬ %d. Открыто крыло: %s" % [_night, wing], Color(0.7, 0.85, 1.0))
+		_flash(tr("HUD_NIGHT_WING_UNLOCKED") % [_night, wing], Color(0.7, 0.85, 1.0))
 	else:
-		_flash("НОЧЬ %d" % _night, Color(0.7, 0.85, 1.0))
+		_flash(tr("HUD_NIGHT") % _night, Color(0.7, 0.85, 1.0))
 
 
 func _win() -> void:
@@ -506,7 +512,7 @@ func _incident_name() -> String:
 	var puzzle := get_tree().get_first_node_in_group("exhibit_puzzle_controller")
 	if puzzle != null and puzzle.has_method("get_incident_name"):
 		return puzzle.get_incident_name()
-	return "центральное ядро"
+	return tr("EXHIBIT_CENTRAL_CORE")
 
 
 func _sfx(sound: String, volume_db := 0.0) -> void:
@@ -529,7 +535,7 @@ func _interact() -> void:
 					return
 			_begin_trial()
 		else:
-			_flash("Прибор не действует. Проверьте показания терминала.", Color(1.0, 0.45, 0.4))
+			_flash(tr("HUD_WRONG_TOOL"), Color(1.0, 0.45, 0.4))
 		return
 	# Pick up a device.
 	if _carried_id == "":
@@ -540,8 +546,8 @@ func _interact() -> void:
 	# Read the terminal.
 	if _near(TERMINAL_POS, INTERACT_DISTANCE) and _anomaly_id != "" and _state == STATE_ANOMALY:
 		var info: Dictionary = ANOMALIES[_anomaly_id]
-		var device_name: String = EQUIPMENT[str(info["equipment"])]["name"]
-		_flash("%s -> %s" % [info["title"], device_name], Color(0.7, 0.95, 0.8))
+		var device_name := tr(str(EQUIPMENT[str(info["equipment"])]["name"]))
+		_flash("%s -> %s" % [tr(str(info["title"])), device_name], Color(0.7, 0.95, 0.8))
 		_sfx("terminal_beep")
 
 
@@ -550,8 +556,8 @@ func _begin_trial() -> void:
 		return
 	_trial_active = true
 	_hide_protocol()
-	set_objective("trial", "Пройдите карманное измерение и создайте ключ стабилизации.", 50)
-	_flash("ПЕРЕХОД В КАРМАННОЕ ИЗМЕРЕНИЕ", Color(0.55, 0.75, 1.0))
+	set_objective("trial", tr("OBJ_TRIAL"), 50)
+	_flash(tr("HUD_ENTER_POCKET"), Color(0.55, 0.75, 1.0))
 	_trial_manager.call("begin", _anomaly_id, _player)
 
 
@@ -569,7 +575,7 @@ func _complete_trial() -> void:
 		_calm_time = _pre_test_calm
 		if _timer_label != null and _state != STATE_ANOMALY:
 			_timer_label.visible = false
-		_flash("ТЕСТ ЗАВЕРШЁН · F9 — выбрать следующее измерение", Color(0.55, 1.0, 0.7))
+		_flash(tr("ADMIN_TEST_DONE"), Color(0.55, 1.0, 0.7))
 		return
 	_resolve()
 
@@ -585,12 +591,12 @@ func _pick_up(id: String) -> void:
 	body.rotation = Vector3.ZERO
 	body.scale = Vector3(0.8, 0.8, 0.8)
 	_set_collision(body, false)
-	_flash("Взят прибор: %s" % EQUIPMENT[id]["name"], Color(0.85, 0.9, 0.8))
+	_flash(tr("HUD_TOOL_TAKEN") % tr(str(EQUIPMENT[id]["name"])), Color(0.85, 0.9, 0.8))
 	if id == "memory_reel" and not _memory_reel_used and _state == STATE_ANOMALY:
 		# Катушка памяти: одноразовый бонус времени за ночную смену.
 		_memory_reel_used = true
 		_time_left += 45.0
-		_flash("КАТУШКА ПАМЯТИ: +45 СЕКУНД К ТАЙМЕРУ", Color(0.6, 0.85, 1.0))
+		_flash(tr("HUD_MEMORY_REEL_BONUS"), Color(0.6, 0.85, 1.0))
 	_sfx("pickup")
 
 
@@ -707,7 +713,7 @@ func _spawn_device(id: String) -> void:
 			_mesh_torus(body,Vector3(0,.10,0),.11,.19,color,.8,false)
 			_mesh_sphere(body,Vector3(0,.10,0),.06,color,1.4)
 	var label := Label3D.new()
-	label.text = str(info["name"])
+	label.text = tr(str(info["name"]))
 	label.position = Vector3(0, 0.55, 0)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.font_size = 34
@@ -730,7 +736,7 @@ func _build_terminal() -> void:
 	_set_screen_color(Color(0.1, 0.3, 0.25))
 	_terminal_label = Label3D.new()
 	_terminal_label.name = "Anomaly Terminal Readout"
-	_terminal_label.text = "СИСТЕМА В НОРМЕ\nВСЕ ЭКСПОНАТЫ СТАБИЛЬНЫ"
+	_terminal_label.text = tr("HUD_TERMINAL_IDLE")
 	# Faces the room centre (the desk side, -z).
 	_terminal_label.position = TERMINAL_POS + Vector3(0, 0.75, -0.12)
 	_terminal_label.rotation_degrees = Vector3(0, 180, 0)
@@ -743,17 +749,18 @@ func _build_terminal() -> void:
 
 # --- Тестовая консоль (F9) --------------------------------------------------
 
+# Значения — ключи перевода, tr() вызывается при построении кнопок.
 const ADMIN_DESCRIPTIONS := {
-	"gravity_surge": "Три якоря поворачивают гравитацию: пол, стена, глубина",
-	"temporal_drift": "Запишите три своих временных эха на плитах",
-	"radiation_bloom": "Расставьте монолиты по гнёздам и настройте частоты",
-	"void_rift": "Полная тьма: рисуйте мир лидаром (ЛКМ), избегайте монстра",
-	"echo_chamber": "Запомните и повторите последовательность вспышек колонн",
-	"glass_bridge": "Пройдите мост: в каждом ряду одна плита — фантом",
-	"mirror_maze": "Найдите 3 дефектных отражения. 3 ошибки — зал перестроится",
-	"yellow_halls": "Жёлтые залы: соберите плёнки, не попадитесь Блуждающему",
-	"scrap_run": "Вынесите 3 ценности к точке извлечения мимо дрона-сканера",
-	"ascent": "Подъём по уступам: контрольные точки, движущиеся плиты, туман",
+	"gravity_surge": "ADMIN_DESC_GRAVITY",
+	"temporal_drift": "ADMIN_DESC_TEMPORAL",
+	"radiation_bloom": "ADMIN_DESC_RADIATION",
+	"void_rift": "ADMIN_DESC_VOID",
+	"echo_chamber": "ADMIN_DESC_ECHO",
+	"glass_bridge": "ADMIN_DESC_GLASS",
+	"mirror_maze": "ADMIN_DESC_MIRROR",
+	"yellow_halls": "ADMIN_DESC_YELLOW",
+	"scrap_run": "ADMIN_DESC_SCRAP",
+	"ascent": "ADMIN_DESC_ASCENT",
 }
 
 
@@ -801,13 +808,13 @@ func _build_test_admin() -> void:
 	layout.add_theme_constant_override("separation", 10)
 	_admin_panel.add_child(layout)
 	var header := Label.new()
-	header.text = "СЛУЖЕБНАЯ КОНСОЛЬ · ТЕСТ ИЗМЕРЕНИЙ"
+	header.text = tr("ADMIN_TITLE")
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.add_theme_font_size_override("font_size", 24)
 	header.add_theme_color_override("font_color", Color(0.62, 0.85, 1.0))
 	layout.add_child(header)
 	var sub := Label.new()
-	sub.text = "Выберите разлом — вы окажетесь внутри мгновенно. Прогресс ночи и сохранения не изменяются."
+	sub.text = tr("ADMIN_SUBTITLE")
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.add_theme_font_size_override("font_size", 14)
@@ -831,7 +838,11 @@ func _build_test_admin() -> void:
 		var info: Dictionary = ANOMALIES[id]
 		var accent: Color = info["color"]
 		var button := Button.new()
-		button.text = "%s\n%s" % [str(info["title"]), str(ADMIN_DESCRIPTIONS.get(id, ""))]
+		var desc_key := str(ADMIN_DESCRIPTIONS.get(id, ""))
+		var desc := ""
+		if desc_key != "":
+			desc = tr(desc_key)
+		button.text = "%s\n%s" % [tr(str(info["title"])), desc]
 		button.focus_mode = Control.FOCUS_NONE
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.custom_minimum_size = Vector2(0, 62)
@@ -848,7 +859,7 @@ func _build_test_admin() -> void:
 	footer.add_theme_constant_override("separation", 14)
 	layout.add_child(footer)
 	var close := Button.new()
-	close.text = "ЗАКРЫТЬ · F9"
+	close.text = tr("ADMIN_CLOSE")
 	close.focus_mode = Control.FOCUS_NONE
 	close.custom_minimum_size = Vector2(180, 42)
 	close.add_theme_font_size_override("font_size", 15)
@@ -859,7 +870,7 @@ func _build_test_admin() -> void:
 	close.pressed.connect(_toggle_test_admin)
 	footer.add_child(close)
 	var note := Label.new()
-	note.text = "Режим теста: после прохождения вы вернётесь в музей без последствий."
+	note.text = tr("ADMIN_NOTE")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	note.add_theme_font_size_override("font_size", 13)
@@ -871,7 +882,7 @@ func _toggle_test_admin() -> void:
 	if _admin_layer == null:
 		return
 	if _trial_active:
-		_flash("Сначала завершите текущее измерение.", Color(1.0, 0.65, 0.35))
+		_flash(tr("HUD_FINISH_TRIAL_FIRST"), Color(1.0, 0.65, 0.35))
 		return
 	var opening := not _admin_layer.visible
 	_admin_layer.visible = opening
@@ -904,7 +915,7 @@ func _admin_select_dimension(id: String) -> void:
 	if _win_overlay != null:
 		_win_overlay.visible = false
 	_hide_protocol()
-	_flash("ТЕСТ: %s" % str(ANOMALIES[id]["title"]), ANOMALIES[id]["color"] as Color)
+	_flash(tr("ADMIN_TEST_PREFIX") % tr(str(ANOMALIES[id]["title"])), ANOMALIES[id]["color"] as Color)
 	_begin_trial()
 
 
@@ -931,7 +942,7 @@ func _build_hud() -> void:
 	_fail_overlay.visible = false
 	_hud.add_child(_fail_overlay)
 	_fail_label = Label.new()
-	_fail_label.text = "СМЕНА ПРЕРВАНА\n\nENTER — повторить ночь"
+	_fail_label.text = "%s\n\n%s" % [tr("FAIL_TITLE"), tr("FAIL_RETRY")]
 	_fail_label.anchor_left = 0.12
 	_fail_label.anchor_top = 0.18
 	_fail_label.anchor_right = 0.88
@@ -949,7 +960,7 @@ func _build_hud() -> void:
 	_win_overlay.visible = false
 	_hud.add_child(_win_overlay)
 	var win_label := Label.new()
-	win_label.text = "СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.\n\nENTER - начать заново"
+	win_label.text = tr("HUD_WIN")
 	win_label.anchor_right = 1.0
 	win_label.anchor_bottom = 1.0
 	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1006,7 +1017,7 @@ func _build_protocol_screen() -> void:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_protocol_panel.add_child(box)
 	var header := _proto_label(15, Color(0.55, 0.68, 0.78), HORIZONTAL_ALIGNMENT_CENTER)
-	header.text = "ПЕРВЫЙ МУЗЕЙ · СЛУЖБА НОЧНОГО СДЕРЖИВАНИЯ"
+	header.text = tr("HUD_PROTO_HEADER")
 	box.add_child(header)
 	_proto_title = _proto_label(25, Color(0.95, 0.55, 0.45), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_proto_title)
@@ -1016,7 +1027,7 @@ func _build_protocol_screen() -> void:
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(divider)
 	var need := _proto_label(15, Color(0.6, 0.72, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
-	need.text = "ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:"
+	need.text = tr("HUD_PROTO_TAKE")
 	box.add_child(need)
 	_proto_item = _proto_label(33, Color(0.95, 0.9, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_proto_item)
@@ -1025,7 +1036,7 @@ func _build_protocol_screen() -> void:
 	_proto_status = _proto_label(16, Color(0.62, 0.74, 0.7), HORIZONTAL_ALIGNMENT_LEFT)
 	box.add_child(_proto_status)
 	var footer := _proto_label(14, Color(0.5, 0.58, 0.64), HORIZONTAL_ALIGNMENT_CENTER)
-	footer.text = "E / ENTER — закрыть · Экран закроется сам"
+	footer.text = tr("HUD_PROTO_FOOTER")
 	box.add_child(footer)
 
 
@@ -1035,12 +1046,13 @@ func _show_protocol(info: Dictionary, accent: Color) -> void:
 	var equip_id := str(info["equipment"])
 	var equip_name := equip_id
 	if EQUIPMENT.has(equip_id):
-		equip_name = str(EQUIPMENT[equip_id]["name"])
-	_proto_title.text = "ПРОТОКОЛ ЛОКАЛИЗАЦИИ: %s" % str(info["title"])
+		equip_name = tr(str(EQUIPMENT[equip_id]["name"]))
+	_proto_title.text = tr("HUD_PROTO_TITLE") % tr(str(info["title"]))
 	_proto_item.text = equip_name.to_upper()
 	_proto_item.add_theme_color_override("font_color", accent.lightened(0.4))
-	_proto_purpose.text = str(TOOL_HINTS.get(equip_id, ""))
-	_proto_status.text = "НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи" % [_night, _incident_name()]
+	var hint_key := str(TOOL_HINTS.get(equip_id, ""))
+	_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
+	_proto_status.text = tr("HUD_PROTO_STATUS") % [_night, _incident_name()]
 	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(accent))
 	_protocol_layer.visible = true
 	_protocol_time = 10.0
@@ -1079,17 +1091,17 @@ func _update_hint() -> void:
 	var hint := ""
 	if _state != STATE_FAILED and _state != STATE_WIN and _state != STATE_NIGHT_DONE:
 		if _carried_id != "":
-			var carried_name: String = EQUIPMENT[_carried_id]["name"]
+			var carried_name := tr(str(EQUIPMENT[_carried_id]["name"]))
 			if _state == STATE_ANOMALY and _near(_incident_position(), APPLY_DISTANCE):
-				hint = "E - применить %s к аномалии" % carried_name
+				hint = tr("HUD_HINT_APPLY") % carried_name
 			else:
-				hint = "В руках: %s (G - бросить)" % carried_name
+				hint = tr("HUD_HINT_CARRYING") % carried_name
 		else:
 			var target := _raycast_body()
 			if target != null and target.is_in_group("equipment"):
-				hint = "E - взять: %s" % str(target.get_meta("device_name"))
+				hint = tr("HUD_HINT_TAKE") % tr(str(target.get_meta("device_name")))
 			elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
-				hint = "E - показания терминала"
+				hint = tr("HUD_HINT_TERMINAL")
 	_hint_label.text = hint
 
 

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://l7bdh0qjhvh"
-path="res://.godot/imported/отсановка_0.jpg-b4562b941e81ce2851a5906d99493bdc.ctex"
+path.s3tc="res://.godot/imported/отсановка_0.jpg-b4562b941e81ce2851a5906d99493bdc.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "28ebda66c52f42a87a522a135a73a588"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/отсановка_0.jpg"
-dest_files=["res://.godot/imported/отсановка_0.jpg-b4562b941e81ce2851a5906d99493bdc.ctex"]
+dest_files=["res://.godot/imported/отсановка_0.jpg-b4562b941e81ce2851a5906d99493bdc.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

@@ -223,33 +223,33 @@ func _spawn_position() -> Vector3:
 
 # --- Gravity Archive -------------------------------------------------------
 func _build_gravity_archive() -> void:
-	_title.text="GRAVITY ARCHIVE"
-	_status.text="Поверните архив: ПОЛ → ЗАПАДНАЯ СТЕНА → ДАЛЬНЯЯ СТЕНА. Ищите фиолетовые якоря."
+	_title.text=tr("TRIAL_GRAVITY_TITLE")
+	_status.text=tr("TRIAL_GRAVITY_OBJECTIVE")
 	_box("Floor", ORIGIN+Vector3(0,0,-3), Vector3(20,.6,24), Color(.12,.08,.2))
 	_box("West Wall",ORIGIN+Vector3(-10,6,-3),Vector3(.6,12,24),Color(.1,.07,.18))
 	_box("East Wall",ORIGIN+Vector3(10,6,-3),Vector3(.6,12,24),Color(.1,.07,.18))
 	_box("Far Wall",ORIGIN+Vector3(0,6,-15),Vector3(20,12,.6),Color(.1,.07,.18))
 	_box("Ceiling",ORIGIN+Vector3(0,12,-3),Vector3(20,.6,24),Color(.07,.05,.13))
 	for p in [Vector3(-5,1,-1),Vector3(3,1,-6),Vector3(-2,1,-11)]: _box("Archive Shelf",ORIGIN+p,Vector3(2,2,1),Color(.19,.14,.24))
-	_anchor(0,ORIGIN+Vector3(0,1,-1),"ЯКОРЬ ПОЛА")
-	_anchor(1,ORIGIN+Vector3(-9.1,4,-6),"ЯКОРЬ СТЕНЫ")
-	_anchor(2,ORIGIN+Vector3(0,5,-14.1),"ЯКОРЬ ГЛУБИНЫ")
+	_anchor(0,ORIGIN+Vector3(0,1,-1),tr("TRIAL_PROP_ANCHOR_FLOOR"))
+	_anchor(1,ORIGIN+Vector3(-9.1,4,-6),tr("TRIAL_PROP_ANCHOR_WALL"))
+	_anchor(2,ORIGIN+Vector3(0,5,-14.1),tr("TRIAL_PROP_ANCHOR_DEPTH"))
 
 func _anchor(index:int,pos:Vector3,text:String)->void:
 	var body:=_target(index,pos,Color(.68,.3,1),text); body.set_meta("type","gravity_anchor")
 
 func _gravity_anchor(index:int)->void:
-	if index != _step: _status.text="Этот якорь ещё не закреплён в вашей системе координат."; return
+	if index != _step: _status.text=tr("TRIAL_GRAVITY_ANCHOR_LOCKED"); return
 	_mark(_targets[index]); _step+=1
 	if _step==1:
-		_player.set_gravity_direction(Vector3.LEFT); _status.text="Гравитация повёрнута на запад. Идите по бывшей стене."
+		_player.set_gravity_direction(Vector3.LEFT); _status.text=tr("TRIAL_GRAVITY_STEP1")
 	elif _step==2:
-		_player.set_gravity_direction(Vector3.FORWARD); _status.text="Гравитация направлена в глубину архива. Найдите последний якорь."
+		_player.set_gravity_direction(Vector3.FORWARD); _status.text=tr("TRIAL_GRAVITY_STEP2")
 	else: _complete()
 
 # --- The Missing Minute ----------------------------------------------------
 func _build_missing_minute() -> void:
-	_title.text="THE MISSING MINUTE"; _status.text="Запишите себя на плитах. После 18 секунд ваше эхо повторит маршрут. Нужны три версии одновременно."
+	_title.text=tr("TRIAL_TIME_TITLE"); _status.text=tr("TRIAL_TIME_OBJECTIVE")
 	_box("Loop Floor",ORIGIN+Vector3(0,0,-4),Vector3(22,.6,26),Color(.2,.13,.06))
 	_plates=[ORIGIN+Vector3(-7,.35,-6),ORIGIN+Vector3(0,.35,-11),ORIGIN+Vector3(7,.35,-6)]
 	for i in range(3):
@@ -270,7 +270,7 @@ func _update_time_loop(delta:float)->void:
 		for echo in _echoes:
 			if echo.global_position.distance_to(_plates[i])<1.45: occupied[i]=true
 	if occupied[0] and occupied[1] and occupied[2]: _complete(); return
-	_status.text="ЦИКЛ: %.1f сек.  ЭХО: %d/2  ПЛИТЫ: %s"%[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)]
+	_status.text=tr("TRIAL_TIME_HUD")%[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)]
 	if _loop_time>=LOOP_DURATION: _finish_loop()
 
 func _finish_loop()->void:
@@ -291,20 +291,20 @@ func _make_echo()->Node3D:
 
 # --- Critical Mass Choir ---------------------------------------------------
 func _build_critical_mass() -> void:
-	_title.text="CRITICAL MASS CHOIR"
-	_status.text="ШАГ 1: совместите одинаковые символы. ШАГ 2: клавишей G настройте частоту до РЕЗОНАНСА."
+	_title.text=tr("TRIAL_RADIATION_TITLE")
+	_status.text=tr("TRIAL_RADIATION_OBJECTIVE")
 	_box("Choir Floor",ORIGIN+Vector3(0,0,-4),Vector3(22,.6,24),Color(.04,.16,.07))
 	_sockets=[ORIGIN+Vector3(-7,.4,1),ORIGIN+Vector3(0,.4,1),ORIGIN+Vector3(7,.4,1),ORIGIN+Vector3(-7,.4,-9),ORIGIN+Vector3(0,.4,-9),ORIGIN+Vector3(7,.4,-9)]
 	_socket_occupants=[0,1,2,3,-1,-1]; _monolith_socket=[0,1,2,3]; _frequencies=[0,0,0,0]; _carried_monolith=-1; _carried_from_socket=-1; _dose=0.; _monoliths.clear()
 	var symbols := ["▲", "●", "◆", "■"]
 	for i in range(6):
-		var socket_text := "РЕЗЕРВНОЕ ГНЕЗДО"
+		var socket_text := tr("TRIAL_PROP_SOCKET_SPARE")
 		for monolith_index in range(4):
 			if _target_sockets[monolith_index] == i:
-				socket_text = "ГНЕЗДО %s" % symbols[monolith_index]
+				socket_text = tr("TRIAL_PROP_SOCKET") % symbols[monolith_index]
 		var s:=_target(i,_sockets[i],Color(.15,.5,.2),socket_text); s.set_meta("type","socket")
 	for i in range(4):
-		var text := "МОНОЛИТ %s\nЧАСТОТА 0 · ЦЕЛЬ %d" % [symbols[i], _target_frequencies[i]]
+		var text := tr("TRIAL_PROP_MONOLITH_INIT") % [symbols[i], _target_frequencies[i]]
 		var m:=_target(i,_sockets[i]+Vector3(0,1,0),Color(.25,1,.35),text); m.set_meta("type","monolith"); _monoliths.append(m)
 
 func _radiation_interact(body:StaticBody3D)->void:
@@ -325,11 +325,11 @@ func _radiation_interact(body:StaticBody3D)->void:
 
 func _tune_nearest()->void:
 	var body:=_nearest_target("monolith")
-	if body==null: _status.text="Подойдите к монолиту, чтобы настроить частоту."; return
+	if body==null: _status.text=tr("TRIAL_RADIATION_NEAR_MONOLITH"); return
 	var i:=int(body.get_meta("index",-1)); _frequencies[i]=(int(_frequencies[i])+1)%4
 	var symbols := ["▲", "●", "◆", "■"]
-	var feedback := "РЕЗОНАНС" if _frequencies[i] == _target_frequencies[i] else "НУЖНО: %d" % _target_frequencies[i]
-	_find_label(body).text="МОНОЛИТ %s\nЧАСТОТА %d · %s"%[symbols[i],_frequencies[i],feedback]; _check_radiation_solution()
+	var feedback := tr("TRIAL_RADIATION_RESONANCE") if _frequencies[i] == _target_frequencies[i] else tr("TRIAL_RADIATION_NEED") % _target_frequencies[i]
+	_find_label(body).text=tr("TRIAL_PROP_MONOLITH")%[symbols[i],_frequencies[i],feedback]; _check_radiation_solution()
 
 func _update_radiation(delta:float)->void:
 	if not is_instance_valid(_player): return
@@ -342,8 +342,8 @@ func _update_radiation(delta:float)->void:
 	for i in range(4):
 		if _monolith_socket[i] == _target_sockets[i]: placed += 1
 		if _frequencies[i] == _target_frequencies[i]: tuned += 1
-	var action := "E — поставьте монолит в гнездо с таким же символом" if _carried_monolith >= 0 else "E — поднять/поменять местами · G — настроить частоту"
-	_status.text="%s\nСИМВОЛЫ: %d/4 · РЕЗОНАНС: %d/4 · ДОЗА: %.0f%%"%[action,placed,tuned,_dose]
+	var action := tr("TRIAL_RADIATION_ACT_PLACE") if _carried_monolith >= 0 else tr("TRIAL_RADIATION_ACT_PICK")
+	_status.text=tr("TRIAL_RADIATION_HUD")%[action,placed,tuned,_dose]
 	if _dose>=100.: _reset_radiation()
 
 func _check_radiation_solution()->void:
@@ -352,20 +352,20 @@ func _check_radiation_solution()->void:
 func _reset_radiation()->void:
 	_dose=25.; _carried_monolith=-1; _carried_from_socket=-1; _socket_occupants=[0,1,2,3,-1,-1]; _monolith_socket=[0,1,2,3]; _frequencies=[0,0,0,0]
 	for i in range(4): _monoliths[i].global_position=_sockets[i]+Vector3(0,1,0); _monoliths[i].visible=true; _monoliths[i].collision_layer=1
-	_status.text="Критическая интерференция. Хор вернулся к исходной конфигурации."
+	_status.text=tr("TRIAL_RADIATION_RESET")
 
 # --- Negative Space --------------------------------------------------------
 func _build_negative_space()->void:
-	_title.text="ТЁМНЫЙ СЕКТОР";_status.text="ЛКМ — импульс лидара · активируйте 3 узла и найдите выход"
+	_title.text=tr("TRIAL_VOID_TITLE");_status.text=tr("TRIAL_VOID_OBJECTIVE")
 	_box("Пол сектора",ORIGIN+Vector3(0,0,-8),Vector3(30,.6,36),Color(.008,.012,.018))
 	var walls:Array=[ [Vector3(-8,15,1),Vector3(.6,30,12)],[Vector3(7,15,-1),Vector3(.6,30,10)],[Vector3(-2,15,-6),Vector3(12,30,.6)],[Vector3(4,15,-13),Vector3(14,30,.6)],[Vector3(-9,15,-18),Vector3(12,30,.6)],[Vector3(10,15,-20),Vector3(.6,30,12)],[Vector3(-15,24,-8),Vector3(.8,48,36.8)],[Vector3(15,24,-8),Vector3(.8,48,36.8)],[Vector3(0,24,10),Vector3(30.8,48,.8)],[Vector3(0,24,-26),Vector3(30.8,48,.8)] ]
 	for i in range(walls.size()):_box("Стена %d"%i,ORIGIN+(walls[i][0] as Vector3),walls[i][1] as Vector3,Color(.025,.035,.05))
 	_checkpoints=[_spawn_position()];_checkpoint=0;_void_exit=ORIGIN+Vector3(11,1,-24);_void_nodes.clear();_void_activated=0
 	var positions:Array[Vector3]=[Vector3(-10,1,-3),Vector3(10,1,-10),Vector3(-7,1,-22)]
 	for i in range(3):
-		var node:StaticBody3D=_target(i,ORIGIN+positions[i],Color(.25,.75,1),"ПИТАЮЩИЙ УЗЕЛ %d"%(i+1))
+		var node:StaticBody3D=_target(i,ORIGIN+positions[i],Color(.25,.75,1),tr("TRIAL_PROP_POWER_NODE")%(i+1))
 		node.set_meta("type","radar_node");_void_nodes.append(node)
-	var exit_node:=_target(3,_void_exit,Color(.25,1,.45),"ВЫХОД");exit_node.set_meta("type","radar_exit")
+	var exit_node:=_target(3,_void_exit,Color(.25,1,.45),tr("TRIAL_PROP_EXIT"));exit_node.set_meta("type","radar_exit")
 	_void_monster=CharacterBody3D.new();_void_monster.position=ORIGIN+Vector3(10,0,-4);_world.add_child(_void_monster)
 	var cs:=CollisionShape3D.new();var cap:=CapsuleShape3D.new();cap.radius=.42;cap.height=2.1;cs.shape=cap;cs.position.y=1.05;_void_monster.add_child(cs)
 	var mi:=MeshInstance3D.new();var cm:=CapsuleMesh.new();cm.radius=.42;cm.height=2.1;mi.mesh=cm;mi.position.y=1.05;var mat:=StandardMaterial3D.new();mat.albedo_color=Color(.08,0,0);mat.emission_enabled=true;mat.emission=Color(1,.02,.01);mi.material_override=mat;mi.visible=false;_void_monster.add_child(mi)
@@ -426,19 +426,19 @@ func _update_negative_space(_delta:float)->void:
 		if _game!=null and str(_game.get("_carried_id"))=="thread_spool":monster_speed*=.75
 		if d.length()>.1:_void_monster.velocity=d.normalized()*monster_speed;_void_monster.move_and_slide()
 		if d.length()<1.15:_reset_after_fall()
-	_status.text="ЛКМ — скан · УЗЛЫ: %d/3 · красные точки — опасность"%_void_activated
+	_status.text=tr("TRIAL_VOID_HUD")%_void_activated
 	if _void_activated>=3 and _player.global_position.distance_to(_void_exit)<1.8:_complete()
 
 
 # --- Эхо-камера (Запомни и повтори) --------------------------------------
 func _build_echo_chamber()->void:
-	_title.text="ЭХО-КАМЕРА";_status.text="Осмотритесь: запомните, где какая колонна"
+	_title.text=tr("TRIAL_ECHO_TITLE");_status.text=tr("TRIAL_ECHO_OBJECTIVE")
 	_box("Пол камеры",ORIGIN+Vector3(0,0,0),Vector3(20,.6,20),Color(.05,.06,.09))
 	_echo_pads.clear();_echo_sequence.clear();_echo_round=0;_echo_input=0;_echo_showing=false;_echo_glow_on=false
-	var names:Array[String]=["КРАСНАЯ","СИНЯЯ","ЗЕЛЁНАЯ","ЖЁЛТАЯ"]
+	var names:Array[String]=[tr("TRIAL_PROP_COLUMN_RED"),tr("TRIAL_PROP_COLUMN_BLUE"),tr("TRIAL_PROP_COLUMN_GREEN"),tr("TRIAL_PROP_COLUMN_YELLOW")]
 	for i in range(4):
 		var a: float = TAU * float(i) / 4.0 + TAU / 8.0
-		var pad:=_target(i,ORIGIN+Vector3(cos(a)*6.0,1,sin(a)*6.0-2.0),ECHO_COLORS[i],names[i]+" КОЛОННА")
+		var pad:=_target(i,ORIGIN+Vector3(cos(a)*6.0,1,sin(a)*6.0-2.0),ECHO_COLORS[i],names[i])
 		pad.set_meta("type","echo_pad");_echo_pads.append(pad)
 		var light:=OmniLight3D.new();light.name="PadLight";light.light_color=ECHO_COLORS[i];light.omni_range=8.0;light.light_energy=0.0;light.position=Vector3(0,1.6,0);pad.add_child(light)
 	_echo_look=7.0
@@ -451,15 +451,15 @@ func _start_echo_round()->void:
 	_echo_input=0;_echo_showing=false;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.2
 	if _echo_look<=0.0:
 		_echo_showing=true
-		_status.text="РАУНД %d/3 — запоминайте порядок вспышек"%_echo_round
+		_status.text=tr("TRIAL_ECHO_ROUND_WATCH")%_echo_round
 
 func _update_echo(delta:float)->void:
 	if _echo_look>0.0:
 		_echo_look-=delta
-		_status.text="Осмотритесь: показ начнётся через %d сек."%maxi(1,int(ceil(_echo_look)))
+		_status.text=tr("TRIAL_ECHO_LOOK_TIMER")%maxi(1,int(ceil(_echo_look)))
 		if _echo_look<=0.0:
 			_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.0
-			_status.text="РАУНД %d/3 — запоминайте порядок вспышек"%_echo_round
+			_status.text=tr("TRIAL_ECHO_ROUND_WATCH")%_echo_round
 		return
 	if not _echo_showing:return
 	_echo_show_timer-=delta
@@ -470,7 +470,7 @@ func _update_echo(delta:float)->void:
 		return
 	_echo_show_index+=1
 	if _echo_show_index>=_echo_sequence.size():
-		_echo_showing=false;_status.text="РАУНД %d/3 — повторите порядок (E у колонн)"%_echo_round
+		_echo_showing=false;_status.text=tr("TRIAL_ECHO_ROUND_REPEAT")%_echo_round
 		return
 	_set_pad_glow(_echo_pads[_echo_sequence[_echo_show_index]],true)
 	_echo_glow_on=true;_echo_show_timer=.85
@@ -491,10 +491,10 @@ func _dim_all_pads()->void:
 
 func _echo_interact(index:int)->void:
 	if _echo_look>0.0:
-		_status.text="Осмотритесь: показ последовательности ещё не начался"
+		_status.text=tr("TRIAL_ECHO_NOT_STARTED")
 		return
 	if _echo_showing:
-		_status.text="Дождитесь конца показа..."
+		_status.text=tr("TRIAL_ECHO_WAIT")
 		return
 	if _echo_sequence.is_empty():return
 	var am:=get_tree().get_first_node_in_group("audio_manager")
@@ -506,20 +506,20 @@ func _echo_interact(index:int)->void:
 			if _echo_round>=3:
 				_complete()
 				return
-			_status.text="Раунд %d пройден!"%_echo_round
+			_status.text=tr("TRIAL_ECHO_ROUND_DONE")%_echo_round
 			_dim_all_pads()
 			_start_echo_round()
-		else:_status.text="Верно: %d из %d"%[_echo_input,_echo_sequence.size()]
+		else:_status.text=tr("TRIAL_ECHO_CORRECT")%[_echo_input,_echo_sequence.size()]
 	else:
 		var failed_step:=_echo_input+1
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-6.0)
 		_dim_all_pads()
 		_echo_input=0;_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.8
-		_status.text="ОШИБКА на шаге %d — смотрите последовательность заново"%failed_step
+		_status.text=tr("TRIAL_ECHO_MISTAKE")%failed_step
 
 # --- Зыбкий мост (фантомные плиты) ---------------------------------------
 func _build_glass_bridge()->void:
-	_title.text="ЗЫБКИЙ МОСТ";_status.text="Половина плит — фантомы: они возвращают на старт. Доберитесь до ключа"
+	_title.text=tr("TRIAL_BRIDGE_TITLE");_status.text=tr("TRIAL_BRIDGE_OBJECTIVE")
 	_box("Стартовая площадка",ORIGIN+Vector3(0,0,8),Vector3(8,.6,6),Color(.07,.08,.11))
 	_box("Финишная площадка",ORIGIN+Vector3(0,0,-19.5),Vector3(8,.6,7),Color(.07,.11,.09))
 	_bridge_tiles.clear();_bridge_fake.clear();_bridge_done.clear()
@@ -530,7 +530,7 @@ func _build_glass_bridge()->void:
 			var tile:=_box("Плита %d-%d"%[row,column],pos,Vector3(2.4,.22,2.6),Color(.16,.2,.3))
 			tile.set_meta("type","bridge_tile");tile.set_meta("tile_index",_bridge_tiles.size())
 			_bridge_tiles.append(tile);_bridge_fake.append(column!=safe_column);_bridge_done.append(false)
-	var exit_pad:=_target(0,ORIGIN+Vector3(0,1,-19.5),Color(.25,1,.45),"КЛЮЧ СТАБИЛИЗАЦИИ")
+	var exit_pad:=_target(0,ORIGIN+Vector3(0,1,-19.5),Color(.25,1,.45),tr("TRIAL_PROP_STAB_KEY"))
 	exit_pad.set_meta("type","bridge_exit")
 
 func _update_glass_bridge()->void:
@@ -561,7 +561,7 @@ func _update_glass_bridge()->void:
 
 # --- Зал отражений (дефектные зеркала) ---------------------------------
 func _build_mirror_maze()->void:
-	_title.text="ЗАЛ ОТРАЖЕНИЙ";_status.text="Найдите 3 дефектных зеркала: их силуэты дрожат (E). 3 ошибки — зал перестроится"
+	_title.text=tr("TRIAL_MIRROR_TITLE");_status.text=tr("TRIAL_MIRROR_OBJECTIVE")
 	_box("Пол зала",ORIGIN+Vector3(0,0,-4),Vector3(28,.6,28),Color(.09,.1,.12))
 	var panels:Array=[ [Vector3(-6,2,-2),Vector3(.35,4,10)],[Vector3(6,2,-10),Vector3(.35,4,10)],[Vector3(0,2,-6),Vector3(10,4,.35)],[Vector3(-9,2,-12),Vector3(6,4,.35)],[Vector3(9,2,-1),Vector3(6,4,.35)],[Vector3(0,2,-14),Vector3(.35,4,6)] ]
 	for i in range(panels.size()):
@@ -574,7 +574,7 @@ func _build_mirror_maze()->void:
 	var pool:Array[int]=[0,1,2,3,4,5];pool.shuffle()
 	for k in range(3):_mirror_defective.append(pool[k])
 	for i in range(6):
-		var frame:=_target(i,ORIGIN+spots[i],Color(.7,.8,.95),"ЗЕРКАЛО %d"%(i+1))
+		var frame:=_target(i,ORIGIN+spots[i],Color(.7,.8,.95),tr("TRIAL_PROP_MIRROR")%(i+1))
 		frame.set_meta("type","mirror_frame");_mirror_frames.append(frame)
 	_mirror_errors=0;_mirror_ghosts.clear()
 	for i in range(6):
@@ -606,23 +606,23 @@ func _mirror_interact(body:StaticBody3D,index:int)->void:
 		body.set_meta("solved",true);_mark(body);_mirror_found+=1
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("terminal_beep",-8.0,1.4)
 		if _mirror_found>=3:
-			var exit_pad:=_target(9,ORIGIN+Vector3(0,1,4),Color(.25,1,.45),"ВЫХОД ИЗ ЗАЛА")
+			var exit_pad:=_target(9,ORIGIN+Vector3(0,1,4),Color(.25,1,.45),tr("TRIAL_PROP_HALL_EXIT"))
 			exit_pad.set_meta("type","mirror_exit")
-			_status.text="Все дефекты найдены — выход открыт у точки входа"
-		else:_status.text="Дефектное отражение зафиксировано: %d/3"%_mirror_found
+			_status.text=tr("TRIAL_MIRROR_ALL_FOUND")
+		else:_status.text=tr("TRIAL_MIRROR_TAGGED")%_mirror_found
 	else:
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-8.0)
 		_mirror_errors+=1
 		if _mirror_errors>=3:
 			_mirror_errors=0
 			_reshuffle_mirrors()
-			_status.text="Три ошибки — зал перестроился, дефекты сместились!"
+			_status.text=tr("TRIAL_MIRROR_RESHUFFLE")
 		else:
-			_status.text="Это отражение стабильно (ошибка %d/3). Ищите дрожа��ий силуэт"%_mirror_errors
+			_status.text=tr("TRIAL_MIRROR_STABLE")%_mirror_errors
 
 # --- Жёлтые залы (Backrooms Level 0) --------------------------------------
 func _build_yellow_halls()->void:
-	_title.text="ЖЁЛТЫЕ ЗАЛЫ";_status.text="Соберите 3 плёнки, избегайте Блуждающего и найдите выход с разметкой"
+	_title.text=tr("TRIAL_YELLOW_TITLE");_status.text=tr("TRIAL_YELLOW_OBJECTIVE")
 	_tapes_found=0;_yellow_tapes.clear()
 	var wall_color: Color = Color(.52,.47,.22)
 	_box("Пол залов",ORIGIN+Vector3(0,0,-5),Vector3(34,.6,32),Color(.35,.3,.16))
@@ -635,9 +635,9 @@ func _build_yellow_halls()->void:
 		var lamp:=OmniLight3D.new();lamp.name="Люминесцентная лампа %d"%i;lamp.position=ORIGIN+Vector3(lx,2.9,lz);lamp.light_color=Color(1,.94,.72);lamp.light_energy=.9;lamp.omni_range=9.0;_world.add_child(lamp)
 	var tape_spots:Array[Vector3]=[Vector3(-12,.6,-15),Vector3(12,.6,6),Vector3(4,.6,-16)]
 	for i in range(3):
-		var tape:=_target(i,ORIGIN+tape_spots[i],Color(.25,.2,.14),"ПЛЁНКА %d"%(i+1))
+		var tape:=_target(i,ORIGIN+tape_spots[i],Color(.25,.2,.14),tr("TRIAL_PROP_TAPE")%(i+1))
 		tape.set_meta("type","vhs_tape");_yellow_tapes.append(tape)
-	var exit_pad:=_target(7,ORIGIN+Vector3(-14,1,-16),Color(.9,.8,.2),"ВЫХОД (РАЗМЕТКА)")
+	var exit_pad:=_target(7,ORIGIN+Vector3(-14,1,-16),Color(.9,.8,.2),tr("TRIAL_PROP_EXIT_STRIPED"))
 	exit_pad.set_meta("type","yellow_exit")
 	for s in range(6):
 		var stripe_color:Color=Color(.9,.8,.15) if s%2==0 else Color(.07,.07,.07)
@@ -689,26 +689,26 @@ func _update_yellow(delta:float)->void:
 				if is_instance_valid(tape) and not tape.visible:
 					tape.visible=true;tape.collision_layer=1
 					break
-			_status.text="Блуждающий отобрал плёнку! Собрано: %d/3"%_tapes_found
-		else:_status.text="Блуждающий выбросил вас ко входу. Держите дистанцию!"
+			_status.text=tr("TRIAL_YELLOW_TAPE_LOST")%_tapes_found
+		else:_status.text=tr("TRIAL_YELLOW_CAUGHT")
 		var am:=get_tree().get_first_node_in_group("audio_manager")
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-4.0)
 
 # --- Служба извлечения (R.E.P.O. / Lethal Company) -----------------------
 func _build_scrap_run()->void:
-	_title.text="СЛУЖБА ИЗВЛЕЧЕНИЯ";_status.text="Перенесите 3 ценности к точке извлечения по одной. Дрон-сканер патрулирует склад!"
+	_title.text=tr("TRIAL_SCRAP_TITLE");_status.text=tr("TRIAL_SCRAP_OBJECTIVE")
 	_box("Пол склада",ORIGIN+Vector3(-6,0,-6),Vector3(20,.6,32),Color(.03,.035,.05))
 	_box("Дальний пол",ORIGIN+Vector3(11,0,-6),Vector3(10,.6,32),Color(.03,.035,.05))
 	_box("Мостик между секциями",ORIGIN+Vector3(5,0,-6),Vector3(2.4,.55,2.2),Color(.05,.06,.08))
 	var shelves:Array=[ [Vector3(9,1.5,-14),Vector3(1.2,3,8)],[Vector3(13,1.5,2),Vector3(1.2,3,8)],[Vector3(-12,1.5,-16),Vector3(8,3,1.2)],[Vector3(-10,1.5,4),Vector3(6,3,1.2)] ]
 	for i in range(shelves.size()):_box("Стеллаж %d"%i,ORIGIN+(shelves[i][0] as Vector3),shelves[i][1] as Vector3,Color(.06,.07,.09))
 	_scrap_items.clear();_scrap_home.clear();_scrap_carrying=-1;_scrap_delivered=0
-	var names:Array[String]=["ПОЗОЛОЧЕННЫЙ БЮСТ","ХРУСТАЛЬНАЯ ВАЗА","СТАРИННЫЕ ЧАСЫ"]
+	var names:Array[String]=[tr("TRIAL_PROP_BUST"),tr("TRIAL_PROP_VASE"),tr("TRIAL_PROP_CLOCK")]
 	var spots:Array[Vector3]=[Vector3(11,1,-16),Vector3(13,1,7),Vector3(-13,1,-18)]
 	for i in range(3):
 		var item:=_target(i,ORIGIN+spots[i],Color(.95,.8,.35),names[i])
 		item.set_meta("type","valuable");_scrap_items.append(item);_scrap_home.append(item.position)
-	var pad:=_target(8,ORIGIN+Vector3(0,1,7),Color(.25,1,.45),"ТОЧКА ИЗВЛЕЧЕНИЯ")
+	var pad:=_target(8,ORIGIN+Vector3(0,1,7),Color(.25,1,.45),tr("TRIAL_PROP_EXTRACT_PAD"))
 	pad.set_meta("type","extract_pad")
 	var pl:=OmniLight3D.new();pl.name="Свет извлечения";pl.light_color=Color(.3,1,.5);pl.omni_range=7.0;pl.light_energy=1.2;pl.position=Vector3(0,2,0);pad.add_child(pl)
 	_scrap_value=0;_drone_angle=0.0
@@ -722,7 +722,7 @@ func _build_scrap_run()->void:
 
 func _update_scrap(delta:float)->void:
 	if _scrap_carrying>=0 and is_instance_valid(_scrap_items[_scrap_carrying]):
-		_status.text="В руках: %s · Сдано %d/3 (%d у.е.) · Избегайте луча дрона!"%[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value]
+		_status.text=tr("TRIAL_SCRAP_HUD_CARRY")%[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value]
 	if not is_instance_valid(_scrap_drone) or not is_instance_valid(_player):return
 	_drone_angle+=delta*.55
 	var sweep:Vector3=ORIGIN+Vector3(cos(_drone_angle)*10.0,4.4,-6.0+sin(_drone_angle*2.0)*11.0)
@@ -734,34 +734,34 @@ func _update_scrap(delta:float)->void:
 		if is_instance_valid(dropped):dropped.visible=true;dropped.collision_layer=1
 		_scrap_carrying=-1
 		_drop_carry_visual()
-		_status.text="ДРОН ЗАФИКСИРОВАЛ ВЫНОС! Экспонат вернулся на стеллаж"
+		_status.text=tr("TRIAL_SCRAP_DRONE_CAUGHT")
 		var am:=get_tree().get_first_node_in_group("audio_manager")
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-4.0)
 
 func _valuable_interact(body:StaticBody3D,index:int)->void:
 	if _scrap_carrying>=0:
-		_status.text="Руки заняты — сначала сдайте экспонат"
+		_status.text=tr("TRIAL_SCRAP_HANDS_FULL")
 		return
 	_scrap_carrying=index;body.visible=false;body.collision_layer=0
 	_set_carry_visual(Color(.95,.8,.35))
-	_status.text="Взято: %s (%d у.е.). Несите к точке извлечения, избегая дрона"%[str(body.name),int(body.get_meta("value",0))]
+	_status.text=tr("TRIAL_SCRAP_PICKED")%[str(body.name),int(body.get_meta("value",0))]
 
 func _extract_interact()->void:
 	if _scrap_carrying<0:
-		_status.text="Принесите ценный экспонат (%d/3)"%_scrap_delivered
+		_status.text=tr("TRIAL_SCRAP_BRING")%_scrap_delivered
 		return
 	if is_instance_valid(_scrap_items[_scrap_carrying]):_scrap_value+=int(_scrap_items[_scrap_carrying].get_meta("value",0))
 	_scrap_carrying=-1;_scrap_delivered+=1
 	_drop_carry_visual()
 	if _scrap_delivered>=3:
-		_status.text="Все ценности извлечены: %d у.е."%_scrap_value
+		_status.text=tr("TRIAL_SCRAP_ALL_DONE")%_scrap_value
 		_complete()
 		return
-	_status.text="Извлечено: %d/3 · Счёт: %d у.е."%[_scrap_delivered,_scrap_value]
+	_status.text=tr("TRIAL_SCRAP_PROGRESS")%[_scrap_delivered,_scrap_value]
 
 # --- Восхождение (PEAK: туман поднимается) ------------------------------
 func _build_ascent()->void:
-	_title.text="ВОСХОЖДЕНИЕ";_status.text="Вверх по уступам! Зелёные плиты — контрольные точки, фиолетовые — движутся"
+	_title.text=tr("TRIAL_ASCENT_TITLE");_status.text=tr("TRIAL_ASCENT_OBJECTIVE")
 	_ascent_time=0.0;_ascent_movers.clear();_ascent_mover_base.clear();_ascent_cps.clear();_ascent_checkpoint=_spawn_position()
 	_box("Базовая площадка",ORIGIN+Vector3(0,0,6),Vector3(10,.6,8),Color(.07,.08,.1))
 	var steps:Array[Vector3]=[Vector3(0.00,1.20,2.60),Vector3(-3.07,2.15,1.68),Vector3(-5.13,3.10,-0.76),Vector3(-5.52,4.05,-3.94),Vector3(-4.10,5.00,-6.81),Vector3(-1.34,5.95,-8.44),Vector3(1.86,6.90,-8.28),Vector3(4.45,7.85,-6.40),Vector3(5.59,8.80,-3.41),Vector3(4.89,9.75,-0.28),Vector3(2.60,10.70,1.96),Vector3(-0.54,11.65,2.57),Vector3(-3.51,12.60,1.37),Vector3(-5.33,13.55,-1.27),Vector3(-5.40,14.50,-4.47),Vector3(-3.71,15.45,-7.19)]
@@ -776,7 +776,7 @@ func _build_ascent()->void:
 			_box("Плита контрольной точки %d"%i,ORIGIN+steps[i]+Vector3(0,.35,0),Vector3(1.3,.14,1.3),Color(.15,.6,.4))
 			_ascent_cps.append(ORIGIN+steps[i]+Vector3(0,1.3,0))
 	_box("Вершина",ORIGIN+Vector3(-0.81,16.40,-8.54),Vector3(5,.6,5),Color(.09,.14,.11))
-	var exit_pad:=_target(0,ORIGIN+Vector3(-0.81,17.40,-8.54),Color(.25,1,.45),"ТОЧКА ЭВАКУАЦИИ")
+	var exit_pad:=_target(0,ORIGIN+Vector3(-0.81,17.40,-8.54),Color(.25,1,.45),tr("TRIAL_PROP_EVAC_PAD"))
 	exit_pad.set_meta("type","ascent_exit")
 	_fog_plane=MeshInstance3D.new();_fog_plane.name="Поднимающийся туман"
 	var fog_mesh:=BoxMesh.new();fog_mesh.size=Vector3(60,.5,60);_fog_plane.mesh=fog_mesh
@@ -794,12 +794,12 @@ func _update_ascent(delta:float)->void:
 	for cp in _ascent_cps:
 		if cp.y>_ascent_checkpoint.y and _player.global_position.distance_to(cp)<1.7:
 			_ascent_checkpoint=cp
-			_status.text="Контрольная точка активирована (высота %d м)"%int(cp.y-ORIGIN.y)
+			_status.text=tr("TRIAL_ASCENT_CHECKPOINT")%int(cp.y-ORIGIN.y)
 	if _player.global_position.y<ORIGIN.y+_fog_y-.2:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.velocity=Vector3.ZERO
 		_player.global_position=_ascent_checkpoint
-		_status.text="Туман поглотил вас — возврат к контрольной точке"
+		_status.text=tr("TRIAL_ASCENT_FOG")
 
 # --- Помощники доработанных измерений -------------------------------------
 func _reshuffle_mirrors()->void:
@@ -851,7 +851,7 @@ func _add_bounds()->void:
 # --- Shared interaction and construction ---------------------------------
 func _interact()->void:
 	var body:=_nearest_target("")
-	if body==null: _status.text="Подойдите ближе к активному узлу."; return
+	if body==null: _status.text=tr("TRIAL_MOVE_CLOSER"); return
 	var type:=str(body.get_meta("type","")); var index:=int(body.get_meta("index",-1))
 	if type=="gravity_anchor": _gravity_anchor(index)
 	elif type in ["monolith","socket"]: _radiation_interact(body)
@@ -862,9 +862,9 @@ func _interact()->void:
 	elif type=="bridge_exit":_complete()
 	elif type=="mirror_frame":_mirror_interact(body,index)
 	elif type=="mirror_exit":_complete()
-	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_status.text="Найдена плёнка: %d/3"%_tapes_found
+	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_status.text=tr("TRIAL_YELLOW_TAPE_FOUND")%_tapes_found
 	elif type=="yellow_exit" and _tapes_found>=3:_complete()
-	elif type=="yellow_exit":_status.text="Разметка не активна: соберите плёнки (%d/3)"%_tapes_found
+	elif type=="yellow_exit":_status.text=tr("TRIAL_YELLOW_EXIT_LOCKED")%_tapes_found
 	elif type=="valuable":_valuable_interact(body,index)
 	elif type=="extract_pad":_extract_interact()
 	elif type=="ascent_exit":_complete()
@@ -887,11 +887,11 @@ func _reset_after_fall()->void:
 		if is_instance_valid(dropped):dropped.visible=true;dropped.collision_layer=1
 		_scrap_carrying=-1
 		_drop_carry_visual()
-		_status.text="Хрупкий экспонат сорвался и вернулся на место!"
+		_status.text=tr("TRIAL_SCRAP_DROPPED")
 	if _kind=="ascent" and _ascent_checkpoint!=Vector3.ZERO:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.global_position=_ascent_checkpoint
-		_status.text="Возврат к контрольной точке"
+		_status.text=tr("TRIAL_ASCENT_RESPAWN")
 		return
 	if _kind=="void_rift":
 		if _player.has_method("safe_teleport"):_player.call_deferred("safe_teleport",_spawn_position(),Vector3.DOWN)

@@ -24,7 +24,7 @@ func save_config(url: String) -> void:
 
 func send_feedback(player_name: String, comment: String, version: String = "0.9.4") -> void:
 	if webhook_url.is_empty():
-		request_completed.emit(false, "URL вебхука не настроен. Укажите его в настройках.")
+		request_completed.emit(false, tr("MENU_FB_ERR_NO_URL"))
 		return
 
 	var http := HTTPRequest.new()
@@ -44,18 +44,18 @@ func send_feedback(player_name: String, comment: String, version: String = "0.9.
 
 	var err := http.request(webhook_url, headers, HTTPClient.METHOD_POST, body_str)
 	if err != OK:
-		request_completed.emit(false, "Ошибка создания HTTP-запроса: " + error_string(err))
+		request_completed.emit(false, tr("MENU_FB_ERR_REQUEST") % error_string(err))
 		http.queue_free()
 
 func _on_request_completed(http: HTTPRequest, result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	http.queue_free()
 	if result != HTTPRequest.RESULT_SUCCESS:
-		request_completed.emit(false, "Сетевая ошибка при отправке запроса")
+		request_completed.emit(false, tr("MENU_FB_ERR_NETWORK"))
 		return
 	
 	# Webhooks in Notion Workers return 202 Accepted (asynchronously processed) or 200 OK
 	if response_code == 200 or response_code == 202:
-		request_completed.emit(true, "Отзыв успешно отправлен!")
+		request_completed.emit(true, tr("MENU_FB_SENT"))
 	else:
 		var response_text := body.get_string_from_utf8()
-		request_completed.emit(false, "Ошибка сервера (код %d): %s" % [response_code, response_text])
+		request_completed.emit(false, tr("MENU_FB_ERR_SERVER") % [response_code, response_text])

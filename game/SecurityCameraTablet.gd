@@ -18,43 +18,43 @@ const PAN_SPEED := 55.0
 const TILT_SPEED := 40.0
 
 const CAMS: Array = [
-	{"id": "CAM 01", "label": "Вход",
+	{"id": "CAM 01", "label": "CAM_ENTRANCE",
 		"pos": Vector3(-9.6, 3.0, 33.6), "target": Vector3(0, 1.0, 25)},
-	{"id": "CAM 02", "label": "Атриум — запад",
+	{"id": "CAM 02", "label": "CAM_ATRIUM_WEST",
 		"pos": Vector3(-13.6, 3.0, 12.6), "target": Vector3(0, 1.0, 0)},
-	{"id": "CAM 03", "label": "Атриум — восток",
+	{"id": "CAM 03", "label": "CAM_ATRIUM_EAST",
 		"pos": Vector3(13.6, 3.0, -12.6), "target": Vector3(0, 1.0, 0)},
-	{"id": "CAM 04", "label": "Пост наблюдателя",
+	{"id": "CAM 04", "label": "CAM_WATCH_POST",
 		"pos": Vector3(-33.8, 2.9, -5.8), "target": Vector3(-25, 1.0, 0)},
-	{"id": "CAM 05", "label": "Крыло A — гравитация",
+	{"id": "CAM 05", "label": "CAM_WING_A_GRAVITY",
 		"pos": Vector3(16.4, 3.0, -7.8), "target": Vector3(28, 1.0, 0)},
-	{"id": "CAM 06", "label": "Крыло B — время",
+	{"id": "CAM 06", "label": "CAM_WING_B_TIME",
 		"pos": Vector3(-11.8, 3.0, -16.4), "target": Vector3(0, 1.0, -24)},
-	{"id": "CAM 07", "label": "Дверь крыла C",
+	{"id": "CAM 07", "label": "CAM_WING_C_DOOR",
 		"pos": Vector3(9.6, 2.9, -20.6), "target": Vector3(12.5, 1.2, -24)},
-	{"id": "CAM 08", "label": "Лифт в подвал",
+	{"id": "CAM 08", "label": "CAM_BASEMENT_LIFT",
 		"pos": Vector3(8.8, 2.9, 11.8), "target": Vector3(12.5, 1.2, 14.4)},
-	{"id": "CAM 09", "label": "Планетарий",
+	{"id": "CAM 09", "label": "CAM_PLANETARIUM",
 		"pos": Vector3(-9.2, 3.0, -34.4), "target": Vector3(0, 1.2, -41)},
-	{"id": "CAM 10", "label": "Реставрационная",
+	{"id": "CAM 10", "label": "CAM_RESTORATION",
 		"pos": Vector3(-33.8, 2.9, 18.4), "target": Vector3(-25, 1.0, 22)},
-	{"id": "CAM 11", "label": "Крыло D — масса",
+	{"id": "CAM 11", "label": "CAM_WING_D_MASS",
 		"pos": Vector3(42.2, 2.9, -6.8), "target": Vector3(52, 1.0, 0)},
 ]
 
 # Mini-map rooms: [name, world center (x,z), size (w,d), locked].
 const ROOMS: Array = [
-	["Вход", Vector2(0, 25), Vector2(22, 20), false],
-	["Атриум", Vector2(0, 0), Vector2(30, 30), false],
-	["Офис", Vector2(-25, 0), Vector2(20, 14), false],
-	["Склад", Vector2(-25, 12), Vector2(20, 10), false],
-	["Архив", Vector2(-25, -12), Vector2(20, 10), false],
-	["Lab", Vector2(-25, 22), Vector2(20, 10), false],
-	["Крыло A", Vector2(28, 0), Vector2(26, 18), false],
-	["Крыло B", Vector2(0, -24), Vector2(26, 18), false],
-	["Планетарий", Vector2(0, -41), Vector2(20, 16), false],
-	["Крыло C", Vector2(24, -24), Vector2(22, 16), true],
-	["Крыло D", Vector2(52, 0), Vector2(22, 16), true],
+	["CAM_ENTRANCE", Vector2(0, 25), Vector2(22, 20), false],
+	["CAM_ROOM_ATRIUM", Vector2(0, 0), Vector2(30, 30), false],
+	["CAM_ROOM_OFFICE", Vector2(-25, 0), Vector2(20, 14), false],
+	["CAM_ROOM_STORAGE", Vector2(-25, 12), Vector2(20, 10), false],
+	["CAM_ROOM_ARCHIVE", Vector2(-25, -12), Vector2(20, 10), false],
+	["CAM_ROOM_LAB", Vector2(-25, 22), Vector2(20, 10), false],
+	["CAM_ROOM_WING_A", Vector2(28, 0), Vector2(26, 18), false],
+	["CAM_ROOM_WING_B", Vector2(0, -24), Vector2(26, 18), false],
+	["CAM_PLANETARIUM", Vector2(0, -41), Vector2(20, 16), false],
+	["CAM_ROOM_WING_C", Vector2(24, -24), Vector2(22, 16), true],
+	["CAM_ROOM_WING_D", Vector2(52, 0), Vector2(22, 16), true],
 ]
 
 var _player: CharacterBody3D = null
@@ -143,7 +143,7 @@ func _build_ui() -> void:
 	root.add_child(_cam_label)
 
 	var hint := Label.new()
-	hint.text = "TAB / Y — выйти  |  WASD / правый стик — камера  |  F / RB — прожектор"
+	hint.text = tr("CAM_HINT_CONTROLS")
 	hint.add_theme_font_size_override("font_size", 16)
 	hint.add_theme_color_override("font_color", Color(0.6, 0.7, 0.6))
 	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
@@ -184,7 +184,7 @@ func _build_ui() -> void:
 		rp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(rp)
 		var rl := Label.new()
-		rl.text = r[0]
+		rl.text = tr(String(r[0]))
 		rl.add_theme_font_size_override("font_size", 10)
 		rl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.6, 0.8))
 		rl.position = rp.position + Vector2(4, 2)
@@ -231,7 +231,7 @@ func _toggle() -> void:
 	if not _open and not _player_is_in_office():
 		var game := get_parent().get_node_or_null("GameManager")
 		if game != null and game.has_method("_flash"):
-			game.call("_flash", "Доступ к CCTV возможен только из офиса охраны.", Color(1.0, 0.62, 0.28))
+			game.call("_flash", tr("CAM_ACCESS_OFFICE_ONLY"), Color(1.0, 0.62, 0.28))
 		_sfx("fail")
 		return
 	_open = not _open
@@ -267,7 +267,7 @@ func _switch_to(index: int) -> void:
 	_tilt = 0.0
 	_cams[index].rotation_degrees = _base_rot[index]
 	_cams[index].current = true
-	_cam_label.text = "%s — %s" % [CAMS[index]["id"], CAMS[index]["label"]]
+	_cam_label.text = "%s — %s" % [CAMS[index]["id"], tr(String(CAMS[index]["label"]))]
 	_static_alpha = 0.85
 	_update_floodlight()
 	for i in range(_buttons.size()):

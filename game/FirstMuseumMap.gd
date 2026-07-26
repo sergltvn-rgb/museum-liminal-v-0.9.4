@@ -560,10 +560,87 @@ func unlock_wing(wing: String) -> void:
 		else "Wing D Locked Blast Door"
 	var door := root.find_child(door_name, true, false)
 	if door != null:
+		# Detach before freeing: queue_free() only takes effect at the end of the
+		# frame, and the navigation re-bake below would still see the door (and
+		# its collider child) and keep baking the wing as sealed.
+		door.get_parent().remove_child(door)
 		door.queue_free()
 	var label_pos := Vector3(12.3, 2.35, -24) if "C" in wing \
 		else Vector3(40.3, 2.35, 0)
 	_add_label(root, "%s - OPEN" % wing, label_pos, Color(0.45, 0.95, 0.6))
+	# The wing was baked as unreachable; without this the Curator can never
+	# path into the half of the museum it spawns in on nights 2-3.
+	_bake_navigation()
+
+
+# --- Navigation ------------------------------------------------------------
+# The Curator paths through the museum with a NavigationAgent3D, which needs a
+# baked navigation mesh. Geometry is parsed from static colliders, which is
+# exactly the set of surfaces that also block the player: _primitive() gives a
+# body only to walk-blocking geometry and skips trim, ropes, labels and glass.
+const NAV_SOURCE_GROUP := "museum_nav_source"
+
+var _nav_region: NavigationRegion3D = null
+
+
+func _add_navigation(parent: Node3D) -> void:
+	# Parsing starts from the nodes in this group and walks their children.
+	if not parent.is_in_group(NAV_SOURCE_GROUP):
+		parent.add_to_group(NAV_SOURCE_GROUP)
+
+	var nav_mesh := NavigationMesh.new()
+	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+	nav_mesh.geometry_source_group_name = NAV_SOURCE_GROUP
+	# The Curator capsule is r=0.38, h=2.25 (CuratorMonster). Recast erodes the
+	# walkable area by agent_radius rounded up to whole cells, so these two
+	# values together decide whether doorways survive the bake: jambs leave a
+	# clear DOOR_GAP (1.8 m), and ceil(0.45 / 0.15) = 3 cells per side keeps
+	# 0.9 m of navmesh through every door. Widening the radius or coarsening
+	# the cell size pinches that shut and strands the Curator in one room.
+	nav_mesh.agent_radius = 0.45
+	nav_mesh.agent_height = 2.2
+	nav_mesh.agent_max_climb = 0.4
+	nav_mesh.agent_max_slope = 45.0
+	nav_mesh.cell_size = 0.15
+	nav_mesh.cell_height = 0.1
+	# Door lintels hang at y 2.70-3.40 and ceiling slabs at 3.45; without these
+	# filters the floor beneath them bakes as a walkable-but-too-low span.
+	nav_mesh.filter_low_hanging_obstacles = true
+	nav_mesh.filter_ledge_spans = true
+	nav_mesh.filter_walkable_low_height_spans = true
+
+	_nav_region = NavigationRegion3D.new()
+	_nav_region.name = "Museum Navigation"
+	_nav_region.navigation_mesh = nav_mesh
+	parent.add_child(_nav_region)
+	# Baking walks every collider in the museum — keep it off the frame that is
+	# already building the entire map.
+	call_deferred("_bake_navigation")
+
+
+## Attach navigation to a GeneratedMap that came from the saved scene rather
+## than from build_map(), reusing a serialized region if one is already there.
+func _ensure_navigation() -> void:
+	var root := get_node_or_null("GeneratedMap") as Node3D
+	if root == null:
+		return
+	var existing := root.get_node_or_null("Museum Navigation") as NavigationRegion3D
+	if existing == null:
+		_add_navigation(root)
+		return
+	_nav_region = existing
+	if not root.is_in_group(NAV_SOURCE_GROUP):
+		root.add_to_group(NAV_SOURCE_GROUP)
+	call_deferred("_bake_navigation")
+
+
+## Rebuild the navigation mesh. The bake itself runs on a worker thread, so
+## this is cheap enough to call again whenever the layout changes.
+func _bake_navigation() -> void:
+	if not is_instance_valid(_nav_region) or not _nav_region.is_inside_tree():
+		return
+	_nav_region.bake_navigation_mesh(true)
 
 
 func _add_player_spawn(parent: Node) -> void:
@@ -897,7 +974,7 @@ func _add_atrium_landmarks(parent: Node) -> void:
 		_cylinder(parent,"Колонна ротонды",p+Vector3(0,WALL_HEIGHT*.5,0),.42,WALL_HEIGHT,Color(.16,.16,.155))
 	for angle:float in [0.0,90.0,180.0,270.0]:
 		var r:=deg_to_rad(angle); var bench:=_box(parent,"Скамья ротонды",Vector3(cos(r)*8.4,.35,sin(r)*8.4),Vector3(2.5,.55,.68),Color(.19,.16,.13)); bench.rotation_degrees.y=-angle
-	_add_label(parent,"ЦЕНТР СДЕРЖИВАНИЯ",Vector3(0,3.0,4.8),Color(.34,.72,.62))
+	_add_label(parent,tr("EXHIBIT_CONTAINMENT_CORE"),Vector3(0,3.0,4.8),Color(.34,.72,.62))
 
 
 func _add_atrium_decor(parent: Node) -> void:
@@ -917,11 +994,11 @@ func _add_entrance_details(parent: Node) -> void:
 	_box(parent,"Ковёр тамбура",Vector3(0,.02,32),Vector3(4.6,.03,3.4),Color(.24,.07,.065),0,0,false)
 	_box(parent,"Стойка приёма",Vector3(-7.2,.58,25.5),Vector3(5.4,1.16,1.25),Color(.18,.14,.10))
 	_box(parent,"Столешница приёма",Vector3(-7.2,1.19,25.5),Vector3(5.7,.08,1.45),Color(.10,.085,.07),0,.3)
-	_add_label(parent,"ПРИЁМ ПОСЕТИТЕЛЕЙ",Vector3(-7.2,2.4,25.5),Color(.68,.64,.48))
+	_add_label(parent,tr("EXHIBIT_RECEPTION"),Vector3(-7.2,2.4,25.5),Color(.68,.64,.48))
 	_box(parent,"Шкафчики посетителей",Vector3(10.2,1.15,20),Vector3(1,2.3,4.8),Color(.16,.17,.18),0,.5)
-	_add_label(parent,"ГАРДЕРОБ · ДОСМОТР",Vector3(8.3,2.75,24.8),Color(.54,.70,.72))
+	_add_label(parent,tr("EXHIBIT_CLOAKROOM"),Vector3(8.3,2.75,24.8),Color(.54,.70,.72))
 	_night_entrance_door=_box(parent,"Ночная дверь главного входа",Vector3(0,4.85,34.2),Vector3(5.6,3.05,.22),Color(.055,.06,.065),0,.75)
-	_add_label(parent,"ГЛАВНЫЙ ВХОД · ЗАКРЫТИЕ 20:00",Vector3(0,3.18,34),Color(.42,.64,.54))
+	_add_label(parent,tr("EXHIBIT_MAIN_ENTRANCE"),Vector3(0,3.18,34),Color(.42,.64,.54))
 
 
 func _add_office_details(parent: Node) -> void:
@@ -1072,7 +1149,7 @@ func _add_exhibits(parent: Node) -> void:
 		Vector3(28, 0, -4.5), Color(0.36, 0.22, 0.46), "box", 0.0)
 	_add_exhibit(parent, "Levitating Column Exhibit", "levitating_column",
 		Vector3(35.5, 0, -4.5), Color(0.45, 0.45, 0.38), "cylinder", 0.0)
-	_add_label(parent, "Крыло A — направление гравитации нестабильно",
+	_add_label(parent, tr("EXHIBIT_WING_A_SIGN"),
 		Vector3(28, 2.9, 8.4), Color(0.62, 0.76, 0.98))
 
 	_add_exhibit(parent, "Broken Clock Exhibit", "broken_clock",
@@ -1081,7 +1158,7 @@ func _add_exhibits(parent: Node) -> void:
 		Vector3(0, 0, -27.5), Color(0.22, 0.45, 0.58), "drop", 0.6)
 	_add_exhibit(parent, "Time Loop Exhibit", "time_loop",
 		Vector3(8, 0, -27.5), Color(0.50, 0.35, 0.25), "torus", 0.5)
-	_add_label(parent, "Крыло B — ускорение, замедление, перемотка",
+	_add_label(parent, tr("EXHIBIT_WING_B_SIGN"),
 		Vector3(0, 2.9, -17), Color(0.96, 0.72, 0.48))
 
 	_add_exhibit(parent, "Portal Arch Exhibit", "portal_arch",
@@ -1090,7 +1167,7 @@ func _add_exhibits(parent: Node) -> void:
 		Vector3(18.5, 0, -27.5), Color(0.30, 0.40, 0.75), "sphere", 0.7)
 	_add_exhibit(parent, "Orrery Exhibit", "orrery",
 		Vector3(29.5, 0, -27.5), Color(0.55, 0.50, 0.30), "torus", 0.5)
-	_add_label(parent, "Крыло C — искривление пространства · доступ с ночи 2",
+	_add_label(parent, tr("EXHIBIT_WING_C_SIGN"),
 		Vector3(24, 2.9, -17), Color(0.55, 0.65, 0.95))
 
 	_add_exhibit(parent, "Superheavy Sphere Exhibit", "superheavy_sphere",
@@ -1108,7 +1185,7 @@ func _add_exhibits(parent: Node) -> void:
 			Vector3(0.16, 2.7, 0.16), Color(0.10, 0.11, 0.12), 0.0, 0.6)
 	_box(parent, "Mass Pendulum Crossbar", Vector3(58, 2.95, 4),
 		Vector3(2.6, 0.16, 0.16), Color(0.10, 0.11, 0.12), 0.0, 0.6)
-	_add_label(parent, "Крыло D — масса непостоянна · доступ с ночи 3",
+	_add_label(parent, tr("EXHIBIT_WING_D_SIGN"),
 		Vector3(52, 2.9, 7.2), Color(0.8, 0.65, 0.42))
 
 	# Per-exhibit accent lights follow the new gallery rows.
@@ -1302,7 +1379,7 @@ func _add_planetarium_details(parent: Node) -> void:
 		Vector3(1.6, 1.1, 0.7), Color(0.07, 0.08, 0.1))
 	_box(parent, "Projector Console Screen", c + Vector3(6.5, 1.02, 6.02),
 		Vector3(1.1, 0.4, 0.04), Color(0.05, 0.2, 0.16), 0.5, 0.0, false)
-	_add_label(parent, "Планетарий — проектор отключён", c + Vector3(0, 2.9, 6.0),
+	_add_label(parent, tr("EXHIBIT_PLANETARIUM_SIGN"), c + Vector3(0, 2.9, 6.0),
 		Color(0.55, 0.62, 0.95))
 
 
@@ -1347,7 +1424,7 @@ func _add_lab_details(parent: Node) -> void:
 		Vector3(1.0, 0.4, 1.0), Color(0.22, 0.19, 0.14))
 	_plane(parent, "Warning Tape", c + Vector3(7.6, 0.02, -2.5), Vector2(2.6, 2.6),
 		Color(0.6, 0.5, 0.1), true, false, 0.25, false)
-	_add_label(parent, "Реставрационная — экспонат 9 не трогать",
+	_add_label(parent, tr("EXHIBIT_LAB_SIGN"),
 		c + Vector3(0, 2.7, 0), Color(0.9, 0.6, 0.3))
 
 
@@ -1486,7 +1563,7 @@ func _add_furnishings(parent: Node) -> void:
 	_sphere(parent, "Hover Stone C", Vector3(28.0, 2.1, 4.9), 0.11,
 		Color(0.46, 0.48, 0.52))
 	_add_stanchions(parent, Vector3(28, 0, 5), 1.6, 6)
-	_add_label(parent, "Парящие камни", Vector3(28, 2.6, 5),
+	_add_label(parent, tr("EXHIBIT_HOVER_STONES"), Vector3(28, 2.6, 5),
 		Color(0.30, 0.35, 0.45))
 
 	# Time Wing: a row of wall clocks frozen at different hours.
@@ -1534,12 +1611,12 @@ func _add_more_interior(parent: Node) -> void:
 		Color(0.55, 0.57, 0.60))
 	if MuseumModels.place(parent, "meteorite", Vector3(26, 1.35, -7), 1.0, 0.0) == null:
 		_sphere(parent, "Meteorite", Vector3(26, 1.35, -7), 0.34, Color(0.25, 0.24, 0.26))
-	_add_label(parent, "Железный метеорит", Vector3(26, 2.3, -7), Color(0.30, 0.35, 0.45))
+	_add_label(parent, tr("EXHIBIT_IRON_METEORITE"), Vector3(26, 2.3, -7), Color(0.30, 0.35, 0.45))
 	_box(parent, "Apple Display Pedestal", Vector3(39, 0.45, -7), Vector3(0.8, 0.9, 0.8),
 		Color(0.55, 0.57, 0.60))
 	if MuseumModels.place(parent, "bronze_apple", Vector3(39, 1.5, -7), 1.0, 0.0) == null:
 		_sphere(parent, "Bronze Apple", Vector3(39, 1.5, -7), 0.16, Color(0.72, 0.50, 0.25))
-	_add_label(parent, "Первое падение", Vector3(39, 2.2, -7), Color(0.30, 0.35, 0.45))
+	_add_label(parent, tr("EXHIBIT_FIRST_FALL"), Vector3(39, 2.2, -7), Color(0.30, 0.35, 0.45))
 
 	# --- Time Wing: mini hourglass and sundial ---
 	# Moved to the south end of the wing: the exhibit row at z=-26..-30
@@ -1553,14 +1630,14 @@ func _add_more_interior(parent: Node) -> void:
 	hourglass_top.rotation_degrees = Vector3(180, 0, 0)
 	_glass_case(parent, "Mini Hourglass Case", Vector3(-11, 1.3, -18),
 		Vector3(0.7, 0.8, 0.7))
-	_add_label(parent, "Бесконечные песочные часы", Vector3(-11, 2.2, -18), Color(0.45, 0.38, 0.25))
+	_add_label(parent, tr("EXHIBIT_ENDLESS_HOURGLASS"), Vector3(-11, 2.2, -18), Color(0.45, 0.38, 0.25))
 	_cylinder(parent, "Солнечные часы Dais", Vector3(11, 0.3, -18), 0.8, 0.6,
 		Color(0.72, 0.66, 0.55))
 	if MuseumModels.place(parent, "sundial", Vector3(11, 0.6, -18), 1.0, 0.0) == null:
 		var gnomon := _box(parent, "Солнечные часы Gnomon", Vector3(11, 0.85, -18),
 			Vector3(0.06, 0.5, 0.3), Color(0.35, 0.30, 0.22), 0.0, 0.4, false)
 		gnomon.rotation_degrees = Vector3(0, 0, -35)
-	_add_label(parent, "Солнечные часы", Vector3(11, 1.8, -18), Color(0.45, 0.38, 0.25))
+	_add_label(parent, tr("EXHIBIT_SUNDIAL"), Vector3(11, 1.8, -18), Color(0.45, 0.38, 0.25))
 
 	# --- Archive: central catalogue island ---
 	_box(parent, "Archive Catalogue Table", Vector3(-25, 0.72, -14.0), Vector3(2.4, 0.08, 0.9),
@@ -1711,7 +1788,7 @@ func _add_street_extras(parent: Node) -> void:
 		Color(0.18, 0.19, 0.21))
 	_box(parent, "Hours Sign Board", Vector3(4.8, 1.55, 52.0), Vector3(1.5, 0.7, 0.06),
 		Color(0.88, 0.86, 0.80), 0.1, 0.0, false)
-	_add_label(parent, "ОТКРЫТО 09:00–20:00", Vector3(4.8, 1.55, 51.9),
+	_add_label(parent, tr("EXHIBIT_OPEN_HOURS"), Vector3(4.8, 1.55, 51.9),
 		Color(0.20, 0.24, 0.20))
 	for i in range(4):
 		_torus(parent, "Bike Rack Hoop %d" % i,
@@ -1827,7 +1904,7 @@ func _start_intro() -> void:
 	_intro_overlay.add_child(_intro_title)
 
 	var skip_hint := Label.new()
-	skip_hint.text = "ПРОБЕЛ / ENTER / A — пропустить"
+	skip_hint.text = tr("HUD_INTRO_SKIP")
 	skip_hint.anchor_right = 0.985
 	skip_hint.anchor_top = 0.90
 	skip_hint.anchor_bottom = 0.985
@@ -1855,11 +1932,11 @@ func _update_intro(delta: float) -> void:
 	# Each shot: [start_pos, end_pos, look_target, caption].
 	var shots := [
 		[Vector3(26, 13, 63), Vector3(15, 9, 58), Vector3(0, 3.0, 35),
-			"МУЗЕЙ ЕСТЕСТВЕННОЙ ФИЛОСОФИИ"],
+			tr("HUD_INTRO_MUSEUM")],
 		[Vector3(-12, 1.5, 53), Vector3(-5, 1.7, 48), Vector3(0, 3.4, 35.2),
-			"Первая ночь дежурства"],
+			tr("HUD_INTRO_FIRST_NIGHT")],
 		[Vector3(0, 2.4, 53), Vector3(0, 1.75, 46.6), Vector3(0, 1.8, 35),
-			"Проверьте залы до наступления темноты"],
+			tr("HUD_INTRO_CHECK_HALLS")],
 	]
 	var shot_length := INTRO_LENGTH / float(shots.size())
 	var idx := clampi(int(_intro_time / shot_length), 0, shots.size() - 1)
@@ -1934,6 +2011,10 @@ func _ready() -> void:
 	# transforms must survive editor reloads and scene saves.
 	if get_node_or_null("GeneratedMap") == null:
 		build_map()
+	else:
+		# A layout saved into the scene skips build_map(), but the Curator still
+		# needs a navigation mesh over whatever geometry that layout contains.
+		_ensure_navigation()
 	# In game (not in the editor) the map opens with a short intro cutscene.
 	if not Engine.is_editor_hint():
 		call_deferred("_start_intro")
@@ -2054,6 +2135,7 @@ func build_map() -> void:
 	_add_cameras(map_root)
 	_add_locked_doors(map_root)
 	_add_player_spawn(map_root)
+	_add_navigation(map_root)
 
 	if Engine.is_editor_hint():
 		_make_generated_map_editable(map_root)

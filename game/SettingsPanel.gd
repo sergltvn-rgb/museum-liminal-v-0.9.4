@@ -112,17 +112,17 @@ func _header() -> Control:
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(titles)
 	var eyebrow := Label.new()
-	eyebrow.text = "СИСТЕМА МУЗЕЯ  /  КОНФИГУРАЦИЯ"
+	eyebrow.text = tr("SET_EYEBROW")
 	eyebrow.add_theme_font_size_override("font_size", 12)
 	eyebrow.add_theme_color_override("font_color", ACCENT)
 	titles.add_child(eyebrow)
 	var title := Label.new()
-	title.text = "Настройки"
+	title.text = tr("MENU_SETTINGS")
 	title.add_theme_font_size_override("font_size", 34)
 	title.add_theme_color_override("font_color", TEXT)
 	titles.add_child(title)
 	var close := Button.new()
-	close.text = "ESC   НАЗАД"
+	close.text = tr("SET_BACK")
 	close.custom_minimum_size = Vector2(142, 44)
 	_style_button(close, false)
 	close.pressed.connect(func() -> void: closed.emit())
@@ -142,7 +142,7 @@ func _sidebar() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
-	var names := ["Аудио", "Графика", "Управление", "Доступность"]
+	var names := [tr("SET_TAB_AUDIO"), tr("SET_TAB_GRAPHICS"), tr("SET_TAB_CONTROLS"), tr("SET_TAB_ACCESS")]
 	var icons := ["◉", "◇", "⌁", "＋"]
 	for i in range(names.size()):
 		var button := Button.new()
@@ -158,7 +158,7 @@ func _sidebar() -> Control:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(spacer)
 	var hint := Label.new()
-	hint.text = "Изменения сохраняются\nавтоматически"
+	hint.text = tr("SET_AUTOSAVE_HINT")
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_color", MUTED)
 	box.add_child(hint)
@@ -181,59 +181,59 @@ func _show_tab(index: int) -> void:
 
 
 func _build_audio() -> void:
-	_section_title("Аудио", "Настройте атмосферу и громкость музея")
-	_slider_row("Общая громкость", "Музыка, окружение и звуковые эффекты", "volume",
+	_section_title(tr("SET_TAB_AUDIO"), tr("SET_AUDIO_DESC"))
+	_slider_row(tr("SET_MASTER_VOLUME"), tr("SET_MASTER_VOLUME_DESC"), "volume",
 		_settings.master_volume * 100.0, 0.0, 100.0, 1.0,
 		func(value: float) -> void: _settings.set_master_volume(value / 100.0))
-	_info_card("ДИНАМИЧЕСКИЙ ЗВУК", "Тревога, гул аномалий и шаги используют пространственное позиционирование. Для лучшего эффекта рекомендуется использовать наушники.")
+	_info_card(tr("SET_CARD_AUDIO_TITLE"), tr("SET_CARD_AUDIO_BODY"))
 
 
 func _build_graphics() -> void:
-	_section_title("Графика", "Качество изображения и режим отображения")
-	_option_row("Качество эффектов", "Туман, свечение и контактные тени",
-		["Низкое", "Среднее", "Высокое"], _settings.quality_preset,
+	_section_title(tr("SET_TAB_GRAPHICS"), tr("SET_GRAPHICS_DESC"))
+	_option_row(tr("SET_EFFECT_QUALITY"), tr("SET_EFFECT_QUALITY_DESC"),
+		[tr("SET_QUALITY_LOW"), tr("SET_QUALITY_MEDIUM"), tr("SET_QUALITY_HIGH")], _settings.quality_preset,
 		func(index: int) -> void: _settings.set_quality_preset(index))
-	_option_row("Разрешение окна", "Размер тестового и оконного режима",
+	_option_row(tr("SET_RESOLUTION"), tr("SET_RESOLUTION_DESC"),
 		["1280 × 720", "1600 × 900", "1920 × 1080"], _settings.resolution_index,
 		func(index: int) -> void: _settings.set_resolution_index(index))
-	_toggle_row("Полноэкранный режим", "Использовать весь доступный экран", _settings.fullscreen,
+	_toggle_row(tr("SET_FULLSCREEN"), tr("SET_FULLSCREEN_DESC"), _settings.fullscreen,
 		func(value: bool) -> void: _settings.set_fullscreen(value))
-	_toggle_row("Вертикальная синхронизация", "Устраняет разрывы изображения", _settings.vsync,
+	_toggle_row(tr("SET_VSYNC"), tr("SET_VSYNC_DESC"), _settings.vsync,
 		func(value: bool) -> void: _settings.set_vsync(value))
-	_info_card("РЕКОМЕНДАЦИЯ", "Высокое качество включает объёмный туман. На встроенной графике используйте средний профиль.")
+	_info_card(tr("SET_CARD_GRAPHICS_TITLE"), tr("SET_CARD_GRAPHICS_BODY"))
 
 
 func _build_controls() -> void:
-	_section_title("Управление", "Мышь, клавиатура и геймпад")
-	_slider_row("Чувствительность мыши", "Скорость обзора от первого лица", "sensitivity",
+	_section_title(tr("SET_TAB_CONTROLS"), tr("SET_CONTROLS_DESC"))
+	_slider_row(tr("SET_MOUSE_SENS"), tr("SET_MOUSE_SENS_DESC"), "sensitivity",
 		_settings.mouse_sensitivity * 100000.0, 100.0, 600.0, 5.0,
 		func(value: float) -> void: _settings.set_mouse_sensitivity(value / 100000.0))
 	var keys := [
-		["Движение", "WASD", "Левый стик"], ["Взаимодействие", "E", "X"],
-		["Планшет", "TAB", "Y"], ["Бросить прибор", "G", "B"],
-		["Пауза", "ESC", "START"],
+		[tr("SET_BIND_MOVE"), "WASD", tr("SET_PAD_LEFT_STICK")], [tr("SET_BIND_INTERACT"), "E", "X"],
+		[tr("SET_BIND_TABLET"), "TAB", "Y"], [tr("SET_BIND_DROP"), "G", "B"],
+		[tr("SET_BIND_PAUSE"), "ESC", "START"],
 	]
 	for key in keys:
 		_key_row(key[0], key[1], key[2])
 
 
 func _build_accessibility() -> void:
-	_section_title("Доступность", "Снизьте визуальную нагрузку и улучшите читаемость")
-	_option_row("Язык / Language", "Язык интерфейса и субтитров", ["Русский", "English"],
+	_section_title(tr("SET_TAB_ACCESS"), tr("SET_ACCESS_DESC"))
+	_option_row(tr("ACCESS_LANGUAGE"), tr("SET_LANGUAGE_DESC"), ["Русский", "English"],
 		1 if _settings.language == "en" else 0,
 		func(index: int) -> void: _settings.set_language("en" if index == 1 else "ru"))
-	_toggle_row("Субтитры", "Показывает текст для речи и важных звуков", _settings.subtitles,
+	_toggle_row(tr("ACCESS_SUBTITLES"), tr("SET_SUBTITLES_DESC"), _settings.subtitles,
 		func(value: bool) -> void: _settings.set_subtitles(value))
-	_toggle_row("Уменьшить мерцание", "Смягчает аварийный свет и эффект пустоты", _settings.reduced_flashes,
+	_toggle_row(tr("ACCESS_REDUCED_FLASHES"), tr("SET_REDUCED_FLASHES_DESC"), _settings.reduced_flashes,
 		func(value: bool) -> void: _settings.set_reduced_flashes(value))
-	_toggle_row("Уменьшить движение", "Отключает тряску камеры и резкие переходы", _settings.reduced_motion,
+	_toggle_row(tr("ACCESS_REDUCED_MOTION"), tr("SET_REDUCED_MOTION_DESC"), _settings.reduced_motion,
 		func(value: bool) -> void: _settings.set_reduced_motion(value))
-	_toggle_row("Высокий контраст", "Усиливает различимость интерфейса и целей", _settings.high_contrast,
+	_toggle_row(tr("ACCESS_HIGH_CONTRAST"), tr("SET_HIGH_CONTRAST_DESC"), _settings.high_contrast,
 		func(value: bool) -> void: _settings.set_high_contrast(value))
-	_toggle_row("Крупный интерфейс", "Увеличивает масштаб текста и элементов", _settings.large_text,
+	_toggle_row(tr("ACCESS_LARGE_UI"), tr("SET_LARGE_UI_DESC"), _settings.large_text,
 		func(value: bool) -> void: _settings.set_large_text(value))
 	var reset := Button.new()
-	reset.text = "Восстановить настройки по умолчанию"
+	reset.text = tr("SET_RESET_DEFAULTS")
 	reset.custom_minimum_size.y = 46
 	_style_button(reset, false)
 	reset.pressed.connect(_reset_defaults)
@@ -286,12 +286,12 @@ func _toggle_row(title_text: String, description: String, value: bool,
 	var text_box := _row_text(row, title_text, description)
 	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var toggle := CheckButton.new()
-	toggle.text = "ВКЛ" if value else "ВЫКЛ"
+	toggle.text = tr("SET_ON") if value else tr("SET_OFF")
 	toggle.button_pressed = value
 	toggle.custom_minimum_size = Vector2(92, 42)
 	toggle.add_theme_color_override("font_color", ACCENT)
 	toggle.toggled.connect(func(on: bool) -> void:
-		toggle.text = "ВКЛ" if on else "ВЫКЛ"
+		toggle.text = tr("SET_ON") if on else tr("SET_OFF")
 		callback.call(on))
 	row.add_child(toggle)
 

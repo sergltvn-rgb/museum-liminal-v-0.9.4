@@ -10,7 +10,6 @@ const EFFECT_RADIUS := 15.0
 var _game: Node
 var _map: Node3D
 var _player: CharacterBody3D
-var _camera: Camera3D
 var _tablet: Node
 var _flashlight: SpotLight3D
 var _active := false
@@ -26,12 +25,11 @@ var _base_walk := 4.5
 var _base_run := 7.5
 var _base_flash_energy := 2.4
 var _effect_label: Label
-var _watcher: CharacterBody3D
+var _watcher: CuratorMonster
 var _scale_controller: Node
 var _incident_origin := Vector3.ZERO
 var _incident_name := ""
 var _rift_visual: Node3D
-var _watcher_agent: NavigationAgent3D
 var _chalk_marks: Array[MeshInstance3D] = []
 var _chalk_index := 0
 var _last_chalk_position := Vector3.ZERO
@@ -57,7 +55,6 @@ func _initialize() -> void:
 	if museum != null:
 		_map = museum.get_node_or_null("GeneratedMap") as Node3D
 	if _player != null:
-		_camera = _player.get_node_or_null("Player Camera") as Camera3D
 		_flashlight = _player.get_node_or_null("Player Camera/Player Flashlight") as SpotLight3D
 		_base_gravity = float(_player.get("gravity"))
 		_base_walk = float(_player.get("walk_speed"))
@@ -109,10 +106,12 @@ func _begin_anomaly(id: String) -> void:
 	_build_rift_visual()
 	if _watcher != null:
 		_watcher.visible = _night >= 2
-		_watcher.global_position = Vector3(24, 0.0, -27) if _night == 2 else Vector3(53, 0.0, -5)
+		# Night 2 seeds the Curator in Space Wing C, night 3 in Mass Wing D —
+		# both are unlocked by the time it spawns there.
+		_watcher.reset_at(Vector3(24, 0.0, -27) if _night == 2 else Vector3(53, 0.0, -5))
 	if not _scan_complete:
 		var cam_name := "CAM %02d" % (_required_camera + 1)
-		_game.set_objective("cctv", "%s: подтвердите источник через %s в офисе охраны (%.1f сек.)." % [_incident_name, cam_name, SCAN_TIME], 40)
+		_game.set_objective("cctv", tr("OBJ_CCTV_CONFIRM") % [_incident_name, cam_name, SCAN_TIME], 40)
 	_update_effect_label()
 
 
@@ -126,6 +125,7 @@ func _end_anomaly() -> void:
 		_effect_label.visible = false
 	if _watcher != null:
 		_watcher.visible = false
+		_watcher.active = false
 	if is_instance_valid(_rift_visual):
 		_rift_visual.queue_free()
 	_rift_visual = null
@@ -145,7 +145,7 @@ func _update_anomaly(delta: float) -> void:
 		"void_rift":
 			_update_void()
 	_update_player_scale()
-	_update_watcher(delta)
+	_sync_watcher()
 	_update_effect_label()
 
 
@@ -199,7 +199,7 @@ func _update_radiation(delta: float) -> void:
 	else:
 		_exposure = maxf(0.0, _exposure - 8.0 * delta)
 	if _exposure >= 100.0:
-		_game.call("_flash", "КРИТИЧЕСКАЯ ДОЗА ОБЛУЧЕНИЯ", Color(1.0, 0.25, 0.15))
+		_game.call("_flash", tr("HUD_CRITICAL_DOSE"), Color(1.0, 0.25, 0.15))
 		_game.call("_fail")
 
 
@@ -230,7 +230,7 @@ func _update_scan(delta: float) -> void:
 		_scan_progress += delta
 		if _scan_progress >= SCAN_TIME:
 			_scan_complete = true
-			_game.call("_flash", "ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.", Color(0.45, 1.0, 0.65))
+			_game.call("_flash", tr("HUD_SOURCE_CONFIRMED"), Color(0.45, 1.0, 0.65))
 			_game.clear_objective("cctv")
 	else:
 		_scan_progress = maxf(0.0, _scan_progress - delta * 0.5)
@@ -241,31 +241,20 @@ func can_resolve() -> bool:
 		return true
 	var remaining := maxf(0.0, SCAN_TIME - _scan_progress)
 	var cam_name := "CAM %02d" % (_required_camera + 1)
-	_game.call("_flash", "Сначала подтвердите источник через %s — ещё %.1f сек." % [cam_name, remaining], Color(1.0, 0.65, 0.3))
+	_game.call("_flash", tr("HUD_CONFIRM_SOURCE_FIRST") % [cam_name, remaining], Color(1.0, 0.65, 0.3))
 	return false
 
 
-func _update_watcher(_delta:float)->void:
-	if not is_instance_valid(_watcher) or not _watcher.visible or _camera==null:return
-	if bool(_game.get("_trial_active")):_watcher.velocity=Vector3.ZERO;return
-	var target:=_player.global_position; var head:=_watcher.global_position+Vector3.UP*1.5
-	if _camera.is_position_in_frustum(head) and _clear_view(head):_watcher.velocity=Vector3.ZERO;return
-	var direction:=target-_watcher.global_position; direction.y=0
-	if direction.length()>.1:
-		var chase_speed := 2.25+.55*float(_night-1)
-		if _carried_tool()=="null_lantern" and _watcher.global_position.distance_to(target)<14.0:
-			# Нуль-фонарь отталкивает Наблюдателя.
-			chase_speed *= 0.45
-		_watcher.velocity=direction.normalized()*chase_speed; _watcher.move_and_slide()
-		_watcher.look_at(Vector3(target.x,_watcher.global_position.y,target.z),Vector3.UP)
-	if _watcher.global_position.distance_to(target)<1.25:_game.call("_flash","НАБЛЮДАТЕЛЬ ДОГНАЛ ВАС",Color(1,.2,.15));_game.call("_fail")
-
-
-func _clear_view(target: Vector3) -> bool:
-	var query := PhysicsRayQueryParameters3D.create(_camera.global_position, target)
-	if _player is PhysicsBody3D: query.exclude = [(_player as PhysicsBody3D).get_rid()]
-	var hit:=_camera.get_world_3d().direct_space_state.intersect_ray(query)
-	return hit.is_empty() or hit.get("collider")==_watcher
+## Push per-frame state onto the Curator. The chase itself runs in the
+## Curator's own _physics_process — driving move_and_slide() from here made
+## its speed scale with the render framerate.
+func _sync_watcher() -> void:
+	if not is_instance_valid(_watcher):
+		return
+	_watcher.night = _night
+	_watcher.slowed = _carried_tool() == "null_lantern"
+	# The museum is frozen while the operator is inside a pocket dimension.
+	_watcher.active = _watcher.visible and not bool(_game.get("_trial_active"))
 
 
 func _restore_player() -> void:
@@ -306,28 +295,28 @@ func _update_effect_label() -> void:
 	_effect_label.visible = _active
 	var effect := ""
 	match _anomaly:
-		"gravity_surge": effect = "ГРАВИТАЦИЯ: %.0f%%" % (float(_player.get("gravity")) / _base_gravity * 100.0)
-		"temporal_drift": effect = "ТЕМПОРАЛЬНЫЙ СДВИГ: %.0f%%" % (float(_player.get("walk_speed")) / _base_walk * 100.0)
-		"radiation_bloom": effect = "ДОЗА: %.0f%%" % _exposure
-		"void_rift": effect = "СВЕТОВОЙ КОНТУР НЕСТАБИЛЕН"
-		"echo_chamber": effect = "РЕЗОНАНС НАРАСТАЕТ"
-		"glass_bridge": effect = "ОПОРНАЯ ГЕОМЕТРИЯ НЕСТАБИЛЬНА"
-		"mirror_maze": effect = "ОТРАЖЕНИЯ ЛГУТ"
-		"yellow_halls": effect = "ЛИМИНАЛЬНЫЙ ФОН: ГУЛ ЛАМП"
-		"scrap_run": effect = "ЦЕННОСТИ СМЕЩЕНЫ"
-		"ascent": effect = "ТУМАН ПОДНИМАЕТСЯ"
+		"gravity_surge": effect = tr("HUD_EFFECT_GRAVITY") % (float(_player.get("gravity")) / _base_gravity * 100.0)
+		"temporal_drift": effect = tr("HUD_EFFECT_TEMPORAL") % (float(_player.get("walk_speed")) / _base_walk * 100.0)
+		"radiation_bloom": effect = tr("HUD_EFFECT_DOSE") % _exposure
+		"void_rift": effect = tr("HUD_EFFECT_VOID")
+		"echo_chamber": effect = tr("HUD_EFFECT_ECHO")
+		"glass_bridge": effect = tr("HUD_EFFECT_GLASS")
+		"mirror_maze": effect = tr("HUD_EFFECT_MIRROR")
+		"yellow_halls": effect = tr("HUD_EFFECT_YELLOW")
+		"scrap_run": effect = tr("HUD_EFFECT_SCRAP")
+		"ascent": effect = tr("HUD_EFFECT_ASCENT")
 	match _carried_tool():
 		"spectral_lens":
-			effect += "\nЛИНЗА: разрыв в %d м" % int(_player.global_position.distance_to(_incident_origin))
+			effect += "\n" + (tr("HUD_TOOL_LENS") % int(_player.global_position.distance_to(_incident_origin)))
 		"thread_spool":
-			effect += "\nНИТЬ ВОЗВРАТА: %d м до разрыва" % int(_player.global_position.distance_to(_incident_origin))
+			effect += "\n" + (tr("HUD_TOOL_THREAD") % int(_player.global_position.distance_to(_incident_origin)))
 		"phase_prism":
-			effect += "\nПРИЗМА: влияние аномалии ослаблено"
+			effect += "\n" + tr("HUD_TOOL_PRISM")
 		"null_lantern":
-			effect += "\nНУЛЬ-ФОНАРЬ: Наблюдатель замедлен рядом с вами"
+			effect += "\n" + tr("HUD_TOOL_LANTERN")
 	var scan := ""
 	if not _scan_complete and _required_camera >= 0:
-		scan = "\nСКАНИРОВАНИЕ: %.0f%%" % (100.0 * _scan_progress / SCAN_TIME)
+		scan = "\n" + (tr("HUD_SCAN_PROGRESS") % (100.0 * _scan_progress / SCAN_TIME))
 	_effect_label.text = effect + scan
 
 
@@ -424,16 +413,15 @@ func _animate_rift(delta: float) -> void:
 func _build_watcher() -> void:
 	if _map == null:
 		return
-	var curator_script := load("res://game/CuratorMonster.gd")
-	_watcher = curator_script.new() as CharacterBody3D
+	# The Curator owns its own navigation agent and movement; this node only
+	# decides *when* it hunts and what a successful catch means.
+	_watcher = CuratorMonster.new()
 	_watcher.name = "The Curator"
 	_watcher.visible = false
 	_map.add_child(_watcher)
-	_watcher_agent = NavigationAgent3D.new()
-	_watcher_agent.name = "Curator Navigation Agent"
-	_watcher_agent.path_desired_distance = 0.6
-	_watcher_agent.target_desired_distance = 1.0
-	_watcher_agent.radius = 0.42
-	_watcher_agent.height = 2.3
-	_watcher_agent.avoidance_enabled = true
-	_watcher.add_child(_watcher_agent)
+	_watcher.caught_player.connect(_on_watcher_caught)
+
+
+func _on_watcher_caught() -> void:
+	_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), Color(1, .2, .15))
+	_game.call("_fail")

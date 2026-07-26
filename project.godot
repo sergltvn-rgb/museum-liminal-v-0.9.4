@@ -16,6 +16,10 @@ run/main_scene="res://scenes/FirstMuseumMap.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
+
 [display]
 
 window/size/viewport_width=1600
@@ -25,10 +29,14 @@ window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_ai/plugin.cfg")
+
 [internationalization]
 
-locale/fallback="ru"
 locale/translations=PackedStringArray("res://localization/game.en.translation", "res://localization/game.ru.translation")
+locale/fallback="ru"
 
 [physics]
 

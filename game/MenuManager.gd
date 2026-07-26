@@ -11,8 +11,8 @@ const SAVE_PATH := "user://museum_save.cfg"
 const TUTORIAL_PROGRESS_PATH := "user://museum_progress.cfg"
 const TUTORIAL_SCENE := "res://scenes/TutorialPrologue.tscn"
 const SettingsPanelScript := preload("res://game/SettingsPanel.gd")
-const TITLE_TEXT := "ПЕРВЫЙ МУЗЕЙ"
-const SUBTITLE_TEXT := "ночная смена"
+const TITLE_TEXT := "MENU_TITLE"
+const SUBTITLE_TEXT := "MENU_SUBTITLE_SHIFT"
 
 var _layer: CanvasLayer
 var _backdrop: ColorRect
@@ -68,9 +68,9 @@ func _open_main_menu() -> void:
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if _tutorial_done():
-		_start_button.text = "Продолжить — Ночь %d" % _saved_night()
+		_start_button.text = tr("MENU_CONTINUE_NIGHT") % _saved_night()
 	else:
-		_start_button.text = "НОВОЕ: пройти обучение"
+		_start_button.text = tr("MENU_NEW_TUTORIAL")
 	if _settings_panel != null:
 		_settings_panel.visible = false
 	if _feedback_panel != null:
@@ -192,16 +192,16 @@ func _submit_feedback() -> void:
 	var url := _fb_url_input.text.strip_edges()
 	
 	if comment.is_empty():
-		_fb_status_label.text = "Введите текст отзыва!"
+		_fb_status_label.text = tr("MENU_FB_ERR_COMMENT")
 		_fb_status_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 		return
 		
 	if url.is_empty():
-		_fb_status_label.text = "Пожалуйста, введите URL вебхука!"
+		_fb_status_label.text = tr("MENU_FB_ERR_URL")
 		_fb_status_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 		return
 		
-	_fb_status_label.text = "Отправка..."
+	_fb_status_label.text = tr("MENU_FB_SENDING")
 	_fb_status_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	_fb_submit_btn.disabled = true
 	
@@ -247,7 +247,7 @@ func _build_ui() -> void:
 	_layer.add_child(_backdrop)
 
 	var title := Label.new()
-	title.text = TITLE_TEXT
+	title.text = tr(TITLE_TEXT)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 54)
 	title.add_theme_color_override("font_color", Color(0.85, 0.87, 0.9))
@@ -258,7 +258,7 @@ func _build_ui() -> void:
 	_backdrop.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "%s · RELEASE 1.0 · ПРОЛОГ И 10 ИЗМЕРЕНИЙ" % SUBTITLE_TEXT
+	subtitle.text = tr("MENU_SUBTITLE_FMT") % tr(SUBTITLE_TEXT)
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 22)
 	subtitle.add_theme_color_override("font_color", Color(0.5, 0.55, 0.6))
@@ -269,19 +269,19 @@ func _build_ui() -> void:
 	_backdrop.add_child(subtitle)
 
 	_main_box = _make_box()
-	_start_button = _add_button(_main_box, "Начать смену", _start_game)
-	_add_button(_main_box, "Обучение", _open_tutorial)
-	_add_button(_main_box, "Настройки", _open_settings)
-	_add_button(_main_box, "Обратная связь (Notion)", _open_feedback_menu)
-	_add_button(_main_box, "Сбросить прогресс", _reset_progress)
-	_add_button(_main_box, "Выход", _quit)
+	_start_button = _add_button(_main_box, tr("MENU_START"), _start_game)
+	_add_button(_main_box, tr("MENU_TUTORIAL"), _open_tutorial)
+	_add_button(_main_box, tr("MENU_SETTINGS"), _open_settings)
+	_add_button(_main_box, tr("MENU_FEEDBACK"), _open_feedback_menu)
+	_add_button(_main_box, tr("MENU_RESET_PROGRESS"), _reset_progress)
+	_add_button(_main_box, tr("MENU_QUIT"), _quit)
 
 	_pause_box = _make_box()
-	_add_button(_pause_box, "Продолжить", _resume)
-	_add_button(_pause_box, "Настройки", _open_settings)
-	_add_button(_pause_box, "Обратная связь (Notion)", _open_feedback_menu)
-	_add_button(_pause_box, "Главное меню", _to_main_menu)
-	_add_button(_pause_box, "Выход", _quit)
+	_add_button(_pause_box, tr("MENU_RESUME"), _resume)
+	_add_button(_pause_box, tr("MENU_SETTINGS"), _open_settings)
+	_add_button(_pause_box, tr("MENU_FEEDBACK"), _open_feedback_menu)
+	_add_button(_pause_box, tr("MENU_MAIN_MENU"), _to_main_menu)
+	_add_button(_pause_box, tr("MENU_QUIT"), _quit)
 
 	# Settings
 	_settings_panel = SettingsPanelScript.new()
@@ -325,37 +325,37 @@ func _build_feedback_panel() -> void:
 	_feedback_panel.add_child(layout)
 
 	var fb_title := Label.new()
-	fb_title.text = "Обратная связь (Notion)"
+	fb_title.text = tr("MENU_FEEDBACK")
 	fb_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	fb_title.add_theme_font_size_override("font_size", 22)
 	layout.add_child(fb_title)
 
 	# Name
 	var name_label := Label.new()
-	name_label.text = "Ваше имя:"
+	name_label.text = tr("MENU_FB_NAME")
 	name_label.add_theme_font_size_override("font_size", 14)
 	layout.add_child(name_label)
 
 	_fb_name_input = LineEdit.new()
-	_fb_name_input.placeholder_text = "Игрок"
+	_fb_name_input.placeholder_text = tr("MENU_FB_NAME_HINT")
 	_fb_name_input.focus_mode = Control.FOCUS_ALL
 	layout.add_child(_fb_name_input)
 
 	# Comment
 	var comment_label := Label.new()
-	comment_label.text = "Отзыв / Описание бага:"
+	comment_label.text = tr("MENU_FB_COMMENT")
 	comment_label.add_theme_font_size_override("font_size", 14)
 	layout.add_child(comment_label)
 
 	_fb_comment_input = TextEdit.new()
-	_fb_comment_input.placeholder_text = "Опишите ваши впечатления или найденную ошибку..."
+	_fb_comment_input.placeholder_text = tr("MENU_FB_COMMENT_HINT")
 	_fb_comment_input.custom_minimum_size = Vector2(0, 120)
 	_fb_comment_input.focus_mode = Control.FOCUS_ALL
 	layout.add_child(_fb_comment_input)
 
 	# Webhook URL Input
 	var url_label := Label.new()
-	url_label.text = "URL вебхука Notion Worker:"
+	url_label.text = tr("MENU_FB_URL")
 	url_label.add_theme_font_size_override("font_size", 12)
 	url_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	layout.add_child(url_label)
@@ -378,14 +378,14 @@ func _build_feedback_panel() -> void:
 	layout.add_child(btn_layout)
 
 	_fb_submit_btn = Button.new()
-	_fb_submit_btn.text = "Отправить"
+	_fb_submit_btn.text = tr("MENU_FB_SUBMIT")
 	_fb_submit_btn.focus_mode = Control.FOCUS_NONE
 	_fb_submit_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_fb_submit_btn.pressed.connect(_submit_feedback)
 	btn_layout.add_child(_fb_submit_btn)
 
 	var back_btn := Button.new()
-	back_btn.text = "Назад"
+	back_btn.text = tr("MENU_BACK")
 	back_btn.focus_mode = Control.FOCUS_NONE
 	back_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	back_btn.pressed.connect(_close_feedback_menu)
