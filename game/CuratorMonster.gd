@@ -65,16 +65,38 @@ const STEP_VOLUME_DB := -6.0
 const STEP_PITCH := 0.58
 const STEP_SOUNDS := ["res://audio/footstep1.wav", "res://audio/footstep2.wav",
 	"res://audio/footstep3.wav"]
-## The catch: land.wav dropped almost an octave and a half, so the last thing
-## the player hears is the claw closing rather than the generic fail sting.
-const CATCH_SOUND := "res://audio/land.wav"
-const CATCH_PITCH := 0.42
-const CATCH_VOLUME_DB := -1.0
-const BREATH_VOLUME_DB := -9.0
-## Synthesised breath loop (see _build_breath_stream): sample rate, and the
-## length of one inhale/exhale in seconds.
-const BREATH_RATE := 16000
-const BREATH_CYCLE := 3.4
+## The catch. This used to be land.wav dropped to 0.42 because res://audio/ had
+## nothing better; curator_catch is a purpose-made impact stinger, so it plays at
+## its natural pitch. It decodes at -21.8 dBFS RMS / -4.6 dBFS peak, about 15 dB
+## hotter than the pitched-down landing thud it replaces, so the level has to
+## come down even though the sound gets louder: at CATCH_DISTANCE the player's
+## 3D gain is capped at max_db (+3), which puts -4 dB at -22.8 dBFS RMS out.
+## That is within a decibel of fail.wav (-23.9 dBFS RMS, played at unity by
+## GameManager a moment later), so the seize and the sting that follows it land
+## at the same weight, with 5.6 dB of peak headroom left between them.
+const CATCH_SOUND := "res://audio/generated/curator_catch.mp3"
+const CATCH_VOLUME_DB := -4.0
+## The breath. A real 5 s recording; the loop flag lives in its .import file.
+## It decodes at -24.3 dBFS RMS / -3.3 dBFS peak, 10.2 dB quieter than the
+## synthesised loop it replaces (-14.1 dBFS RMS, normalised to the ceiling), so
+## -3 dB here lands about 4 dB under where the synth sat: still the clearest
+## proximity cue the Curator has, but a recording carries its own detail and does
+## not have to shout to be read. At 5 m that is -31.2 dBFS RMS out; at the
+## unit_size distance and closer it peaks at -3.3 dBFS, which is the moment the
+## player has roughly a second left anyway.
+const BREATH_SOUND := "res://audio/generated/curator_breath.mp3"
+const BREATH_VOLUME_DB := -3.0
+
+## Music tension, handed to AudioManager.set_tension() every physics tick.
+##
+## The dread layer is deliberately the FIRST warning: it starts lifting at 26 m,
+## outside HEAR_DISTANCE, so the music knows before the footsteps do. It reaches
+## full at 3 m, which at chase speed is the last half-second before CATCH_DISTANCE.
+## Between the two it is linear in distance, i.e. linear in amplitude, so "closer
+## is louder" with no curve to explain. AudioManager owns the smoothing; the
+## value handed over here is allowed to be as jumpy as the geometry is.
+const TENSION_FAR := 26.0
+const TENSION_NEAR := 3.0
 
 ## Set by GameplayEnhancements: false while no anomaly is running, during a
 ## pocket-dimension trial, or before night 2.
@@ -93,6 +115,7 @@ var _breath: AudioStreamPlayer3D = null
 var _step_streams: Array[AudioStream] = []
 var _catch_stream: AudioStream = null
 var _step_left := STEP_DISTANCE
+var _audio_manager: Node = null
 
 
 func _ready() -> void:
@@ -141,6 +164,11 @@ func _physics_process(delta: float) -> void:
 	if not active or _caught or not _resolve_player():
 		velocity = Vector3.ZERO
 		_set_breathing(false)
+		# Not hunting is zero dread. This has to be pushed every tick and not
+		# only on the transition: AudioManager eases towards whatever it was last
+		# told, so a target that stops arriving would freeze the music wherever
+		# the Curator happened to leave it.
+		_report_tension(0.0)
 		return
 
 	var target := _player.global_position
@@ -148,6 +176,12 @@ func _physics_process(delta: float) -> void:
 	# stands still under observation the breath is the only thing left telling
 	# the player it is still there, and it keeps working behind them.
 	_set_breathing(true)
+	# Distance, not path length: the dread layer is about how close the thing is
+	# to the player in the room, which is what the player can feel. It keeps
+	# rising while the weeping-angel rule has the Curator frozen a metre away,
+	# because standing still and being stared at is the tense part.
+	_report_tension(clampf(inverse_lerp(TENSION_FAR, TENSION_NEAR,
+		global_position.distance_to(target)), 0.0, 1.0))
 
 	# Weeping-angel rule: the Curator only advances while unobserved. A frustum
 	# test alone is not enough — a wall between the two still counts as unseen.
@@ -261,6 +295,8 @@ func _build_audio() -> void:
 			push_warning("CuratorMonster: missing %s" % path)
 	if ResourceLoader.exists(CATCH_SOUND):
 		_catch_stream = load(CATCH_SOUND) as AudioStream
+	else:
+		push_warning("CuratorMonster: missing %s" % CATCH_SOUND)
 	_steps = AudioStreamPlayer3D.new()
 	_steps.name = "Curator Footsteps"
 	# At the shoes and at the lens: two heights a metre and a half apart is the
@@ -280,8 +316,43 @@ func _build_audio() -> void:
 	_breath.unit_size = 3.2
 	_breath.panning_strength = 1.1
 	_breath.bus = _audio_bus()
-	_breath.stream = _build_breath_stream()
+	_breath.stream = _breath_stream()
 	add_child(_breath)
+
+
+## The breathing loop.
+##
+## This used to be synthesised here - noise through a one-pole low-pass under an
+## inhale/exhale envelope - purely because res://audio/ held twenty wavs and not
+## one of them was a breath. curator_breath.mp3 is a real 5 s recording, so the
+## synthesiser is gone rather than kept as a fallback: a fallback that only fires
+## when a shipped asset is missing is a branch nobody ever runs, and _set_breathing()
+## already treats a null stream as "no breath" instead of erroring.
+##
+## Looping is the .import file's job (loop=true on the mp3). Checked here rather
+## than assumed: a reimport that dropped the flag would give the Curator one
+## five-second breath per night and silence after it, which looks like a bug in
+## the chase logic and is not one.
+func _breath_stream() -> AudioStream:
+	if not ResourceLoader.exists(BREATH_SOUND):
+		push_warning("CuratorMonster: missing %s - the Curator will not breathe" % BREATH_SOUND)
+		return null
+	var stream := load(BREATH_SOUND) as AudioStream
+	var mp3 := stream as AudioStreamMP3
+	if mp3 != null and not mp3.loop:
+		push_warning("CuratorMonster: %s imported without loop - breathing once only" % BREATH_SOUND)
+	return stream
+
+
+## Hand the current dread level to AudioManager, if there is one. Cached rather
+## than looked up per tick: this runs at the physics rate for the whole night.
+func _report_tension(level: float) -> void:
+	if not is_instance_valid(_audio_manager):
+		_audio_manager = get_tree().get_first_node_in_group("audio_manager")
+		if _audio_manager == null:
+			return
+	if _audio_manager.has_method("set_tension"):
+		_audio_manager.set_tension(level)
 
 
 ## SFX if AudioManager's layout is loaded, Master otherwise. An AudioStreamPlayer3D
@@ -320,8 +391,14 @@ func _play_catch() -> void:
 		return
 	# Reuses the footstep player on purpose: the catch is the last sound this
 	# Curator makes before the run ends, so there is nothing left to interrupt.
+	# Same player, same call site, same moment in _physics_process as before, so
+	# it still lands ahead of the "fail" sting GameManager plays once the death
+	# sequence has run - only the sample and its level change.
 	_steps.stream = _catch_stream
-	_steps.pitch_scale = CATCH_PITCH
+	# The previous sample was pitched down an octave and a half to fake an
+	# impact. This one is an impact, so leave it alone; reset explicitly because
+	# _advance_footsteps() leaves STEP_PITCH on this player.
+	_steps.pitch_scale = 1.0
 	_steps.volume_db = CATCH_VOLUME_DB
 	_steps.play()
 
@@ -334,53 +411,6 @@ func _set_breathing(on: bool) -> void:
 			_breath.play()
 	elif _breath.playing:
 		_breath.stop()
-
-
-## Build the breathing loop in code.
-##
-## res://audio/ holds 20 wavs and not one of them is a breath: three footsteps,
-## a landing thud, ten UI/interaction one-shots, two room beds, the anomaly hum,
-## the alarm, blackout, power_down, fail and resolve. Borrowing anomaly_hum
-## would have been worse than silence — that sound is the player's locator for
-## an anomaly, and hearing it walk around would break the one audio cue the
-## game already teaches. So the breath is synthesised once, at build time:
-## noise through a one-pole low-pass under a slow inhale/exhale envelope, plus a
-## little sub-bass body. The envelope is silent at both ends of the cycle, so
-## LOOP_FORWARD has nothing to click on and the filter state carries over
-## inaudibly. A recorded sample would still sound better - see the report.
-func _build_breath_stream() -> AudioStreamWAV:
-	var frames := int(float(BREATH_RATE) * BREATH_CYCLE)
-	var data := PackedByteArray()
-	data.resize(frames * 2)
-	var low := 0.0
-	for i in range(frames):
-		var t := float(i) / float(frames)
-		var envelope := 0.0
-		# Inhale is shorter, quieter and brighter; exhale is long and dark.
-		var smoothing := 0.06
-		if t >= 0.02 and t < 0.30:
-			envelope = sin(PI * (t - 0.02) / 0.28) * 0.62
-			smoothing = 0.085
-		elif t >= 0.38 and t < 0.80:
-			envelope = sin(PI * (t - 0.38) / 0.42) * 0.95
-			smoothing = 0.045
-		low += ((randf() * 2.0 - 1.0) - low) * smoothing
-		# x4 makeup: a one-pole at these coefficients drops the noise to about a
-		# tenth of full scale, so without it the loop is inaudible under the mix.
-		# Measured over a full cycle this peaks at 0.95 and clips 0.03% of
-		# samples; pushing it to x5 clips 0.4% and the exhale starts to rasp.
-		var sample := low * 4.0 * envelope
-		sample += sin(TAU * 41.0 * t * BREATH_CYCLE) * envelope * 0.18
-		data.encode_s16(i * 2, int(clampf(sample, -0.95, 0.95) * 32767.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = BREATH_RATE
-	wav.stereo = false
-	wav.data = data
-	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	wav.loop_begin = 0
-	wav.loop_end = frames
-	return wav
 
 
 func _build_model() -> void:

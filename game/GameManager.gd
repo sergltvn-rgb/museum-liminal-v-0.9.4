@@ -191,14 +191,12 @@ var _carried_id := ""
 var _terminal_screen: MeshInstance3D = null
 var _terminal_label: Label3D = null
 
-var _hud: CanvasLayer = null
-var _objective_label: Label = null
-var _timer_label: Label = null
-var _hint_label: Label = null
-var _message_label: Label = null
+# The whole night HUD: one block, four slots. Replaces the objective band, the
+# timer box, the hint line, the flash banner and PlayerController's stamina
+# panel -- see _build_hud().
+var _task: TaskBlock = null
 var _protocol_layer: CanvasLayer = null
-var _protocol_panel: PanelContainer = null
-var _proto_title: Label = null
+var _protocol_frame: TerminalFrame = null
 var _proto_item: Label = null
 var _proto_purpose: Label = null
 var _proto_status: Label = null
@@ -206,7 +204,6 @@ var _protocol_time := 0.0
 
 # Тестовая консоль (F9): выбор измерения для проверки. Не влияет на прогресс.
 var _admin_layer: CanvasLayer = null
-var _admin_panel: PanelContainer = null
 var _test_mode := false
 # Состояние ввода на момент открытия консоли — восстанавливается при закрытии.
 var _admin_prev_mouse_mode := Input.MOUSE_MODE_CAPTURED
@@ -215,14 +212,23 @@ var _pre_test_state := STATE_DAY
 var _pre_test_time_left := 0.0
 var _pre_test_calm := 0.0
 var _pre_test_anomaly := ""
-var _message_time := 0.0
 # Fail and win live on their own CanvasLayer, above every screen a live shift
 # can raise -- see the layer table above _build_hud().
 var _overlay_layer: CanvasLayer = null
-var _fail_overlay: ColorRect = null
-var _fail_label: Label = null
-var _win_overlay: ColorRect = null
+var _fail_frame: TerminalFrame = null
+var _fail_reason: Label = null
+var _fail_progress: Label = null
+var _fail_tip: Label = null
+var _fail_retry: Label = null
+var _win_frame: TerminalFrame = null
 var _win_label: Label = null
+var _admin_frame: TerminalFrame = null
+## Last corruption level pushed to the terminal frames. Repainting one costs a
+## pass over every label it owns, so the level is only pushed when it has
+## actually moved -- see _sync_terminals().
+var _terminal_corruption := -1.0
+## Seconds until the Curator may spike the terminals again. See _sync_terminals().
+var _curator_pulse_cooldown := 0.0
 # True when this save has already reached the ending at least once, read from
 # progress/completed. Only changes how the first objective of a run is framed.
 var _run_completed := false
@@ -287,10 +293,6 @@ func _initialize() -> void:
 func _process(delta: float) -> void:
 	if _map == null:
 		return
-	if _message_time > 0.0:
-		_message_time -= delta
-		if _message_label != null:
-			_message_label.modulate.a = clampf(_message_time / 0.9, 0.0, 1.0)
 	match _state:
 		STATE_DAY:
 			if bool(_map.get("_blackout_done")):
@@ -312,9 +314,8 @@ func _process(delta: float) -> void:
 				_protocol_time -= delta
 				if _protocol_time <= 0.0:
 					_hide_protocol()
-			if _timer_label != null:
-				_timer_label.visible = true
-				_timer_label.text = _format_time(_time_left)
+			if _task != null:
+				_task.set_timer(_time_left, _timer_urgent(), TaskBlock.OWNER_NIGHT)
 			if is_instance_valid(_anomaly_light):
 				_anomaly_light.light_energy = 1.5 + 0.7 * sin(_pulse * 3.0)
 			if _time_left <= 0.0:
@@ -333,6 +334,8 @@ func _process(delta: float) -> void:
 	# After _update_hint(), which reads the current orientation step: advancing
 	# first would print the next step's hint one frame before its objective.
 	_teach_process(delta)
+	_sync_status_slot()
+	_sync_terminals(delta)
 	_sync_hud_visibility()
 
 
@@ -482,8 +485,8 @@ func _resolve() -> void:
 	if is_instance_valid(_anomaly_light):
 		_anomaly_light.queue_free()
 	_set_dome_breach(false, Color(0.45, 0.95, 0.75))
-	if _timer_label != null:
-		_timer_label.visible = false
+	if _task != null:
+		_task.set_timer(-1.0, false, TaskBlock.OWNER_NIGHT)
 	# Emergency power: part of the lights come back, dimmed.
 	var lights: Variant = _map.get("_powered_lights")
 	if lights is Array:
@@ -597,20 +600,24 @@ func _fail() -> void:
 			am.set_anomaly_hum(false)
 		if am.has_method("play_sfx"):
 			am.play_sfx("fail")
-	if _fail_overlay != null:
-		_fail_overlay.visible = true
-	if _fail_label != null:
+	# The block stands down for every screen that takes the game away from the
+	# player; the fail page is one, and it carries its own retry prompt.
+	if _task != null:
+		_task.set_timer(-1.0, false, TaskBlock.OWNER_NIGHT)
+		_task.set_suspended(true)
+	if _fail_frame != null:
 		var anomaly_title := tr("ANOMALY_UNKNOWN")
 		if ANOMALIES.has(_anomaly_id): anomaly_title = tr(str(ANOMALIES[_anomaly_id]["title"]))
 		var tip := tr("FAIL_TIP_DEFAULT")
 		if _trial_manager != null and _trial_manager.has_method("trial_fail_tip"):
 			tip = str(_trial_manager.call("trial_fail_tip"))
-		_fail_label.text = "%s\n\n%s\n%s\n\n%s\n\n%s" % [tr("FAIL_TITLE"),
-			Loc.fmt("FAIL_REASON", [anomaly_title]),
-			Loc.fmt("FAIL_PROGRESS", [_night, _anomalies_left]),
-			Loc.fmt("FAIL_TIP", [tip]), tr("FAIL_RETRY")]
-	if _timer_label != null:
-		_timer_label.visible = false
+		_fail_reason.text = Loc.fmt("FAIL_REASON", [anomaly_title])
+		_fail_progress.text = Loc.fmt("FAIL_PROGRESS", [_night, _anomalies_left])
+		_fail_tip.text = Loc.fmt("FAIL_TIP", [tip])
+		# Re-read rather than written once at build: the pause menu can switch
+		# language mid-run, and this label is not one the frame re-renders.
+		_fail_retry.text = tr("FAIL_RETRY")
+		_raise_terminal(_fail_frame)
 
 
 func _retry() -> void:
@@ -618,8 +625,9 @@ func _retry() -> void:
 	# that resumes play. Control comes back last, once _start_accident() has left
 	# STATE_FAILED: player_controls_allowed() answers from _state, so enabling
 	# earlier would contradict the query the tablet and the kill plane now trust.
-	if _fail_overlay != null:
-		_fail_overlay.visible = false
+	_lower_terminal(_fail_frame)
+	if _task != null:
+		_task.set_suspended(false)
 	# Return the carried device to its pedestal.
 	if _carried_id != "":
 		var body: StaticBody3D = _devices.get(_carried_id)
@@ -676,16 +684,21 @@ func _win() -> void:
 	# never handed back here; Cutscene borrows the player it finds frozen and
 	# restores exactly that.
 	_set_player_controls(false)
-	if _timer_label != null:
-		_timer_label.visible = false
+	if _task != null:
+		_task.set_timer(-1.0, false, TaskBlock.OWNER_NIGHT)
+		_task.set_suspended(true)
 	_hide_protocol()
 	# Whatever is still open on the orientation checklist, three nights closes it.
 	_teach_finish(false)
 	_refresh_win_label()
-	if _win_overlay != null:
-		_win_overlay.visible = true
-		_win_overlay.modulate.a = 0.0
-		create_tween().tween_property(_win_overlay, "modulate:a", 1.0, WIN_FADE)
+	if _win_frame != null:
+		# The one terminal page in the game that is not degraded: the museum is
+		# contained, so the feed comes back clean -- integrity 100%, no murk, no
+		# rot. _night_corruption() answers 0.0 in STATE_WIN, and _raise_terminal()
+		# pushes that before the curtain is faded in.
+		_raise_terminal(_win_frame)
+		_win_frame.modulate.a = 0.0
+		create_tween().tween_property(_win_frame, "modulate:a", 1.0, WIN_FADE)
 	_run_completed = true
 	_save_night(1, true)
 	_set_objective("")
@@ -708,13 +721,20 @@ func _win() -> void:
 ## closes it, this reads it. Confirm skips the remainder (see _input).
 const WIN_HOLD := 2.6
 
-## The ending's overlay layer. Cutscene builds its own CanvasLayer and leaves it
-## at the engine default of 1, which is right for the opening -- that plays over
-## an empty HUD on a paused tree -- and wrong here: the ending rolls at the end
-## of a live shift, with the stamina panel (14) and the anomaly readout (11)
-## still on screen. 16 clears every layer in the table above _build_hud() except
-## the pause menu (20) and the F9 console (60), both of which must stay on top.
-const ENDING_LAYER := 16
+## Cutscene parks its own CanvasLayer at 410 (OVERLAY_LAYER), which is right for
+## the opening -- that plays over an empty HUD on a paused tree -- and wrong
+## here: the ending rolls at the end of a live shift, with the task block and the
+## proximity alert still on screen. So this is a promotion within the same band,
+## not a jump off the engine default; _play_ending() overwrites .layer in place.
+##
+## MUST SIT ABOVE the win curtain it replaces (420) and everything that curtain
+## already covers: the HUD (110, 199), the raisable screens (200, 210) and the
+## alert (320).
+## MUST SIT BELOW the pause menu (610) -- ESC during the credits still works --
+## and below the catch screen (590), which is unreachable here but must never be
+## the loser of that pair anywhere.
+## See the full layer table above _build_hud().
+const ENDING_LAYER := 430
 
 ## The cutscene currently closing the run, or null. Freed by itself.
 var _ending: Cutscene = null
@@ -765,8 +785,7 @@ func _play_ending() -> void:
 	# Lowered only now: start() has already posted the first shot with its fade
 	# rect fully black, so the curtain is replaced rather than lifted, and the
 	# museum is never briefly visible between the two.
-	if _win_overlay != null:
-		_win_overlay.visible = false
+	_lower_terminal(_win_frame)
 
 
 func _on_ending_finished(_skipped: bool) -> void:
@@ -836,16 +855,23 @@ func _cutscene_on_screen() -> bool:
 		and opening.has_method("is_playing") and bool(opening.call("is_playing"))
 
 
-## The night HUD is on layer 5 and Cutscene's overlay defaults to layer 1, so an
-## objective band left standing would print straight across a letterboxed shot.
-## Hiding the layer is cheaper and more honest than clearing four labels and
-## restoring them afterwards.
+## The task block stands down for anything that takes the game away from the
+## player: a cutscene (its letterbox would otherwise have an objective printed
+## across it), the fail and win pages, and the F9 console.
+##
+## set_suspended() rather than `visible`: the block owns its own visibility --
+## it hides itself when it has nothing to say and shows itself again on the next
+## set_* -- so writing `visible` directly is undone by the very next frame.
+##
+## STATE_NIGHT_DONE is deliberately NOT in the list. It has no full-screen page
+## of its own; the "Night %d complete. ENTER - next night." line in slot 1 IS
+## that screen, and suspending here would leave the player frozen in front of
+## nothing.
 func _sync_hud_visibility() -> void:
-	if _hud == null:
+	if _task == null:
 		return
-	var wanted := not _cutscene_on_screen()
-	if _hud.visible != wanted:
-		_hud.visible = wanted
+	_task.set_suspended(_cutscene_on_screen() or _state == STATE_FAILED \
+		or _state == STATE_WIN or (_admin_layer != null and _admin_layer.visible))
 
 
 func _load_night() -> int:
@@ -955,6 +981,18 @@ func _begin_trial() -> void:
 	_hide_protocol()
 	set_objective("trial", tr("OBJ_TRIAL"), 50)
 	_flash(tr("HUD_ENTER_POCKET"), UITheme.ACCENT)
+	# The block's hand-over, and the ONLY place it happens. Both systems that hold
+	# a slot the trial needs give it up HERE, synchronously, before begin() runs --
+	# so the trial's claim() lands on a free slot in the same frame instead of
+	# racing two _process() orders it does not control. Slot 3 is this node's
+	# (_update_hint stands down for as long as _trial_active), slot 4 is the
+	# anomaly's. Slots 2 and 5 stay ours: the incident clock keeps running inside a
+	# rift, and so do the operator's legs.
+	if _task != null:
+		_task.release(TaskBlock.Slot.HINT, TaskBlock.OWNER_NIGHT)
+	var enhancements := get_tree().get_first_node_in_group("gameplay_enhancements")
+	if enhancements != null and enhancements.has_method("release_readouts"):
+		enhancements.call("release_readouts")
 	_trial_manager.call("begin", _anomaly_id, _player)
 
 
@@ -970,8 +1008,8 @@ func _complete_trial() -> void:
 		_state = _pre_test_state
 		_time_left = _pre_test_time_left
 		_calm_time = _pre_test_calm
-		if _timer_label != null and _state != STATE_ANOMALY:
-			_timer_label.visible = false
+		if _task != null and _state != STATE_ANOMALY:
+			_task.set_timer(-1.0, false, TaskBlock.OWNER_NIGHT)
 		_flash(tr("ADMIN_TEST_DONE"), UITheme.SUCCESS)
 		return
 	_resolve()
@@ -1161,44 +1199,37 @@ const ADMIN_DESCRIPTIONS := {
 }
 
 
+# The service console is a page of the same terminal as everything else, so it
+# wears the same chrome: masthead, live status cluster, the two rules and the
+# tube. It is the one screen whose *title* is a catalogue row rather than an
+# anomaly name, and the one that shows the night's corruption without being part
+# of the night -- which is exactly what a service console is for.
 func _build_test_admin() -> void:
 	_admin_layer = CanvasLayer.new()
 	_admin_layer.name = "Test Admin Console"
-	_admin_layer.layer = 60
+	_admin_layer.layer = DEBUG_LAYER
 	_admin_layer.visible = false
 	add_child(_admin_layer)
-	var shade := ColorRect.new()
-	# Modal: the console eats the mouse and freezes the player, so the standard
-	# full-screen dim applies.
-	shade.color = UITheme.SCRIM
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	_admin_layer.add_child(shade)
-	_admin_panel = PanelContainer.new()
-	_admin_panel.anchor_left = 0.18
-	_admin_panel.anchor_top = 0.06
-	_admin_panel.anchor_right = 0.82
-	_admin_panel.anchor_bottom = 0.94
-	UITheme.apply_panel(_admin_panel)
-	_admin_layer.add_child(_admin_panel)
-	var layout := VBoxContainer.new()
+	# The frame brings its own opaque backdrop and swallows the clicks that land
+	# on its chrome, so the separate SCRIM rect the console used to draw is gone:
+	# two full-screen modal surfaces stacked on each other is one too many.
+	_admin_frame = _build_terminal_frame("Service Console", _admin_layer)
+	_admin_frame.visible = true
+	_admin_frame.set_title("ADMIN_TITLE")
+	var layout := _admin_frame.body_column()
 	layout.add_theme_constant_override("separation", 10)
-	_admin_panel.add_child(layout)
-	var header := Label.new()
-	header.text = tr("ADMIN_TITLE")
-	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	UITheme.apply_text(header, UITheme.TITLE, UITheme.ACCENT)
-	layout.add_child(header)
+	# The console's own header label is gone: the frame's masthead and title row
+	# say the same thing one type step louder and in the same place on every
+	# screen in the game.
 	var sub := Label.new()
 	sub.text = tr("ADMIN_SUBTITLE")
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UITheme.apply_text(sub, UITheme.LABEL, UITheme.MUTED)
 	layout.add_child(sub)
-	var divider := ColorRect.new()
-	divider.custom_minimum_size = Vector2(0, 2)
-	divider.color = UITheme.BORDER
-	layout.add_child(divider)
+	# Deliberately NOT registered with add_glitch_target(): the console is a tool
+	# rather than a scene, and this is its instruction line. Character rot belongs
+	# on the pages the player is meant to be unsettled by.
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1255,6 +1286,10 @@ func _toggle_test_admin() -> void:
 		_flash(tr("HUD_FINISH_TRIAL_FIRST"), UITheme.WARNING)
 		return
 	var opening := not _admin_layer.visible
+	if opening:
+		_raise_terminal(_admin_frame)
+	else:
+		_lower_terminal(_admin_frame)
 	_admin_layer.visible = opening
 	# Пока консоль открыта, игрок не вращает камеру и не перехватывает мышь.
 	# При закрытии возвращаем ровно то состояние ввода, что было при открытии:
@@ -1280,6 +1315,7 @@ func _admin_select_dimension(id: String) -> void:
 	if _trial_active or not ANOMALIES.has(id):
 		return
 	_admin_layer.visible = false
+	_lower_terminal(_admin_frame)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_pre_test_state = _state
 	_pre_test_time_left = _time_left
@@ -1294,10 +1330,10 @@ func _admin_select_dimension(id: String) -> void:
 	# Через того же владельца и уже после смены состояния: консоль F9 могли
 	# открыть поверх экрана провала, где управление отключено намеренно.
 	_set_player_controls(true)
-	if _fail_overlay != null:
-		_fail_overlay.visible = false
-	if _win_overlay != null:
-		_win_overlay.visible = false
+	_lower_terminal(_fail_frame)
+	_lower_terminal(_win_frame)
+	if _task != null:
+		_task.set_suspended(false)
 	_hide_protocol()
 	_flash(Loc.fmt("ADMIN_TEST_PREFIX", [tr(str(ANOMALIES[id]["title"]))]), UITheme.ACCENT)
 	_begin_trial()
@@ -1305,96 +1341,306 @@ func _admin_select_dimension(id: String) -> void:
 
 # --- HUD (step 8) -----------------------------------------------------------
 #
-# CANVAS LAYERS -- the whole project's stack, low to high, so that "what draws
-# on top" is a decision instead of an accident of construction order:
+# WHAT THIS NODE STOPPED DRAWING
 #
-#    5  Night HUD ................ here (objective, timer, hint, flash)
-#   10  SecurityCameraTablet ..... the CCTV feed the player raises
-#   11  GameplayEnhancements ..... anomaly effect readout
-#   12  Protocol Screen .......... here
-#   14  PlayerController ......... stamina panel
-#   15  Terminal Overlays ........ here (fail / win)
-#   16  Ending Cutscene .......... game/Cutscene.gd's own overlay, moved up to
-#                                 this number by _play_ending()
-#   20  MenuManager .............. main and pause menus
-#   40  TutorialPrologue ......... the optional orientation replay scene
-#   60  Test admin console ....... here, debug builds only
+# Four free-flying Labels used to be painted straight onto the 3D museum from
+# here -- objective, timer, hint, flash message -- each anchored to a different
+# corner, each wearing a 6 px black outline because its background was "whatever
+# the player happens to be looking at". Together with PlayerController's stamina
+# card, GameplayEnhancements' effect readout and RiftTrialManager's panel stack,
+# five of them could be on screen at once with nothing to say which to read
+# first. game/TaskBlock.gd's header measures that defect in full.
 #
-# HUD_LAYER is the floor: the night HUD is painted on the world and everything
-# the player raises is held in front of it. It was never set before, so it fell
-# back to 1 -- below the tablet by luck rather than by choice.
+# All four are gone, not hidden. Slot 1 of the block is the objective and the
+# flash message (one loud line, enforced structurally by the block); slot 2 is
+# the countdown; slot 3 the hint; slot 5 stamina, or the carried device when
+# stamina is full. Slot 4 is the anomaly's, and this file never writes it. There
+# is no _make_label(), no outline hack and no per-frame alpha fade left here.
 #
-# OVERLAY_LAYER sits above every in-world screen (tablet, effects, protocol,
-# stamina) because fail and win take the game away from the player: nothing
-# belonging to a live shift may draw over them. It stays below the pause menu,
-# which has to stay reachable, and below the F9 console.
-const HUD_LAYER := 5
-const OVERLAY_LAYER := 15
+# Every one of those writes now names this node as the slot's owner
+# (TaskBlock.OWNER_NIGHT). See "ONE OWNER PER SLOT" in game/TaskBlock.gd: the
+# owner argument has no default, so a call site that has not decided who it is
+# does not compile.
+#
+# Every full-screen surface this node owns -- protocol, fail, win, F9 console --
+# is now a page of one terminal (game/TerminalFrame.gd): masthead, live status
+# cluster, body, rules, tube. They also degrade: see _night_corruption().
+#
+#
+# CANVAS LAYERS
+#
+# The ladder is the decade scale game/TaskBlock.gd writes out, adopted here for
+# the four layers this file owns. Decades leave room to insert without
+# renumbering, which is the property the old packed 5..17 ladder lacked and the
+# reason it collided -- the protocol screen and GameplayEnhancements' proximity
+# alert were both issued 12, so which of them drew on top was decided by
+# construction order in two unrelated files.
+#
+# THE WHOLE LADDER, EVERY CanvasLayer IN THE PROJECT, LOW TO HIGH. Sixteen
+# assignments across ten files, listed at the number the code ACTUALLY writes.
+# The left column is the value in the running game; where the decade scale wants a
+# different rung, that rung is named on the line under it and marked STALE.
+#
+# An earlier revision of this table listed the wanted number in the left column
+# and the real one in a trailing bracket, and claimed "nothing in the project
+# assigns a CanvasLayer.layer that is absent from this list". Three rows made that
+# claim false -- the compass runs at 6 and 6 appeared nowhere in the table at all,
+# the tablet at 10 and the prologue at 40 were shown as 200 and 710. A table that
+# presents itself as the single source of truth and is wrong in three rows is
+# worse than no table, so the columns are the other way round now: what the game
+# does first, what the scale wants second.
+#
+#   000-099  world-anchored diegetic surfaces, and anything predating the scale
+#            006  compass / floor plan ....... game/Compass.gd:174 HUD_LAYER
+#                 STALE, wants 110. Harmless: 6 and 110 are both under the task
+#                 block and over nothing, so this is a rename, not a fix.
+#            010  CCTV tablet ....... game/SecurityCameraTablet.gd:418
+#                 STALE, wants 200. Harmless: it must lose to the task block
+#                 either way, and 10 already does.
+#            040  tutorial prologue ....... game/TutorialPrologue.gd:209
+#                 STALE, wants 710. It beats the night HUD's old 5 and loses to
+#                 the task block's 199, which is the wrong way round -- but the
+#                 prologue is never on screen while a shift runs, so nothing is
+#                 broken today.
+#   100-199  the live shift HUD
+#            110  (reserved for the compass, which is still at 6)
+#            199  TASK BLOCK ....................... here (HUD_TASK_LAYER)
+#                 Also named as HUD_TASK_LAYER in game/GameplayEnhancements.gd:170
+#                 and game/RiftTrialManager.gd:87, for the fallback block each of
+#                 them builds when it finds none to adopt, and as TASK_LAYER in
+#                 game/TaskBlock.gd:403, which is where the block parks itself.
+#                 Four constants, one number, on purpose.
+#   200-299  screens the player raises and can put down
+#            200  (reserved for the CCTV tablet, which is still at 10)
+#            210  protocol screen .................. here (SCREEN_LAYER)
+#   300-399  in-world alarms drawn over those screens
+#            320  Curator proximity alert .. game/GameplayEnhancements.gd:101
+#   400-499  takeovers that end the incident
+#            410  opening cutscene .......... game/Cutscene.gd:143 OVERLAY_LAYER
+#                 Under the fail and win pages, which is right for the opening:
+#                 it plays over an empty HUD on a paused tree and has nothing to
+#                 cover. Confirmed landed: game/Cutscene.gd:143 declares
+#                 OVERLAY_LAYER := 410 and :380 assigns it. Before that it sat on
+#                 the engine default of 1, where the compass (6) and the task
+#                 block (199) drew ON TOP of the museum opening.
+#            420  fail / win ....................... here (OVERLAY_LAYER)
+#            430  ending cutscene .................. here (ENDING_LAYER)
+#                 Not a CanvasLayer of its own: _play_ending() walks the Cutscene
+#                 node's children and promotes the 410 above to 430, one rung over
+#                 the win curtain it exists to replace rather than hide under.
+#   500-589  the trial / pocket-dimension HUD
+#            510  trial terminal frame ...... game/RiftTrialManager.gd:80
+#   590-599  the one takeover that must also cover a trial
+#            590  Curator catch screen ..... game/GameplayEnhancements.gd:161
+#   600-699  menus and pause
+#            610  main menu / pause menu ......... game/MenuManager.gd:166
+#   700-799  the tutorial replay
+#            710  (reserved for the prologue, which is still at 40)
+#   900-999  debug
+#            960  service console (F9) ............... here (DEBUG_LAYER)
+#
+# NOT IN THIS TABLE, and not a CanvasLayer: FirstMuseumMap.CCTV_HIDDEN_LAYER = 20
+# is a VisualInstance3D render-layer bit, which is a different namespace entirely.
+#
+# THE THREE STALE ROWS ARE NOT FIXED HERE because the fix is one line in each of
+# three files this pass does not own -- game/Compass.gd, game/SecurityCameraTablet.gd
+# and game/TutorialPrologue.gd. All three are dirty in the working tree, i.e. held
+# by another workstream, and renumbering a layer under a file's owner is how two
+# correct changes become one broken merge. The relative order is right at 6, 10
+# and 40, so nothing renders wrong today; what was wrong was this comment, and
+# that is what has been corrected.
+#
+# WHY THE CATCH SCREEN IS 590 AND NOT 410, which an earlier revision of this
+# comment prescribed. _update_death() fades the catch screen back OFF to uncover
+# the fail page: the veil has to be ABOVE the page it hands off to, or the page
+# pops on top instead of being revealed. 410 put it under 420 and would have
+# broken that hand-off silently. It also has to cover the trial frame, which is
+# in the band above the takeovers. So it takes the rung directly below the menus
+# and the invariant becomes easy to state: the catch is above everything except
+# the pause menu.
+#
+# THREE LAYERS ARE STILL ON THE OLD COMPRESSED LADDER: Compass (6 -> 110),
+# SecurityCameraTablet (10 -> 200) and TutorialPrologue (40 -> 710). See the note
+# under the table for why they are left alone in this pass. TaskBlock's own
+# TASK_LAYER is 199 and agrees with the table, so _build_hud()'s assignment below
+# is belt-and-braces rather than load-bearing.
+## The task block: the TOP of the live-shift band.
+## MUST SIT BELOW every screen that takes the game away -- the tablet (200), the
+## protocol page (210), fail / win (420), the proximity alert (320), the trial
+## frame (510), the catch screen (590), the pause menu (610).
+## MUST SIT ABOVE the compass (6 today, 110 on the scale), which is the only thing
+## under it: the block is the loudest thing the live shift draws.
+const HUD_TASK_LAYER := 199
+## The protocol briefing: a screen the player raises and puts down.
+## MUST SIT ABOVE the task block (199) and the CCTV tablet (200), which it
+## replaces on screen rather than sharing it with.
+## MUST SIT BELOW the proximity alert (320) -- the Curator does not wait for the
+## briefing to end -- and below every takeover, the trial frame and the menus.
+const SCREEN_LAYER := 210
+## The fail and win pages: takeovers that end the incident.
+## MUST SIT ABOVE the whole HUD (110, 199), both raisable screens (200, 210) and
+## the proximity alert (320): the run is over and none of them has anything left
+## to say.
+## MUST SIT BELOW the ending (430), the trial frame (510, which _cleanup() hides
+## rather than relying on z-order), the catch screen (590 -- it fades off to
+## UNCOVER this page, so it has to be on top of it) and the pause menu (610).
+const OVERLAY_LAYER := 420
+## The F9 service console. Debug builds only.
+## MUST SIT ABOVE everything, the pause menu (610) included, because it has to be
+## usable from a paused game. Nothing in the project sits above it.
+const DEBUG_LAYER := 960
 ## Seconds the ending curtain takes to close. Long enough to read as a fade.
 const WIN_FADE := 1.4
 
+# --- URGENCY AND CORRUPTION -------------------------------------------------
+#
+# The two horror hooks the block and the frame expose, driven from state the
+# night loop already keeps. Nothing below is a new fact about the game: it is
+# _night, _time_left, _state, the map's blackout flag and the Curator's position
+# read back out in the two shapes the UI understands.
+
+## Seconds of incident timer below which the block goes urgent. Every one of the
+## block's five urgency channels turns on together, only one of which is hue.
+const URGENT_SECONDS := 30.0
+## Metres. Inside this the block is urgent whatever the clock says: being about
+## to be caught is a deadline too, and it is the one the player cannot see.
+## Same number as GameplayEnhancements.WATCH_CRITICAL_RANGE, which is the range
+## at which its own readout escalates -- kept in step deliberately, so the two
+## channels agree instead of contradicting each other one metre apart.
+const CURATOR_URGENT_RANGE := 7.5
+
+## Corruption the terminal carries once the museum is on emergency power. The
+## blackout is the moment the building stops being a workplace, and it is the
+## floor everything else is added to.
+const CORRUPT_BLACKOUT := 0.12
+## Added per night past the first. 0.00 / 0.10 / 0.20.
+const CORRUPT_PER_NIGHT := 0.10
+## How much of the ramp the incident clock owns, from a fresh timer to zero.
+## 0.12 + 0.20 + 0.55 = 0.87 at the worst instant of night three, so a live
+## shift never reaches the 1.0 the fail page shows -- that number stays reserved
+## for a run that has actually ended.
+const CORRUPT_TIMER_SPAN := 0.55
+## Metres at which the Curator starts spiking the terminals, and the strongest
+## spike it lands. Matches GameplayEnhancements.WATCH_ALERT_RANGE.
+const CURATOR_PULSE_RANGE := 24.0
+const CURATOR_PULSE_MAX := 0.4
+## Seconds one spike decays over, and the gap between spikes. The gap exists
+## because pulse_corruption() repaints the whole page, so calling it per frame
+## would be a full relayout at the framerate for no extra information.
+const CURATOR_PULSE_SECONDS := 1.2
+const CURATOR_PULSE_INTERVAL := 0.9
+## Smallest corruption change worth repainting a page for.
+const CORRUPT_EPSILON := 0.02
+
+## Wall time the terminal prints. The shift starts at 23:00 and each night is
+## logged an hour later; the only elapsed time this node measures is the
+## incident clock, so that is what advances the readout. Between incidents it
+## stands still, which is honest -- nothing is being timed then.
+const SHIFT_START_SECONDS := 23.0 * 3600.0
+
+## Above this ratio the stamina bar is not drawn at all. A gauge pegged at 100%
+## is furniture; this one appears exactly while it has something to say.
+const STAMINA_FULL := 0.999
+
 
 func _build_hud() -> void:
-	_hud = CanvasLayer.new()
-	_hud.name = "Night HUD"
-	_hud.layer = HUD_LAYER
-	add_child(_hud)
-	# The objective band used to start at y = 0.01, which ran it straight through
-	# the CCTV tablet's 30 px feed name at (52, 18) -- and the one objective that
-	# names the camera to watch (OBJ_CCTV_CONFIRM, set by GameplayEnhancements) is
-	# read with the tablet up. The tablet draws no opaque backing, so no z-order
-	# separates the two glyph runs; the band moves instead. y = 0.10 clears both
-	# the tablet's header row (which ends at 58 px of 900) and the timer box
-	# above it, which ends at exactly 0.10.
-	_objective_label = _make_label(Vector4(0.01, 0.10, 0.62, 0.19), UITheme.LABEL,
-		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_LEFT)
-	_timer_label = _make_label(Vector4(0.40, 0.02, 0.60, 0.10), UITheme.TITLE,
-		UITheme.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
-	_timer_label.visible = false
-	_hint_label = _make_label(Vector4(0.10, 0.90, 0.90, 0.98), UITheme.BODY,
-		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
-	_message_label = _make_label(Vector4(0.10, 0.40, 0.90, 0.52), UITheme.TITLE,
-		UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
-	_message_label.modulate.a = 0.0
+	_task = TaskBlock.new()
+	add_child(_task)
+	# TaskBlock._ready() already parks itself at TASK_LAYER = 199, the same number
+	# this constant carries, so this assignment is belt-and-braces: the block sits
+	# at the TOP of the 100-199 live-shift band -- above everything the shift
+	# itself draws, below every screen that takes the game away. GameplayEnhancements
+	# and RiftTrialManager adopt THIS instance rather than building their own; on
+	# the headless paths where they do build one, they park it at the same 199.
+	_task.layer = HUD_TASK_LAYER
 	_overlay_layer = CanvasLayer.new()
 	_overlay_layer.name = "Terminal Overlays"
 	_overlay_layer.layer = OVERLAY_LAYER
 	add_child(_overlay_layer)
-	_fail_overlay = ColorRect.new()
-	# A scrim, not a curtain: the night is still behind it and ENTER drops the
-	# player straight back into it.
-	_fail_overlay.color = UITheme.SCRIM
-	_fail_overlay.anchor_right = 1.0
-	_fail_overlay.anchor_bottom = 1.0
-	_fail_overlay.visible = false
-	_overlay_layer.add_child(_fail_overlay)
-	_fail_label = Label.new()
-	_fail_label.text = "%s\n\n%s" % [tr("FAIL_TITLE"), tr("FAIL_RETRY")]
-	_fail_label.anchor_left = 0.12
-	_fail_label.anchor_top = 0.18
-	_fail_label.anchor_right = 0.88
-	_fail_label.anchor_bottom = 0.82
-	_fail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_fail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_fail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	UITheme.apply_text(_fail_label, UITheme.TITLE, UITheme.DANGER)
-	_fail_overlay.add_child(_fail_label)
-	_win_overlay = ColorRect.new()
-	# Opaque, unlike the fail scrim: at the end of the third night the museum
-	# goes out instead of showing through a green tint. _win() fades it in.
-	_win_overlay.color = UITheme.SURFACE
-	_win_overlay.anchor_right = 1.0
-	_win_overlay.anchor_bottom = 1.0
-	_win_overlay.visible = false
-	_overlay_layer.add_child(_win_overlay)
-	_win_label = Label.new()
-	_win_label.anchor_right = 1.0
-	_win_label.anchor_bottom = 1.0
-	_win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_win_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_win_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	UITheme.apply_text(_win_label, UITheme.TITLE, UITheme.SUCCESS)
-	_win_overlay.add_child(_win_label)
+	_build_fail_screen()
+	_build_win_screen()
+
+
+## One terminal page, parented and full-rect. Every full-screen surface this
+## file owns is built through here, so they cannot drift apart again.
+func _build_terminal_frame(frame_name: String, parent: Node) -> TerminalFrame:
+	var frame := TerminalFrame.new()
+	frame.name = frame_name
+	parent.add_child(frame)
+	return frame
+
+
+## A body line on a terminal page. Centred, wrapped, no outline: the frame draws
+## an opaque backdrop, which is the whole reason these ratios are knowable.
+func _terminal_line(column: VBoxContainer, size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply_text(label, size, color)
+	column.add_child(label)
+	return label
+
+
+## Push the current night onto a page and show it. Every raise goes through
+## here: a frame that was hidden did not receive the per-frame corruption and
+## status updates (_sync_terminals only pays for visible pages), so it would
+## otherwise come up showing the state of whenever it was last on screen.
+func _raise_terminal(frame: TerminalFrame) -> void:
+	if frame == null:
+		return
+	_push_terminal_state(frame)
+	frame.modulate.a = 1.0
+	frame.visible = true
+
+
+## Put a page down.
+##
+## Corruption is zeroed on the way out rather than left standing. A hidden
+## TerminalFrame whose level is above zero keeps repainting at its GLITCH_HZ for
+## a picture nobody is looking at -- Godot keeps running _process on the children
+## of an invisible CanvasLayer -- and there are four of these frames in the
+## scene. Zero is also the level a page should come back up at if anything ever
+## shows one without going through _raise_terminal().
+func _lower_terminal(frame: TerminalFrame) -> void:
+	if frame == null:
+		return
+	frame.visible = false
+	frame.set_corruption(0.0)
+
+
+# THE FAIL PAGE. A full terminal page now rather than an 88% scrim with one
+# centred Label on it: the shift is over, so the screen is the terminal's, and
+# the corruption reads 100% -- containment was lost, and the readout says so in
+# digits and in lit segments before it says it in colour.
+func _build_fail_screen() -> void:
+	_fail_frame = _build_terminal_frame("Shift Interrupted", _overlay_layer)
+	_fail_frame.visible = false
+	_fail_frame.set_title("FAIL_TITLE")
+	var column := _fail_frame.body_column()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	_fail_reason = _terminal_line(column, UITheme.SECTION, UITheme.DANGER)
+	_fail_progress = _terminal_line(column, UITheme.BODY, UITheme.MUTED)
+	_fail_tip = _terminal_line(column, UITheme.BODY, UITheme.ON_SURFACE)
+	# The way out, and deliberately NOT an add_glitch_target(). This page runs at
+	# corruption 1.0, where character rot replaces a quarter of a string twelve
+	# times a second: five of the nineteen glyphs of "ENTER - retry night", every
+	# 83 ms, forever, on the only line telling the player how to leave. That is
+	# the same reasoning TerminalFrame gives for exempting its footer legend --
+	# a key legend is silkscreen, not signal.
+	_fail_retry = _terminal_line(column, UITheme.SECTION, UITheme.ACCENT)
+
+
+# THE WIN CURTAIN. Opaque, and the only page in the game that is not degraded:
+# _night_corruption() answers 0.0 in STATE_WIN, so integrity reads 100%, the
+# rules are whole and nothing rots. That contrast is the point -- every other
+# terminal the player has read this run was falling apart.
+func _build_win_screen() -> void:
+	_win_frame = _build_terminal_frame("Shift Over", _overlay_layer)
+	_win_frame.visible = false
+	var column := _win_frame.body_column()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	_win_label = _terminal_line(column, UITheme.TITLE, UITheme.SUCCESS)
 	_refresh_win_label()
 
 
@@ -1413,93 +1659,65 @@ func _refresh_win_label() -> void:
 	_win_label.text = tr("HUD_WIN")
 
 
-## The protocol panel keeps the anomaly's own colour as its border: `accent` is
-## the fiction colour that also drives the anomaly light and the fog, and the
-## border is the one place UITheme allows a non-token colour to survive. The
-## fill and the geometry come from the shared factory; only the generous 30/20
-## content margins are kept, because they are this panel's layout.
-func _protocol_style(accent: Color) -> StyleBoxFlat:
-	return UITheme.stylebox(UITheme.SURFACE_RAISED, accent, UITheme.BORDER_WIDTH,
-		UITheme.RADIUS_MD, 30, 20)
-
-
-func _proto_label(size: int, color: Color, align: HorizontalAlignment) -> Label:
-	var label := Label.new()
-	label.horizontal_alignment = align
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	UITheme.apply_text(label, size, color)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label
-
-
+# THE PROTOCOL SCREEN. Formerly a 48%-wide panel over a 72% dim, so that the
+# player could keep walking behind it; it is a page of the terminal now, which
+# means an opaque screen.
+#
+# That is a real trade and it was made deliberately. What was bought: the panel
+# no longer competes for the same rectangle as the task block (which is why the
+# block's ANCHOR_RIGHT stops at 0.255 -- the old panel started at 0.26 and the
+# clearance was one hundredth of a screen), the anomaly's fiction colour stops
+# being asked to carry a border on a translucent fill over an arbitrary 3D
+# background, and the readout that names the device now looks like every other
+# readout in the building. What was paid: ten seconds of not seeing the room.
+# The screen is dismissed by E or ENTER at any moment (see _input), which is the
+# same key the player is about to press anyway, and it costs those ten seconds
+# only to a player who chooses to read all of it.
+#
+# The anomaly's own colour is not lost: it is still the fog, the anomaly light
+# and the terminal screen in the office. It simply stopped being UI chrome.
 func _build_protocol_screen() -> void:
 	_protocol_layer = CanvasLayer.new()
 	_protocol_layer.name = "Protocol Screen"
-	_protocol_layer.layer = 12
+	_protocol_layer.layer = SCREEN_LAYER
 	_protocol_layer.visible = false
 	add_child(_protocol_layer)
-	var dim := ColorRect.new()
-	# SURFACE at the panel's own 72%, not UITheme.SCRIM (88%): the protocol screen
-	# is a timed readout the player keeps walking behind, so it must not black the
-	# museum out the way a modal does.
-	dim.color = Color(UITheme.SURFACE, 0.72)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_protocol_layer.add_child(dim)
-	_protocol_panel = PanelContainer.new()
-	_protocol_panel.anchor_left = 0.26
-	_protocol_panel.anchor_top = 0.14
-	_protocol_panel.anchor_right = 0.74
-	_protocol_panel.anchor_bottom = 0.8
-	_protocol_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Placeholder border until the first anomaly rolls; _show_protocol() repaints
-	# it with that anomaly's colour.
-	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(UITheme.BORDER_ACCENT))
-	_protocol_layer.add_child(_protocol_panel)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 10)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_protocol_panel.add_child(box)
-	var header := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	header.text = tr("HUD_PROTO_HEADER")
-	box.add_child(header)
-	_proto_title = _proto_label(UITheme.TITLE, UITheme.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_proto_title)
-	var divider := ColorRect.new()
-	divider.custom_minimum_size = Vector2(0, 2)
-	divider.color = UITheme.BORDER
-	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(divider)
-	var need := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	need.text = tr("HUD_PROTO_TAKE")
-	box.add_child(need)
-	# The one thing the player has to leave the screen remembering, so it carries
-	# the accent instead of each anomaly's own tint (which the border already
-	# shows, and which no longer has to clear a text contrast ratio).
-	_proto_item = _proto_label(UITheme.TITLE, UITheme.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_proto_item)
-	_proto_purpose = _proto_label(UITheme.BODY, UITheme.ON_SURFACE, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_proto_purpose)
-	_proto_status = _proto_label(UITheme.BODY, UITheme.MUTED, HORIZONTAL_ALIGNMENT_LEFT)
-	box.add_child(_proto_status)
-	var footer := _proto_label(UITheme.LABEL, UITheme.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	_protocol_frame = _build_terminal_frame("Containment Protocol", _protocol_layer)
+	# The masthead is TerminalFrame's own default (HUD_PROTO_HEADER), which is the
+	# very row this screen used to print by hand as its first label. The title is
+	# set per incident by _show_protocol() to the anomaly's name.
+	var column := _protocol_frame.body_column()
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	var need := _terminal_line(column, UITheme.LABEL, UITheme.MUTED)
+	_protocol_frame.add_glitch_target(need, "HUD_PROTO_TAKE")
+	# The one thing the player has to leave the screen remembering. Not a glitch
+	# target: a device name with a quarter of its characters replaced is the exact
+	# information this page exists to deliver.
+	_proto_item = _terminal_line(column, UITheme.TITLE, UITheme.ACCENT)
+	_proto_purpose = _terminal_line(column, UITheme.BODY, UITheme.ON_SURFACE)
+	_proto_status = _terminal_line(column, UITheme.BODY, UITheme.MUTED)
+	_proto_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	# Not a glitch target either, and for the fail page's reason: this is the line
+	# that says which key puts the screen down.
+	var footer := _terminal_line(column, UITheme.LABEL, UITheme.MUTED)
 	footer.text = tr("HUD_PROTO_FOOTER")
-	box.add_child(footer)
 
 
-func _show_protocol(info: Dictionary, accent: Color) -> void:
+func _show_protocol(info: Dictionary, _accent: Color) -> void:
 	if _protocol_layer == null:
 		return
 	var equip_id := str(info["equipment"])
 	var equip_name := equip_id
 	if EQUIPMENT.has(equip_id):
 		equip_name = tr(str(EQUIPMENT[equip_id]["name"]))
-	_proto_title.text = Loc.fmt("HUD_PROTO_TITLE", [tr(str(info["title"]))])
+	# The page's subject, as a key: the frame resolves it, recolours it on the
+	# corruption ramp and lets it rot, which no formatted string could do.
+	_protocol_frame.set_title(str(info["title"]))
 	_proto_item.text = equip_name.to_upper()
 	var hint_key := str(TOOL_HINTS.get(equip_id, ""))
 	_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
 	_proto_status.text = Loc.fmt("HUD_PROTO_STATUS", [_night, _incident_name()])
-	_protocol_panel.add_theme_stylebox_override("panel", _protocol_style(accent))
+	_raise_terminal(_protocol_frame)
 	_protocol_layer.visible = true
 	_protocol_time = 10.0
 	var am := _audio()
@@ -1511,41 +1729,27 @@ func _hide_protocol() -> void:
 	_protocol_time = 0.0
 	if _protocol_layer != null:
 		_protocol_layer.visible = false
-
-
-
-func _make_label(anchors: Vector4, size: int, color: Color,
-		align: HorizontalAlignment) -> Label:
-	var label := Label.new()
-	label.anchor_left = anchors.x
-	label.anchor_top = anchors.y
-	label.anchor_right = anchors.z
-	label.anchor_bottom = anchors.w
-	label.horizontal_alignment = align
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	UITheme.apply_text(label, size, color)
-	# The outline stays a literal. It is not a palette colour: these four labels
-	# are drawn straight onto the 3D museum, where the background is whatever the
-	# player happens to be looking at, and a black halo is a legibility measure
-	# rather than a surface. UITheme has no token for it by design.
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	label.add_theme_constant_override("outline_size", 6)
-	_hud.add_child(label)
-	return label
+	_lower_terminal(_protocol_frame)
 
 
 func _update_hint() -> void:
-	if _hint_label == null or _player == null:
+	if _task == null or _player == null:
+		return
+	# Slot 3 belongs to the trial for the duration of a pocket dimension: in there
+	# the teaching row is what says how to act, and "press E to apply the
+	# stabilizer" names a museum the operator is not standing in. Standing down is
+	# a RETURN, not a set_hint("") -- the lease was handed over in _begin_trial()
+	# and writing the slot at all would now be refused and reported.
+	if _trial_active:
 		return
 	var hint := ""
-	# The hint sits at y 0.90..0.98, which is where the tablet prints its own
-	# control legend (bottom-left, 44 px up). The player cannot act on an
-	# interaction prompt while holding the tablet up anyway -- controls are off --
-	# so the prompt stands down for as long as the feed is on screen. The
-	# objective line above does the opposite: it is moved, not hidden, because
-	# reading which camera to watch is the whole reason the tablet is up.
+	# The hint stands down while the CCTV feed is up. The player cannot act on an
+	# interaction prompt with the tablet raised anyway -- controls are off -- and
+	# the objective line above it does the opposite, staying put, because reading
+	# which camera to watch is the whole reason the tablet is up. That is a
+	# decision the block can now make per slot instead of per corner.
 	if _camera_tablet_open():
-		_hint_label.text = ""
+		_task.set_hint("", [], TaskBlock.OWNER_NIGHT)
 		return
 	if _state != STATE_FAILED and _state != STATE_WIN and _state != STATE_NIGHT_DONE:
 		if _carried_id != "":
@@ -1565,7 +1769,7 @@ func _update_hint() -> void:
 	# more useful than the line telling the player what E is for.
 	if hint == "":
 		hint = _teach_hint()
-	_hint_label.text = hint
+	_task.set_hint(hint, [], TaskBlock.OWNER_NIGHT)
 
 
 func _set_objective(text: String) -> void:
@@ -1588,8 +1792,17 @@ func clear_objective(source: String) -> void:
 	_refresh_objective()
 
 
+## The winning objective goes to slot 1 of the block.
+##
+## The registry stores RESOLVED text rather than keys, because three other files
+## put entries in it and all of them translate at the call site
+## (GameplayEnhancements' camera confirmation and ExhibitPuzzleController's
+## incident line both need format arguments). TaskBlock takes keys and resolves
+## through Loc.fmt(); an unknown key with no arguments comes back unchanged, so
+## a sentence passes through untouched. Every catalogue key in this project is
+## UPPER_SNAKE, so a translated sentence can never collide with one.
 func _refresh_objective() -> void:
-	if _objective_label == null:
+	if _task == null:
 		return
 	var text := ""
 	var best := -999
@@ -1598,26 +1811,298 @@ func _refresh_objective() -> void:
 		if priority > best:
 			best = priority
 			text = str(_objective_entries[source])
-	_objective_label.text = text
+	_task.set_task(text, [], TaskBlock.OWNER_NIGHT)
 
 
-## Transient banner across the middle of the screen. `color` is the one thing
-## every caller has to decide, and every caller now passes a UITheme role
-## (DANGER for a breach, SUCCESS for a containment, WARNING for a recoverable
-## slip, ACCENT for a milestone) rather than its own approximation of one --
-## which is why the override below is the last raw colour call in the file.
+## A transient message.
+##
+## It used to be a Label of its own flying across the middle of the screen on
+## the night HUD layer, fading out over 3.0 s while the objective, the timer and
+## the hint all stayed up around it. It takes over slot 1 of the task block for
+## TaskBlock.FLASH_SECONDS instead, then hands the standing objective back: at
+## most one loud line exists at any instant, and that is a property of the
+## block's construction rather than a rule this file has to remember.
+##
+## The signature is unchanged because three other files call it -- see
+## GameplayEnhancements (the Curator catch, the radiation dose, the source
+## confirmation) and SecurityCameraTablet (CCTV refused outside the office).
+## They pass a translated string and a Color; both survive the move. `text` is
+## fed to the block as a key, and Loc.fmt() returns an unknown key unchanged
+## with no arguments to apply, so an already-translated sentence round-trips
+## untouched. `color` becomes a tone, which is a marker glyph AND a colour --
+## the block never says anything with hue alone.
 func _flash(text: String, color: Color) -> void:
-	if _message_label == null:
+	if _task == null:
 		return
-	_message_label.text = text
-	_message_label.add_theme_color_override("font_color", color)
-	_message_label.modulate.a = 1.0
-	_message_time = 3.0
+	_task.flash(text, [], _tone_for(color))
 
 
-func _format_time(t: float) -> String:
-	var s := maxi(int(ceil(t)), 0)
-	return "%d:%02d" % [int(s / 60.0), s % 60]
+## Nearest tone to a caller's colour, in RGB.
+##
+## Five of the eight call sites already pass a UITheme role and match exactly.
+## The other three pass a hand-mixed approximation from before the palette
+## existed -- Color(1.0, 0.25, 0.15), Color(0.45, 1.0, 0.65), Color(1.0, 0.65,
+## 0.3) -- and land on DANGER, SUCCESS and WARNING respectively, which is what
+## each of them meant. UITheme.ACCENT (a milestone: a wing unlocked, a pocket
+## dimension entered) resolves to GOOD, the nearest of the four.
+func _tone_for(color: Color) -> TaskBlock.Tone:
+	var tokens := [UITheme.ON_SURFACE, UITheme.SUCCESS, UITheme.WARNING, UITheme.DANGER]
+	var best := 0
+	var best_distance := INF
+	for i in range(tokens.size()):
+		var token: Color = tokens[i]
+		var gap := Vector3(color.r - token.r, color.g - token.g,
+			color.b - token.b).length_squared()
+		if gap < best_distance:
+			best_distance = gap
+			best = i
+	match best:
+		1:
+			return TaskBlock.Tone.GOOD
+		2:
+			return TaskBlock.Tone.WARN
+		3:
+			return TaskBlock.Tone.BAD
+	return TaskBlock.Tone.INFO
+
+
+# --- THE BLOCK'S STATUS SLOT -------------------------------------------------
+
+## Which carried devices have a line of their own for slot 5. The keys are spelled
+## out again at the call site in _sync_status_slot() rather than read out of here,
+## because tools/check_localization.py reads the arguments at the call site and a
+## key it cannot see formatted is a fatal finding there -- correctly, since that is
+## exactly how a raw "%d" reaches the screen.
+##
+## These rows used to be written by GameplayEnhancements straight into slot 3,
+## every frame, for the whole of every anomaly -- which is what erased the
+## interaction prompt. They belong here: this node owns `_carried_id`, it owns
+## the incident's position, and slot 5 is already the "what is in your hands"
+## line. One owner, one slot, and nothing is lost.
+const TOOL_LINES := ["spectral_lens", "thread_spool", "phase_prism", "null_lantern"]
+
+
+## Slot 5: one measured quantity ABOUT THE OPERATOR. Stamina outranks the carried
+## device, because stamina is only shown while it is NOT full -- that is, exactly
+## while the player is spending it -- and a device in your hands is a fact you can
+## also see in your hands.
+##
+## This is where PlayerController's bottom-left card went. The bar is the same
+## reading; the difference is that it now sits under the sentence it affects
+## instead of in the one corner of the screen nothing else uses.
+##
+## &"night_hud" holds this slot at ALL times, an anomaly and a pocket dimension
+## included: neither of those suspends the operator's legs or empties their
+## hands. That is the whole reason the block grew a fifth slot -- the anomaly's
+## effect readout now has slot 4 to speak in and no longer has to take this one.
+func _sync_status_slot() -> void:
+	if _task == null:
+		return
+	if _player != null and is_instance_valid(_player) \
+			and _player.has_method("stamina_ratio"):
+		var ratio := float(_player.call("stamina_ratio"))
+		if ratio < STAMINA_FULL:
+			var spent := bool(_player.call("is_exhausted"))
+			# Exhaustion is a different caption row, not a different fill colour:
+			# "EXHAUSTED - CATCH YOUR BREATH" reads in greyscale and the old red
+			# bar did not.
+			_task.set_progress(ratio,
+				"HUD_STAMINA_EXHAUSTED" if spent else "HUD_STAMINA", [],
+				TaskBlock.OWNER_NIGHT)
+			return
+	if _carried_id != "" and EQUIPMENT.has(_carried_id):
+		# A state, not a measurement: no ratio, so no bar. A bar pinned at 100%
+		# would claim to be measuring something. The key and its argument list stay
+		# on one line: tools/check_localization.py anchors its arity check on the
+		# text immediately after the key literal, and a wrapped call reads to it as
+		# a key nobody formats -- which is a fatal finding, and a fair one.
+		#
+		# During an incident in the museum the device says what it is DOING, which
+		# is strictly more than its name; outside one, and inside a pocket
+		# dimension (where the incident's position is a hundred metres below the
+		# floor and the distance would be a lie), it just names itself.
+		if _state == STATE_ANOMALY and not _trial_active and TOOL_LINES.has(_carried_id):
+			var metres := 0
+			if _player != null and is_instance_valid(_player):
+				metres = int(_player.global_position.distance_to(_incident_position()))
+			match _carried_id:
+				"spectral_lens":
+					_task.set_progress(-1.0, "HUD_TOOL_LENS", [metres], TaskBlock.OWNER_NIGHT)
+				"thread_spool":
+					_task.set_progress(-1.0, "HUD_TOOL_THREAD", [metres], TaskBlock.OWNER_NIGHT)
+				"phase_prism":
+					_task.set_progress(-1.0, "HUD_TOOL_PRISM", [], TaskBlock.OWNER_NIGHT)
+				_:
+					_task.set_progress(-1.0, "HUD_TOOL_LANTERN", [], TaskBlock.OWNER_NIGHT)
+			return
+		var device := tr(str(EQUIPMENT[_carried_id]["name"]))
+		_task.set_progress(-1.0, "HUD_TASK_CARRYING", [device], TaskBlock.OWNER_NIGHT)
+		return
+	_task.set_progress(-1.0, "", [], TaskBlock.OWNER_NIGHT)
+
+
+## Slot 2's urgency. Two deadlines, either of which turns on all five channels:
+## the incident clock, and the Curator being close enough that the clock has
+## stopped being the thing that will end the run.
+func _timer_urgent() -> bool:
+	if _time_left <= URGENT_SECONDS:
+		return true
+	var distance := _curator_distance()
+	return distance >= 0.0 and distance <= CURATOR_URGENT_RANGE
+
+
+# --- THE TERMINAL'S CORRUPTION -----------------------------------------------
+#
+# game/TerminalFrame.gd carries a corruption level and says, in its own header,
+# that wiring it is the next phase's job and that the intended sources are "night
+# number and remaining anomalies for the sustained floor, Curator distance for
+# the pulse, and a blackout ... for signal loss". This is that wiring, minus the
+# signal-loss case -- see _night_corruption() for why that one is left alone.
+
+
+## Sustained corruption, 0..1, from state the night loop already keeps.
+##
+##   blackout ... CORRUPT_BLACKOUT once the museum is on emergency power. Before
+##                that the building is a workplace and the terminal is clean.
+##   night ...... CORRUPT_PER_NIGHT per night past the first.
+##   clock ...... up to CORRUPT_TIMER_SPAN as an incident timer runs out. This is
+##                the one that moves while the player watches, and it is the
+##                largest term, because a containment window closing IS the
+##                thing the interface is degrading in sympathy with.
+##
+## The two ends are absolute rather than additive: a failed run reads 1.0 (the
+## containment is gone, and the integrity meter should say so in digits), and a
+## finished one reads 0.0.
+##
+## NOT WIRED: TerminalFrame.set_signal_lost(). It replaces the body of the page
+## with a torn picture carrying one message, which on the fail page would hide
+## FAIL_RETRY -- the only line telling the player how to leave -- and on the
+## protocol page would hide the device name the page exists to deliver. It wants
+## a screen of its own to land on, which this file does not have one of yet.
+func _night_corruption() -> float:
+	if _state == STATE_FAILED:
+		return 1.0
+	if _state == STATE_WIN or _state == STATE_NIGHT_DONE:
+		return 0.0
+	var level := 0.0
+	if _map != null and bool(_map.get("_blackout_done")):
+		level += CORRUPT_BLACKOUT
+	level += CORRUPT_PER_NIGHT * float(_night - 1)
+	if _state == STATE_ANOMALY:
+		var total: float = maxf(float(NIGHT_CONFIG[_night]["timer"]), 1.0)
+		level += CORRUPT_TIMER_SPAN * clampf(1.0 - _time_left / total, 0.0, 1.0)
+	return clampf(level, 0.0, 1.0)
+
+
+## The core chip: a translated state row AND a level, so the reading never rests
+## on the chip's colour. CORE_CRITICAL also doubles the chip's border width.
+func _core_state() -> Array:
+	match _state:
+		STATE_FAILED:
+			return ["TERM_CORE_CRITICAL", TerminalFrame.CORE_CRITICAL]
+		STATE_ANOMALY:
+			if _timer_urgent():
+				return ["TERM_CORE_CRITICAL", TerminalFrame.CORE_CRITICAL]
+			return ["TERM_CORE_UNSTABLE", TerminalFrame.CORE_UNSTABLE]
+		STATE_COUNTDOWN, STATE_CALM:
+			return ["TERM_CORE_UNSTABLE", TerminalFrame.CORE_UNSTABLE]
+	return ["TERM_CORE_NOMINAL", TerminalFrame.CORE_NOMINAL]
+
+
+## Metres to the Curator, or -1.0 when there is nothing to report.
+##
+## Read, never written, and read out of the node that already owns it rather
+## than duplicated here: GameplayEnhancements builds the Curator, decides when it
+## hunts and holds it in `_watcher`. The hop through the group is the same one
+## every other cross-node lookup in this file makes.
+##
+## Note this is NOT GameplayEnhancements._watch_distance(), which is gated on the
+## CCTV tablet being open on purpose -- that readout is compensation for being
+## blinded by the tablet, and giving it away with the tablet down would be a
+## wallhack. Nothing here is shown to the player as a range: it moves a
+## corruption level and an urgency flag, both of which the player could already
+## infer from the Curator's own footsteps.
+func _curator_distance() -> float:
+	if _player == null or not is_instance_valid(_player):
+		return -1.0
+	var enhancements := get_tree().get_first_node_in_group("gameplay_enhancements")
+	if enhancements == null:
+		return -1.0
+	var held: Variant = enhancements.get("_watcher")
+	if held == null or not is_instance_valid(held):
+		return -1.0
+	var curator := held as Node3D
+	# `active` is false before night two, during a pocket-dimension trial and
+	# whenever no anomaly is running -- i.e. exactly when it is not a threat.
+	if curator == null or not curator.is_inside_tree() \
+			or not bool(curator.get("active")):
+		return -1.0
+	return _player.global_position.distance_to(curator.global_position)
+
+
+## Wall time for the status cluster. See SHIFT_START_SECONDS.
+func _shift_clock_seconds() -> float:
+	var elapsed := 0.0
+	if _state == STATE_ANOMALY:
+		elapsed = maxf(float(NIGHT_CONFIG[_night]["timer"]) - _time_left, 0.0)
+	return SHIFT_START_SECONDS + float(_night - 1) * 3600.0 + elapsed
+
+
+## Everything a terminal page shows about the night, in one call.
+func _push_terminal_state(frame: TerminalFrame) -> void:
+	if frame == null:
+		return
+	var core := _core_state()
+	frame.set_status(_night, _shift_clock_seconds(), str(core[0]), int(core[1]))
+	frame.set_corruption(_night_corruption())
+
+
+## Per frame: keep whatever page is on screen in step with the night, and let the
+## Curator stab it.
+##
+## Only visible pages are touched. TerminalFrame._render() walks every label it
+## owns, and there is never more than one page up at a time; a hidden one is
+## brought up to date by _raise_terminal() on the way in, which is also the only
+## way any of them is ever shown.
+func _sync_terminals(delta: float) -> void:
+	_curator_pulse_cooldown = maxf(0.0, _curator_pulse_cooldown - delta)
+	var frame := _visible_terminal()
+	if frame == null:
+		# Nothing on screen: forget the last pushed level so the next page to come
+		# up is repainted rather than skipped by the epsilon test below.
+		_terminal_corruption = -1.0
+		return
+	var level := _night_corruption()
+	if absf(level - _terminal_corruption) >= CORRUPT_EPSILON:
+		_terminal_corruption = level
+		_push_terminal_state(frame)
+	if _curator_pulse_cooldown > 0.0:
+		return
+	var distance := _curator_distance()
+	if distance < 0.0 or distance > CURATOR_PULSE_RANGE:
+		return
+	# Closest = strongest. The frame keeps this as a decaying spike on top of the
+	# sustained floor, so the two systems compose without either knowing about the
+	# other -- and under reduced_flashes it steps up once and back down once
+	# instead of ramping, which is the frame's own contract.
+	var closeness := 1.0 - clampf(distance / CURATOR_PULSE_RANGE, 0.0, 1.0)
+	frame.pulse_corruption(CURATOR_PULSE_MAX * closeness, CURATOR_PULSE_SECONDS)
+	_curator_pulse_cooldown = CURATOR_PULSE_INTERVAL
+
+
+## The one terminal page currently on screen, or null. They are mutually
+## exclusive by construction: fail and win are states, the protocol screen is
+## hidden by both, and the F9 console refuses to open during a trial.
+func _visible_terminal() -> TerminalFrame:
+	if _admin_layer != null and _admin_layer.visible:
+		return _admin_frame
+	if _fail_frame != null and _fail_frame.visible:
+		return _fail_frame
+	if _win_frame != null and _win_frame.visible:
+		return _win_frame
+	if _protocol_layer != null and _protocol_layer.visible:
+		return _protocol_frame
+	return null
 
 
 # --- Orientation (stage 8.6) ------------------------------------------------

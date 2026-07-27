@@ -77,13 +77,39 @@ def source_files() -> list[Path]:
     return [f for f in files if not f.name.startswith(NON_UI_SOURCE_PREFIX)]
 
 
+def strip_comment(line: str) -> str:
+    """The code part of a GDScript line, with any trailing comment removed.
+
+    Prose is not code, and this checker used to forget that: a doc comment in
+    game/AudioManager.gd reading `see "MUSIC" below.` was read as a demand for a
+    catalogue key named MUSIC, which turned BOTH gates red — the standalone
+    checker and the in-engine sweep in test_map_verification.gd. Any capitalised
+    word in quotes, anywhere in a comment, could do it again.
+
+    A `#` inside a string literal does not start a comment, so track quoting
+    rather than splitting on the first hash.
+    """
+    quote = ""
+    for index, char in enumerate(line):
+        if quote:
+            if char == "\\":
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#":
+            return line[:index]
+    return line
+
+
 def used_keys() -> dict[str, list[str]]:
     """Every key literal in the codebase, mapped to the sites that mention it."""
     sites: dict[str, list[str]] = {}
     for path in source_files():
         rel = path.relative_to(ROOT).as_posix()
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for key in KEY_LITERAL_RE.findall(line):
+            for key in KEY_LITERAL_RE.findall(strip_comment(line)):
                 if key in NOT_KEYS:
                     continue
                 sites.setdefault(key, []).append(f"{rel}:{line_no}")

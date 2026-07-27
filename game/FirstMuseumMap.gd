@@ -338,8 +338,24 @@ const MuseumModels := preload("res://game/MapModels.gd")
 # modules below it; call sites stay unchanged.
 
 
-func _add_room(parent: Node, room_name: String, center: Vector3, size: Vector2,
-		floor_color: Color, doors: Dictionary = {}) -> void:
+## One room: floor, ceiling slab, four trimmed walls with optional doorway gaps,
+## and the sign hanging in the middle of it.
+##
+## `room_name` is the NODE name and is deliberately not player-facing. It is the
+## handle the whole project addresses this room by -- test_map_verification looks
+## up "Central Atrium East Wall Near Segment" by path, GameManager and the
+## security tablet find their props under these parents -- so it stays an English
+## identifier and never moves with the locale.
+##
+## `sign_key` is what the player reads. All eleven rooms are already named in the
+## catalogue, because SecurityCameraTablet.ROOMS labels the same eleven
+## rectangles on the mini-map from CAM_ROOM_* / CAM_ENTRANCE / CAM_PLANETARIUM;
+## the signs used to be drawn from `room_name` instead, so a Russian player
+## walking the building read "Equipment Storage" on the wall and "Склад" on the
+## monitor for the same room. Passing the key routes both through one row.
+func _add_room(parent: Node, room_name: String, sign_key: String,
+		center: Vector3, size: Vector2, floor_color: Color,
+		doors: Dictionary = {}) -> void:
 	var room := Node3D.new()
 	room.name = room_name
 	room.position = center
@@ -374,7 +390,7 @@ func _add_room(parent: Node, room_name: String, center: Vector3, size: Vector2,
 	_vertical_wall_with_gap(room, "%s East Wall" % room_name, wall_inset_x,
 		size.y, wall_color, east_gap, accent)
 	# Readable on foot, hidden from the CCTV feeds -- see CCTV_HIDDEN_LAYER.
-	_add_label(room, room_name, Vector3(0, 2.2, size.y * 0.5 - 0.8),
+	_add_label(room, tr(sign_key), Vector3(0, 2.2, size.y * 0.5 - 0.8),
 		Color(0.24, 0.27, 0.24), true)
 
 
@@ -706,6 +722,10 @@ const NAV_SOURCE_GROUP := "museum_nav_source"
 
 var _nav_region: NavigationRegion3D = null
 
+## A rebake that was asked for while the previous one was still on its worker
+## thread. See _bake_navigation() for why dropping it sealed Mass Wing D.
+var _nav_rebake_queued := false
+
 
 func _add_navigation(parent: Node3D) -> void:
 	# Parsing starts from the nodes in this group and walks their children.
@@ -738,6 +758,7 @@ func _add_navigation(parent: Node3D) -> void:
 	_nav_region.name = "Museum Navigation"
 	_nav_region.navigation_mesh = nav_mesh
 	parent.add_child(_nav_region)
+	_watch_bakes()
 	# Baking walks every collider in the museum — keep it off the frame that is
 	# already building the entire map.
 	call_deferred("_bake_navigation")
@@ -756,14 +777,84 @@ func _ensure_navigation() -> void:
 	_nav_region = existing
 	if not root.is_in_group(NAV_SOURCE_GROUP):
 		root.add_to_group(NAV_SOURCE_GROUP)
+	_watch_bakes()
 	call_deferred("_bake_navigation")
 
 
-## Rebuild the navigation mesh. The bake itself runs on a worker thread, so
-## this is cheap enough to call again whenever the layout changes.
+## Subscribe to the region's own completion signal, which is the only thing that
+## can tell us when a queued rebake is allowed to start. Idempotent: both
+## entry points call it, and _ensure_navigation() may adopt a region a previous
+## _add_navigation() already wired up.
+func _watch_bakes() -> void:
+	if not is_instance_valid(_nav_region):
+		return
+	if not _nav_region.bake_finished.is_connected(_on_nav_bake_finished):
+		_nav_region.bake_finished.connect(_on_nav_bake_finished)
+
+
+## Rebuild the navigation mesh. The bake runs on a worker thread, so this is
+## cheap enough to call whenever the layout changes -- but only ONE bake may be
+## in flight at a time, and Godot does not queue the second request. It refuses
+## it outright ("NavigationMesh is already baking. Wait for current bake to
+## finish.") and throws it away.
+##
+## That dropped bake is how Mass Wing D stayed sealed to the Curator. unlock_wing()
+## rebakes, and GameManager opens every wing the save has already earned in a
+## single frame -- `for n in range(2, _night + 1): _unlock_for_night(n)` in its
+## _ready(). On a night-3 resume that is two unlocks back to back: the first
+## started a bake, the second hit the refusal, and the museum went on running a
+## navmesh in which the Wing D blast door was still standing. The antagonist
+## could not path into the room the game's climax happens in, and nothing said
+## so. The same race also exists between the build-time bake and the first
+## unlock, which can land in the very next frames.
+##
+## So a request that cannot run now is remembered and re-issued from
+## bake_finished. One flag rather than a counter: a bake always reads the CURRENT
+## scene, so however many unlocks land during one bake, one more bake afterwards
+## satisfies all of them.
 func _bake_navigation() -> void:
 	if not is_instance_valid(_nav_region) or not _nav_region.is_inside_tree():
 		return
+	if _nav_region.is_baking():
+		_nav_rebake_queued = true
+		# The watchdog below now carries this. The reviewer measured a 1-in-3
+		# loss here: a rebake request can land in a window where the signal it
+		# waits on has already been emitted (worker done, result still
+		# applying), leaving the flag set with nothing left to serve it -- the
+		# mesh that stays on the server is one baked with a blast door still
+		# standing, and only a manual extra bake repairs it. The window is
+		# machine-timing dependent: it does not reproduce on every box, which is
+		# exactly why the fix cannot rely on the bake_finished signal alone.
+		return
+	_nav_rebake_queued = false
+	_nav_region.bake_navigation_mesh(true)
+
+
+func _on_nav_bake_finished() -> void:
+	if not _nav_rebake_queued:
+		return
+	# Deferred rather than immediate: bake_finished is emitted while the region is
+	# still applying the result it just finished, and starting the next bake from
+	# inside the handler re-enters that.
+	call_deferred("_bake_navigation")
+
+
+## Safety net under the bake_finished/deferred chain, called from _process():
+## if a rebake is owed and the oven is free, start it. The signal path is the
+## fast path and covers the common case; this covers any window that orphans
+## the flag (see _bake_navigation). Cost when nothing is owed is one boolean
+## check per frame, and every branch re-checks is_baking() before starting,
+## so it can never double up with the deferred call -- whichever path gets
+## there first clears the flag and the other stands down.
+func _nav_watchdog() -> void:
+	if not _nav_rebake_queued:
+		return
+	if not is_instance_valid(_nav_region) or not _nav_region.is_inside_tree():
+		_nav_rebake_queued = false
+		return
+	if _nav_region.is_baking():
+		return
+	_nav_rebake_queued = false
 	_nav_region.bake_navigation_mesh(true)
 
 
@@ -847,6 +938,12 @@ var _environment: Environment = null
 var _sun: DirectionalLight3D = null
 var _sun_shaft: SpotLight3D = null
 var _powered_lights: Array = []
+## Light3D nodes inside the LightProps emergency luminaires. Held invisible from
+## the moment they are built and switched on in the same frame the mains die --
+## see _add_light_fittings for why they are built lit and hidden rather than
+## unlit. Kept separate from _powered_lights, which is the list the blackout
+## switches OFF; these are the only fittings that move the other way.
+var _emergency_fixtures: Array = []
 var _blackout_done := false
 
 # Exact footprint of the security office. Night begins only after the player
@@ -980,7 +1077,12 @@ func _add_world_env(parent: Node) -> void:
 	shaft.rotation_degrees = Vector3(-90, 0, 0)
 	shaft.light_energy = 3.0
 	shaft.spot_range = WALL_HEIGHT + 1.0
-	shaft.spot_angle = 24.0
+	# 24 degrees gave a cone only 1.39 m across at the floor, and the containment
+	# core's 0.66 m column now stands inside it: the beam would have landed on the
+	# core's own shoulder and thrown a hard radial shadow instead of a pool. 40
+	# opens it to ~2.5 m at the floor, so the light falls as a ring around the
+	# 2.05 m dais and the column is lit rather than silhouetted by it.
+	shaft.spot_angle = 40.0
 	shaft.light_color = Color(0.98, 0.93, 0.78)
 	shaft.shadow_enabled = true
 	parent.add_child(shaft)
@@ -1069,6 +1171,13 @@ func _trigger_blackout() -> void:
 	# Red emergency light comes up and starts pulsing (see _process).
 	if is_instance_valid(_emergency_light):
 		_emergency_light.visible = true
+	# The battery-backed luminaires come up with it. These do NOT pulse: the
+	# single pulsing source in the museum is the atrium lamp above, and six more
+	# throbbing red lights would be both worse to look at and worse to read a
+	# room by. Their housings have been on the walls, dark, since the map built.
+	for unit in _emergency_fixtures:
+		if is_instance_valid(unit):
+			unit.visible = true
 	# Night sky + creeping fog.
 	if _environment != null:
 		_environment.ambient_light_energy = 0.18
@@ -1100,7 +1209,13 @@ func _add_atrium_landmarks(parent: Node) -> void:
 	_cylinder(parent,"Пол ротонды",Vector3(0,.11,0),4.9,.10,Color(.72,.72,.69))
 	for p:Vector3 in [Vector3(-11.5,0,-11.5),Vector3(11.5,0,-11.5),Vector3(-11.5,0,11.5),Vector3(11.5,0,11.5)]:
 		_cylinder(parent,"Колонна ротонды",p+Vector3(0,WALL_HEIGHT*.5,0),.42,WALL_HEIGHT,Color(.16,.16,.155))
-	for angle:float in [0.0,90.0,180.0,270.0]:
+	# 45, 135, 225, 315 rather than the cardinals. On the axes these four benches
+	# sat squarely on the circulation line between every opposing pair of
+	# doorways -- Entrance to Time Wing and Office to Gravity Wing both ran
+	# straight through one. The room is 30 m wide so they never blocked the bake,
+	# but they were furniture parked in the middle of the main routes, and the
+	# diagonals put them between the axes where a bench belongs.
+	for angle:float in [45.0,135.0,225.0,315.0]:
 		var r:=deg_to_rad(angle); var bench:=_box(parent,"Скамья ротонды",Vector3(cos(r)*8.4,.35,sin(r)*8.4),Vector3(2.5,.55,.68),Color(.19,.16,.13)); bench.rotation_degrees.y=-angle
 	_add_label(parent,tr("EXHIBIT_CONTAINMENT_CORE"),Vector3(0,3.0,4.8),Color(.34,.72,.62))
 
@@ -1171,55 +1286,34 @@ func _add_office_details(parent: Node) -> void:
 	_box(parent, "Office Rug", Vector3(-25, 0.035, 0.4),
 		Vector3(7.0, 0.025, 4.6), Color(0.08, 0.10, 0.11), 0.0, 0.0, false)
 
-	# L-shaped command desk with grounded cabinets and cable management.
-	var desk_wood := Color(0.17, 0.12, 0.085)
-	var desk_metal := Color(0.055, 0.062, 0.068)
-	_box(parent, "Security Desk Main Top", Vector3(-25, 1.02, -1.0),
-		Vector3(6.2, 0.14, 1.65), desk_wood, 0.0, 0.15)
-	_box(parent, "Security Desk Return Top", Vector3(-28.35, 1.02, 1.15),
-		Vector3(1.45, 0.14, 4.4), desk_wood, 0.0, 0.15)
-	for leg in [Vector3(-27.8, 0.5, -1.65), Vector3(-22.2, 0.5, -1.65),
-			Vector3(-27.8, 0.5, -0.35), Vector3(-22.2, 0.5, -0.35),
-			Vector3(-28.8, 0.5, 2.85), Vector3(-27.9, 0.5, 2.85)]:
-		_box(parent, "Security Desk Leg", leg, Vector3(0.16, 1.0, 0.16),
-			desk_metal, 0.0, 0.7)
-	_box(parent, "Desk Cable Modesty Panel", Vector3(-25, 0.62, -1.72),
-		Vector3(5.3, 0.72, 0.08), desk_metal, 0.0, 0.35)
-	# Drawer pedestal supports the return and prevents floating props.
-	_box(parent, "Desk Drawer Pedestal", Vector3(-28.35, 0.5, 2.25),
-		Vector3(1.15, 1.0, 1.25), Color(0.09, 0.095, 0.10), 0.0, 0.5)
-	for drawer_y in [0.25, 0.53, 0.81]:
-		_box(parent, "Desk Drawer Front", Vector3(-27.76, drawer_y, 2.25),
-			Vector3(0.025, 0.22, 1.02), Color(0.14, 0.145, 0.15), 0.0, 0.45, false)
-
-	# Six individually framed CCTV displays on a proper wall rail.
-	_box(parent, "CCTV Wall Rail", Vector3(-25, 2.05, -2.20),
-		Vector3(6.4, 1.62, 0.12), Color(0.025, 0.030, 0.034), 0.0, 0.55)
-	for row in range(2):
-		for col in range(3):
-			var monitor_x := -27.15 + float(col) * 2.15
-			var monitor_y := 1.70 + float(row) * 0.67
-			_box(parent, "CCTV Monitor Housing %d-%d" % [row, col],
-				Vector3(monitor_x, monitor_y, -2.11), Vector3(1.92, 0.59, 0.11),
-				Color(0.035, 0.040, 0.045), 0.0, 0.5, false)
-			var screen_color := Color(0.025, 0.18 + float(col) * 0.025,
-				0.16 + float(row) * 0.03)
-			_box(parent, "CCTV Feed %d-%d" % [row, col],
-				Vector3(monitor_x, monitor_y, -2.045), Vector3(1.72, 0.43, 0.025),
-				screen_color, 0.42 + float((row + col) % 2) * 0.12, 0.0, false)
-			_box(parent, "CCTV REC %d-%d" % [row, col],
-				Vector3(monitor_x + 0.72, monitor_y + 0.16, -2.02),
-				Vector3(0.045, 0.045, 0.018), Color(0.9, 0.04, 0.03), 1.4, 0.0, false)
-
-	# Physical CCTV control console: the tablet UI can only open in this room.
-	_box(parent, "CCTV Control Console", Vector3(-25, 1.15, -0.72),
-		Vector3(2.25, 0.16, 0.78), Color(0.055, 0.07, 0.075), 0.0, 0.5)
-	_box(parent, "CCTV Keyboard", Vector3(-25.35, 1.245, -0.54),
-		Vector3(0.92, 0.035, 0.28), Color(0.025, 0.028, 0.03), 0.0, 0.0, false)
-	_box(parent, "CCTV Trackball", Vector3(-24.45, 1.255, -0.52),
-		Vector3(0.28, 0.045, 0.28), Color(0.08, 0.12, 0.12), 0.25, 0.25, false)
-	_add_label(parent, "CCTV ACCESS — TAB / Y", Vector3(-25, 1.48, -0.72),
-		Color(0.35, 0.95, 0.78))
+	# The workstation -- monitor bank, desk, chair, key cabinet, roster wall,
+	# kettle, mug rings, dead plant and the tablet's charging dock -- is
+	# OfficeProps.build_watcher_office(). What stood here before was a 6.2 m desk
+	# whose top was at y 1.09 (bar height) carrying six "monitors" 1.92 m wide;
+	# those two numbers were why the room read wrong at every scale. The library
+	# builds to furniture dimensions: work surface 0.74, monitors 0.52 x 0.40.
+	#
+	# ORIGIN. (-25, 0, -2.4) is the base of the monitor wall, +Z into the room,
+	# which is the frame the builder documents. It puts the bank's top face at
+	# 2.02 m -- the height the prologue's seventh shot and GameManager's closing
+	# shot both aim at, (-25, 2.05, -2.2) -- and leaves its four colliders'
+	# 4.36 x 2.58 m navmesh hole 4.6 m from the Archive door at (-25, -7), 7.7 m
+	# from the Storage door at (-25, 7) and 8.7 m from the Atrium door at (-15, 0).
+	#
+	# The removed "CCTV Control Console" was not a dependency: SecurityCameraTablet
+	# gates opening on _player_is_in_office(), a bounding-box test on the room, not
+	# on any node. Its "CCTV ACCESS — TAB / Y" plate went with it, and that is a
+	# small win on its own -- it was a raw English literal with no catalogue row,
+	# so it never spoke Russian. The dock the library builds into the desk is the
+	# same affordance stated as an object rather than as a caption.
+	#
+	# Both label slots are passed "": the two keys they want are not in
+	# localization/game.csv and that file belongs to another agent this round.
+	# Given "", each builder still builds the physical cabinet and the physical
+	# roster board and simply hangs no Label3D on them, which is a complete
+	# object either way.
+	OfficeProps.build_watcher_office(parent as Node3D, Vector3(-25, 0, -2.4),
+		0.0, "", "")
 
 	# Alarm terminal remains at the coordinates used by GameManager.
 	_box(parent, "Alarm Terminal Pedestal", Vector3(-29, 0.55, 3.1),
@@ -1262,32 +1356,16 @@ func _add_office_details(parent: Node) -> void:
 			Vector3(-15.49, paper_y, paper_z), Vector3(0.025, 0.48, 0.72),
 			Color(0.72, 0.70, 0.62), 0.0, 0.0, false)
 
-	# Desk props are placed directly on the 1.09 m tabletop.
-	_box(parent, "Office Phone", Vector3(-23.1, 1.16, -0.65),
-		Vector3(0.62, 0.16, 0.42), Color(0.025, 0.025, 0.023), 0.0, 0.2, false)
-	_cylinder(parent, "Coffee Mug", Vector3(-27.15, 1.19, -0.55),
-		0.075, 0.20, Color(0.38, 0.08, 0.06))
-	_box(parent, "Shift Log", Vector3(-26.45, 1.13, -0.55),
-		Vector3(0.62, 0.045, 0.84), Color(0.32, 0.24, 0.13), 0.0, 0.0, false)
-	_box(parent, "Radio Charger", Vector3(-28.35, 1.16, 1.05),
-		Vector3(0.42, 0.16, 0.36), Color(0.04, 0.045, 0.05), 0.15, 0.3, false)
-	_cylinder(parent, "Security Radio", Vector3(-28.35, 1.43, 1.05),
-		0.07, 0.48, Color(0.035, 0.04, 0.045))
-	_box(parent, "Shift Printer", Vector3(-28.35, 1.31, 2.25),
-		Vector3(0.95, 0.42, 0.75), Color(0.42, 0.43, 0.40), 0.0, 0.15)
-
-	# Detailed procedural swivel chair, always correctly scaled.
-	_box(parent, "Office Chair Seat", Vector3(-25, 0.54, 1.35),
-		Vector3(0.62, 0.12, 0.62), Color(0.045, 0.05, 0.055))
-	_box(parent, "Office Chair Back", Vector3(-25, 1.02, 1.62),
-		Vector3(0.62, 0.82, 0.10), Color(0.04, 0.045, 0.05))
-	_cylinder(parent, "Office Chair Post", Vector3(-25, 0.30, 1.35),
-		0.055, 0.42, Color(0.10, 0.11, 0.12))
-	for angle in range(0, 360, 72):
-		var rad := deg_to_rad(float(angle))
-		var foot := Vector3(-25 + cos(rad) * 0.34, 0.09, 1.35 + sin(rad) * 0.34)
-		_box(parent, "Office Chair Foot", foot, Vector3(0.34, 0.06, 0.08),
-			Color(0.09, 0.10, 0.11), 0.0, 0.55)
+	# The phone, mug, shift log, radio, charger and printer all stood on the
+	# 1.09 m slab that no longer exists, and the block-built swivel chair stood at
+	# (-25, 0, 1.35) with a 0.62 m seat and no gas column. OfficeProps carries a
+	# kettle, three coffee rings and a five-star task chair turned 24 degrees off
+	# the desk, all measured off its own 0.74 m surface.
+	#
+	# The shift printer is the one thing not replaced in kind, and it is not
+	# missed: it stood at (-28.35, 1.31, 2.25), on top of a desk return that was
+	# 3.35 m from the monitor wall in a room whose operator never leaves the
+	# monitors.
 
 	# Cable trays and practical task lighting finish the room.
 	_box(parent, "Office Cable Tray", Vector3(-25, 3.05, -2.25),
@@ -1304,6 +1382,205 @@ func _add_office_details(parent: Node) -> void:
 		task_light.shadow_enabled = true
 		parent.add_child(task_light)
 		_powered_lights.append(task_light)
+
+## The fittings that make the building read as a building rather than as a set:
+## way-out signage, extinguishers, a hose reel, ceiling hatches and cable trays.
+##
+## All of it hangs on the ROOM-SIDE WALL FACES computed the way the note in
+## _add_model_archive describes. `origin` for a CorridorProps wall prop is where
+## the prop meets the wall and local +Z leaves it, so each call is one yaw:
+## on a wall the room lies +Z of, yaw 0; -Z, yaw 180; +X, yaw 90; -X, yaw -90.
+##
+## DOORWAYS. Only the extinguishers and the hose reel carry a collider at all
+## (the bottle, 0.15 m square, and the hose coil). CorridorProps' own rule is
+## that free-standing props belong at least 1.2 m from a doorway centre; the
+## nearest one below is 3.4 m out.
+##
+## The way-out signs are the reason this function exists. They are lit by
+## constant emission and are deliberately NOT registered in _powered_lights:
+## battery-backed exit signage that survives the museum losing power is both
+## correct and the one navigational aid the player must never lose -- and the
+## game's whole first act is the power going out. Their meaning is carried by
+## the running-figure pictogram and the arrow, never by the green.
+func _add_service_fittings(parent: Node) -> void:
+	var root := parent as Node3D
+	# Way out, back to the Atrium and then to the street. Each sign hangs at
+	# 2.25 m on the face of the wall its doorway is in, offset 2.6 m to one side,
+	# with its arrow pointing back at the opening.
+	CorridorProps.exit_sign(root, Vector3(-2.6, 2.25, -14.65), 0.0, 1)
+	CorridorProps.exit_sign(root, Vector3(2.6, 2.25, 14.65), 180.0, 1)
+	CorridorProps.exit_sign(root, Vector3(-14.65, 2.25, 2.6), 90.0, 1)
+	CorridorProps.exit_sign(root, Vector3(14.65, 2.25, -2.6), -90.0, 1)
+	CorridorProps.exit_sign(root, Vector3(2.6, 2.25, -15.35), 180.0, -1)
+	CorridorProps.exit_sign(root, Vector3(15.35, 2.25, 2.6), 90.0, 1)
+	CorridorProps.exit_sign(root, Vector3(-15.35, 2.25, -2.6), -90.0, 1)
+	CorridorProps.exit_sign(root, Vector3(2.6, 2.25, 34.65), 180.0, -1)
+
+	# Fire points. The bottle is the only collider and it reaches 0.19 m into the
+	# room; every one of these is on a blank stretch of wall.
+	CorridorProps.fire_extinguisher(root, Vector3(-4.2, 0, -14.65), 0.0)
+	CorridorProps.fire_extinguisher(root, Vector3(-15.35, 0, 3.4), -90.0)
+	CorridorProps.fire_extinguisher(root, Vector3(15.35, 0, -3.4), 90.0)
+	CorridorProps.fire_extinguisher(root, Vector3(-4.2, 0, -15.35), 180.0)
+	CorridorProps.fire_extinguisher(root, Vector3(-34.65, 0, 10.0), 90.0)
+	# Somebody ran the hose out and never wound it back. Its tail lies 1.01 m to
+	# local -X and 0.85 m into the room, so it wants a clear corner: this one is
+	# on the Atrium's west wall 5 m north of the office doorway, and the tail
+	# runs away from it.
+	CorridorProps.fire_hose_reel(root, Vector3(-14.65, 0, -5.0), 90.0, true)
+
+	# Ceiling hatches. No collider on any part, and at 45 degrees the leaf's
+	# lowest edge is 2.75 m up -- clear of the player and of the Curator's 2.25 m
+	# capsule -- so these are safe directly over circulation.
+	CorridorProps.ceiling_hatch(root, Vector3(-8.0, CEILING_SOFFIT_Y, 6.0), 0.9, 38.0)
+	CorridorProps.ceiling_hatch(root, Vector3(-25.0, CEILING_SOFFIT_Y, -10.0), 0.9, 0.0)
+	CorridorProps.ceiling_hatch(root, Vector3(20.0, CEILING_SOFFIT_Y, 6.0), 0.9, 0.0)
+
+	# Cable trays at 3.0 m, stopped short of every doorway: the doorway is
+	# already full of the wall builder's lintel at 2.70-3.40 m. The Atrium run
+	# spans x -14..-2 and the office run x -32..-18, both well clear of the
+	# openings at x 0 and x -15.
+	#
+	# THE TRAY IS THE ONE PROP HERE THAT IS NOT ANCHORED ON ITS ORIGIN. Every
+	# other CorridorProps wall prop puts its back plane on `origin`, so the
+	# room-side face is the whole answer. cable_tray does not: its 0.36 m of
+	# bracket depth is LOCAL TO ORIGIN AND CENTRED ON IT (rails at local z
+	# +-0.135, brackets -0.18..+0.18), so the origin belongs half a bracket into
+	# the room. These three used to sit at face + WALL_THICKNESS -- the depth read
+	# as if it grew forward from the origin -- which left every bracket stopping
+	# 0.17 m short of the wall it is bolted to, measured, on all three runs. Half
+	# the bracket, 0.175 m, puts the back of it exactly on the face.
+	CorridorProps.cable_tray(root, Vector3(-8.0, 3.0, -14.475), 12.0, 0.0, 3, 0.0)
+	CorridorProps.cable_tray(root, Vector3(-25.0, 3.0, -6.475), 14.0, 0.0, 2, 0.9)
+	CorridorProps.cable_tray(root, Vector3(28.0, 3.0, -8.475), 18.0, 0.0, 3, 0.0)
+
+	# Louvred vents: 0.05 m of relief, no collider. The black behind the slats is
+	# the point of them.
+	CorridorProps.wall_vent(root, Vector3(-6.0, 2.35, -14.65), 0.0)
+	CorridorProps.wall_vent(root, Vector3(30.0, 2.35, -8.65), 0.0)
+	CorridorProps.wall_vent(root, Vector3(-34.65, 2.35, -13.5), 90.0)
+
+	# Wear at the thresholds. Flat, unlit, deterministic quads with no collider.
+	for seam: Vector3 in [Vector3(0, 0, 15), Vector3(-15, 0, 0), Vector3(15, 0, 0),
+			Vector3(0, 0, -15), Vector3(-25, 0, 7), Vector3(-25, 0, -7)]:
+		CorridorProps.floor_scuffs(root, seam + Vector3(0, 0, 1.25), 2.2, 4)
+		CorridorProps.floor_scuffs(root, seam - Vector3(0, 0, 1.25), 2.2, 4)
+
+
+## Light fittings, and the two lists the blackout drives them from.
+##
+## THE BLACKOUT IS THE POINT OF THE SPLIT. Everything on the museum's mains goes
+## into _powered_lights, which _trigger_blackout() switches off wholesale the
+## moment the player reaches the office. The emergency luminaires go into
+## _emergency_fixtures instead and come up in the same frame the mains go down.
+##
+## They are built `lit` so their charge pips and lenses are emissive from the
+## start -- which is what a charged emergency luminaire looks like in a lit
+## building -- and only their Light3D is hidden until the blackout. Building them
+## unlit instead would have left a dark lens casting light afterwards.
+##
+## MOTION. The three failing tubes are the only animated fittings in the museum
+## and their flicker is diegetic: the containment core is losing the building.
+## LightProps.attach_flicker (which failing_tube calls for itself) pins the
+## fitting at a steady, unmodulated level for as long as
+## SettingsManager.reduced_flashes is true, polling the flag continuously so the
+## settings panel takes effect in both directions without a rebuild. Nothing else
+## here moves at all.
+func _add_light_fittings(parent: Node) -> void:
+	var root := parent as Node3D
+	var soffit := CEILING_SOFFIT_Y
+
+	# Mains ceiling lighting over the circulation the player actually walks.
+	for at: Vector3 in [Vector3(0, soffit, 9.0), Vector3(0, soffit, -9.0),
+			Vector3(0, soffit, 29.0), Vector3(-19.0, soffit, 0.0),
+			Vector3(0, soffit, -19.0)]:
+		_powered_lights.append_array(
+			LightProps.lights_of(LightProps.troffer(root, at)))
+
+	# Exhibit rigs. Collider-free like everything in the library, so they cannot
+	# stand between a camera and the row they light.
+	for rig: Array in [[Vector3(28, soffit, -2.0), Vector3(28, 1.4, -4.5), 3],
+			[Vector3(0, soffit, -25.0), Vector3(0, 1.4, -27.5), 3],
+			[Vector3(24, soffit, -25.0), Vector3(24, 1.4, -27.5), 2]]:
+		_powered_lights.append_array(LightProps.lights_of(
+			LightProps.spot_rig(root, rig[0], rig[1], rig[2])))
+
+	# Wall wash. Short throw on purpose: it proves the museum has lighting and
+	# then declines to help, which is the feeling the wings are meant to carry.
+	for at: Array in [[Vector3(-14.65, 2.5, -5.0), 270.0],
+			[Vector3(14.65, 2.5, 5.0), 90.0],
+			[Vector3(-10.65, 2.5, 28.0), 270.0]]:
+		_powered_lights.append_array(LightProps.lights_of(
+			LightProps.sconce(root, at[0], at[1])))
+
+	# The three fittings that are already failing before the power goes.
+	for at: Array in [[Vector3(-25, soffit, 11.0), 0.0, 14.0],
+			[Vector3(-25, soffit, -13.5), 90.0, 0.0],
+			[Vector3(24, soffit, -20.0), 0.0, 18.0]]:
+		_powered_lights.append_array(LightProps.lights_of(
+			LightProps.failing_tube(root, at[0], at[1], at[2])))
+
+	# Battery-backed. Held dark until _trigger_blackout().
+	for at: Array in [[Vector3(-3.5, 2.6, -14.65), 180.0],
+			[Vector3(3.5, 2.6, 14.65), 0.0],
+			[Vector3(-15.35, 2.6, -3.0), 90.0],
+			[Vector3(15.35, 2.6, 3.0), 270.0],
+			[Vector3(3.5, 2.6, -15.35), 0.0],
+			[Vector3(3.5, 2.6, 34.65), 0.0]]:
+		var unit := LightProps.emergency(root, at[0], at[1])
+		for light in LightProps.lights_of(unit):
+			light.visible = false
+			_emergency_fixtures.append(light)
+
+
+## Equipment Storage, dressed from the walls inward.
+##
+## THE ROOM IS NOT EMPTY WHEN THIS RUNS. GameManager._build_devices() puts four
+## 6.8 x 1.25 m equipment benches in here at runtime -- x -34.15..-27.35 and
+## -22.65..-15.85, z 8.575..9.825 and 14.375..15.625 -- carrying the twelve
+## containment devices the player has to find against the clock. That leaves
+## three clear bands: z 7.175..8.575 and z 15.625..16.825 against the end walls,
+## and z 9.825..14.375 across the middle. Everything below lives in the middle
+## band or is trim thin enough not to matter.
+##
+## The room is also the timed one, so legibility beats density: two numbered
+## shelving bays with their floor markers, one hazard cabinet in the corner the
+## benches do not reach, one tool board whose missing tools are painted
+## silhouettes, and two hanging aisle signs. Nothing here is a fourth obstacle
+## between the player and a device.
+func _add_storage_props(parent: Node) -> void:
+	var root := parent as Node3D
+	# Bays face into the room off the side walls (west face x -34.65, east face
+	# x -15.35), centred at z 12.1 so their 2.4 m width lands at z 10.9..13.3 --
+	# inside the clear middle band, touching neither pair of benches. facing_deg
+	# 90 turns local +Z to world +X, so the west bay looks east across the room.
+	StorageProps.shelving_bay(root, Vector3(-34.65, 0, 12.1), 90.0, 1, 1,
+		tr("PROP_STORAGE_BAY_SPARES"), PackedInt32Array([1, 2, 5, 9]))
+	StorageProps.floor_bay_marker(root, Vector3(-34.65, 0, 12.1), 90.0, 1)
+	StorageProps.shelving_bay(root, Vector3(-15.35, 0, 12.1), -90.0, 2, 13,
+		tr("PROP_STORAGE_BAY_CONSUMABLES"), PackedInt32Array([13, 16, 17]))
+	StorageProps.floor_bay_marker(root, Vector3(-15.35, 0, 12.1), -90.0, 2)
+	# North-west corner, in the 1.4 m strip the benches stop short of.
+	StorageProps.hazard_cabinet(root, Vector3(-34.0, 0, 7.35), 0.0,
+		tr("PROP_STORAGE_HAZARD_PLACARD"), true)
+	# Wall trim: 0.10 m deep and explicitly collider-free, so it costs the aisle
+	# beside it nothing even though a bench stands 0.8 m in front of it.
+	StorageProps.tool_board(root, Vector3(-20.5, 0, 7.35), 0.0,
+		tr("PROP_STORAGE_TOOLBOARD_NOTICE"), PackedInt32Array([1, 3, 7]), 0.95)
+	# Hung signs clear 2.38 m underneath -- above the player and above the
+	# Curator's 2.2 m agent height -- but BELOW the 2.70 m door lintels, so all
+	# three hang in the room and none crosses the doorways at (-25, 7) / (-25, 17).
+	StorageProps.bay_sign(root, Vector3(-29.5, 0, 11.0), 90.0,
+		tr("PROP_STORAGE_SIGN_DEVICES"), 1, 12)
+	StorageProps.bay_sign(root, Vector3(-20.5, 0, 11.0), -90.0,
+		tr("PROP_STORAGE_SIGN_CHARGING"), 13, 24)
+	# Names the hand-tool station over the tool board below it. This is the third
+	# of the three bay labels the catalogue carries for this room; without it
+	# PROP_STORAGE_BAY_TOOLS sits in game.csv unused, and the station it names is
+	# otherwise identified only by the shape of the tools missing from it.
+	StorageProps.bay_sign(root, Vector3(-20.5, 0, 8.6), 0.0,
+		tr("PROP_STORAGE_BAY_TOOLS"))
+
 
 func _add_exhibits(parent: Node) -> void:
 	_add_exhibit(parent, "Falling Cube Exhibit", "falling_cube",
@@ -1340,16 +1617,17 @@ func _add_exhibits(parent: Node) -> void:
 	_add_exhibit(parent, "Mass Pendulum Exhibit", "mass_pendulum",
 		Vector3(58, 0, 4), Color(0.35, 0.30, 0.40), "drop", 0.3)
 	# Reinforced containment fixtures make Mass Wing D read as heavy physics,
-	# not a loose collection of spheres.
+	# not a loose collection of spheres. The pendulum's own A-frame and crossbar
+	# used to be built here, at x 56.8 / 59.2; MassProps.build_mass_pendulum
+	# carries columns at 56.7 / 59.3 and would have stood a second frame 0.1 m
+	# inside the first, so those three boxes are gone. The containment ring
+	# stays: the sphere's 3.27 m footprint reaches z -4.64..-1.37 and the ring
+	# sits at z -1.18..1.18, so they clear each other by 0.19 m.
 	_torus(parent, "Superheavy Containment Ring", Vector3(52, 1.28, 0),
 		1.05, 1.18, Color(0.42, 0.30, 0.12), 0.25, true)
-	for x in [56.8, 59.2]:
-		_box(parent, "Mass Pendulum Frame", Vector3(x, 1.65, 4),
-			Vector3(0.16, 2.7, 0.16), Color(0.10, 0.11, 0.12), 0.0, 0.6)
-	_box(parent, "Mass Pendulum Crossbar", Vector3(58, 2.95, 4),
-		Vector3(2.6, 0.16, 0.16), Color(0.10, 0.11, 0.12), 0.0, 0.6)
 	_add_label(parent, tr("EXHIBIT_WING_D_SIGN"),
 		Vector3(52, 2.9, 7.2), Color(0.8, 0.65, 0.42))
+	_add_wing_dressing(parent)
 
 	# Per-exhibit accent lights follow the new gallery rows.
 	for pos in [Vector3(21.5, 2.4, -4.5), Vector3(28, 2.4, -4.5), Vector3(35.5, 2.4, -4.5)]:
@@ -1369,29 +1647,310 @@ func _add_exhibits(parent: Node) -> void:
 	_add_model_archive(parent)
 
 
+## Every supplied source model, placed where it stands on a floor, at a size a
+## human being would recognise, inside a room that exists.
+##
+## HOW THE NUMBERS BELOW WERE OBTAINED. Each entry was instantiated through
+## MuseumModels.place() and the world AABB of its whole mesh subtree measured in
+## a headless run; the position is then derived from that box, not guessed. This
+## matters because the .glb origins are wildly inconsistent -- some models sit on
+## their origin, some are centred on it, one hangs entirely below it -- and
+## because the import scale that makes a model sane is not visible in the file
+## name. The measured box of every entry is quoted beside it so the next person
+## can check the arithmetic without re-running the probe.
+##
+## Entries are grouped by the room they belong to, and the four columns are
+## (name, position, scale, yaw). `pitch` is passed only where a model is authored
+## Z-up and has to be stood on end.
 func _add_model_archive(parent: Node) -> void:
-	# Collection-storage dressing: every supplied source model is represented,
-	# while authored exhibits above retain their procedural safety fallbacks.
-	var placements := [
-		["basic_pc_monitors", Vector3(-27.0, 1.25, -0.8), 0.75, 180.0],
-		["fancy_marble_coffee_table", Vector3(-20.0, 0.0, 5.0), 0.75, 0.0],
-		["wooden_bookcases_with_books", Vector3(-31.0, 0.0, -4.2), 0.8, 90.0],
-		["elderly_woman_bust_on_pedestal", Vector3(38.0, 0.0, -13.0), 0.85, 180.0],
-		["vents", Vector3(-18.0, 2.8, -5.5), 0.65, 0.0],
-		["tactical_flashlight", Vector3(-23.0, 1.2, -0.8), 0.55, 25.0],
-		["лавочки", Vector3(8.0, 0.0, -8.0), 0.75, 90.0],
-		["уличная лампа", Vector3(12.0, 0.0, -10.0), 0.7, 0.0],
-		["арка дверь", Vector3(0.0, 0.0, -15.5), 0.85, 0.0],
-		["тумбочка", Vector3(-21.0, 0.0, 1.5), 0.7, 0.0],
-		["отсановка", Vector3(46.0, 0.0, -12.0), 0.6, 90.0],
-		["dumpsters_glb", Vector3(-34.0, 0.0, 7.0), 0.65, 0.0],
-		["gallery_bare_concrete_wall", Vector3(60.0, 0.0, -8.0), 0.7, 90.0],
-		["modern_grey_stone_tile_texture", Vector3(52.0, 0.02, -8.0), 0.7, 0.0],
-		["часы", Vector3(-12.0, 1.5, -18.0), 0.6, 0.0],
-		["наблюдатель", Vector3(61.0, 0.0, 6.0), 0.7, 180.0],
-	]
-	for entry in placements:
-		MuseumModels.place(parent, str(entry[0]), entry[1] as Vector3, float(entry[2]), float(entry[3]))
+	# --- Watcher Office -----------------------------------------------------
+	# The workstation is OfficeProps' now and its desk surface is DESK_TOP_Y
+	# (0.74) above the office origin at (-25, 0, -2.4), i.e. world y = 0.74 with
+	# the top spanning z -2.26..-1.54. Both desktop props below stand on that
+	# surface instead of on the 1.09 m bar-height slab that used to be there.
+	#
+	# basic_pc_monitors at 0.75 measured 1.52 x 0.37 x 0.18 with its base ON its
+	# own origin, so at y 1.25 over a 1.09 m desk it floated by exactly the
+	# 0.16 m the audit reported. At 0.50 it is 1.01 x 0.25 x 0.12, which fits
+	# between the desk edges (x -26.2..-23.8) instead of overhanging them.
+	MuseumModels.place(parent, "basic_pc_monitors",
+		Vector3(-25.6, 0.74, -1.95), 0.5, 180.0)
+	# tactical_flashlight is CENTRED on its origin (measured y -0.03..+0.03 at
+	# scale 0.25), so it rests on the desk at 0.74 + 0.027. At the old 0.55 it
+	# was a 0.49 m torch; 0.25 makes it 0.22 m, which is a torch.
+	MuseumModels.place(parent, "tactical_flashlight",
+		Vector3(-24.35, 0.767, -1.78), 0.25, 25.0)
+	# Bookcase and bedside cabinet were both measured correct: 0.77 x 1.56 x 1.58
+	# and 0.61 x 0.53 x 0.27, both standing on their own origin on the floor.
+	# Left exactly where they were.
+	MuseumModels.place(parent, "wooden_bookcases_with_books",
+		Vector3(-31.0, 0.0, -4.2), 0.8, 90.0)
+	MuseumModels.place(parent, "тумбочка", Vector3(-21.0, 0.0, 1.5), 0.7, 0.0)
+	# The vent grille was hanging in mid-air 3.1 m from any wall, at x -18.25 in
+	# a room whose east wall face is x -15.35. Its thin axis is X (measured
+	# 0.081 deep) so it belongs on a north-south wall; its mesh runs from -0.25
+	# to -0.17 of its own origin, so origin -15.10 lands the grille on
+	# -15.35..-15.27, flush on the wall face. Non-blocking (MapModels lists it),
+	# so it costs the doorway at z = 0 nothing -- and it is 5.5 m from it.
+	#
+	# ROOM-SIDE WALL FACES, the convention this function and the two dressing
+	# functions below all use. _add_room insets each wall by HALF a thickness, so
+	# for a room centred on C with size S the wall's centre line is at
+	# C +- (S / 2 - WALL_THICKNESS / 2) and the face the room can actually see is
+	# a further half-thickness in, at C +- (S / 2 - WALL_THICKNESS). The Watcher
+	# Office is 20 x 14 at (-25, 0, 0), so its east face is -25 + 10 - 0.35 =
+	# -15.35 and not the -15.175 its wall slab is centred on.
+	MuseumModels.place(parent, "vents", Vector3(-15.10, 2.55, -5.5), 0.65, 0.0)
+
+	# --- Entrance Zone ------------------------------------------------------
+	# fancy_marble_coffee_table is measured y -0.91..+0.06 at 0.75: its origin is
+	# the TOP of the table, so placing it at y 0 buried 94% of it and left the
+	# 6 cm sliver the audit found. y = 0.91 stands it on the floor. It also
+	# leaves the security office, where a marble coffee table was never furniture
+	# the night watch would own, for the public foyer where it is.
+	# Footprint x -0.69..+0.69, z -2.12..+0.73 about its origin: at (6.5, 24.0)
+	# that is x 5.81..7.19, z 21.88..24.73, clear of the visitor lockers
+	# (x 9.7..10.7) and of the central walkway.
+	MuseumModels.place(parent, "fancy_marble_coffee_table",
+		Vector3(6.5, 0.91, 24.0), 0.75, 0.0)
+	# The bust stood at (38, 0, -13): Gravity Wing A is z -9..9, so it was 4 m
+	# north of the building with no floor under it. It is also authored Z-up --
+	# at pitch 0 it measures 3.09 wide x 1.02 TALL, which is a carving lying on
+	# its back. pitch -90 stands it up; 0.55 brings it to 2.00 x 2.00 x 0.66 and
+	# y -0.99..+1.01, hence the 0.99 lift. Yawed 90 so its 2 m face runs along
+	# the wall, standing 1.05 m in from the west wall FACE at x -10.65 (the
+	# -10.825 this used to quote is the slab's centre line, which is 0.175 m
+	# inside the wall) and clear of the two exhibition posters at z 21 and z 25.
+	MuseumModels.place(parent, "elderly_woman_bust_on_pedestal",
+		Vector3(-9.6, 0.99, 18.0), 0.55, 90.0, -90.0)
+
+	# --- Central Atrium / Time Wing B ---------------------------------------
+	# Measured 0.51 x 0.65 x 2.32 standing on its own origin: a real 2.3 m bench.
+	# Correct as authored, left alone.
+	MuseumModels.place(parent, "лавочки", Vector3(8.0, 0.0, -8.0), 0.75, 90.0)
+	# The arch that frames the Atrium -> Time Wing B doorway. Deliberately
+	# untouched: MapModels.NON_BLOCKING documents the exact collision trade this
+	# placement represents, and rescaling it would narrow the opening it frames.
+	MuseumModels.place(parent, "арка дверь", Vector3(0.0, 0.0, -15.5), 0.85, 0.0)
+	# The clock was 12 cm across, floating at chest height in open floor, and --
+	# not being in NON_BLOCKING -- carried a convex collider the player walked
+	# into. 2.4 makes it a 0.48 x 0.79 station dial; yaw 90 turns its thin axis
+	# (0.12) to face the west wall it now hangs on, whose room-side face is
+	# x -12.65. Origin is the dial's BOTTOM centre (measured y 0..0.79), so 1.95
+	# puts the dial centre at 2.35 m -- above the player, above the Curator's
+	# 2.2 m agent height, and 4.8 m clear of TimeProps' clock bank at z -24.
+	MuseumModels.place(parent, "часы", Vector3(-12.59, 1.95, -18.0), 2.4, 90.0)
+
+	# --- Mass Wing D --------------------------------------------------------
+	# gallery_bare_concrete_wall is CENTRED on its origin (y -4.19..+4.08 at 0.7),
+	# so it was half buried, and at 5.87 m tall it stood 2.5 m through a 3.4 m
+	# ceiling while its 6.4 m length ran 3.22 m out through the wing's north wall
+	# at z -8. 0.394 brings it to 3.63 x 3.30 x 0.68 -- the tallest slab that
+	# clears the 3.39 m soffit -- and y 1.67 stands it on the floor. Its thin
+	# axis is Z (measured -0.34..+0.34 about its origin), so it faces into the
+	# room off the north wall face at z -7.65, spanning z -7.64..-6.96. The
+	# superheavy sphere's plinth reaches z -4.64, so they clear by 2.3 m.
+	MuseumModels.place(parent, "gallery_bare_concrete_wall",
+		Vector3(52.0, 1.67, -7.30), 0.394, 0.0)
+	# 1.33 m was child height for the wing's standing figure; 0.95 makes it
+	# 1.80 m, measured base-on-origin. No camera ray reaches x 60.5.
+	MuseumModels.place(parent, "наблюдатель", Vector3(61.0, 0.0, 6.0), 0.95, 180.0)
+
+	# --- Forecourt and street -----------------------------------------------
+	# A street lamp was standing in the middle of the Central Atrium at
+	# (12, 0, -10). It is a street lamp, so it now stands on the street side of
+	# the forecourt, east of the east planting bed (which ends at x 17.2) and
+	# west of the lot wall at x 31.3. 1.0 makes it 3.23 m, base on origin.
+	MuseumModels.place(parent, "уличная лампа", Vector3(19.5, 0.0, 46.0), 1.0, 0.0)
+	# The bus shelter rendered 7 cm tall (measured 0.034 x 0.072 x 0.071 at the
+	# old 0.6) and stood at (46, -12), 4 m north of Mass Wing D's north wall with
+	# nothing under it. 25.0 makes it 1.42 x 3.00 x 2.96; a shelter belongs at
+	# the kerb, so it stands on the pavement inside the curb at z 54.55.
+	MuseumModels.place(parent, "отсановка", Vector3(20.0, 0.0, 53.0), 25.0, 90.0)
+	# The skip was bisected by the Office/Storage wall at z = 7 (measured
+	# z -1.31..+1.26 about an origin ON that wall). It is refuse handling, so it
+	# joins the delivery bay in the service corner of the forecourt, clear of the
+	# pallet at x -28.7..-26.3 and of the tree at x -25.
+	MuseumModels.place(parent, "dumpsters_glb", Vector3(-23.0, 0.0, 52.0), 0.65, 0.0)
+
+	# --- Removed -------------------------------------------------------------
+	# "modern_grey_stone_tile_texture" is NOT placed. It measured 920.9 x 46.9 x
+	# 920.9 m with its top face at y -7.31 -- a tiling-texture swatch nearly a
+	# kilometre across, buried seven metres under the museum, visible from
+	# nowhere in the game and not a floor by any reading. It is a material
+	# sample, not a prop, and the only correct placement for it is none. The
+	# file stays in models/; MapModels.NON_BLOCKING still names it, so a future
+	# call site gets a collision-free instance if anyone finds a use for it.
+
+
+## Everything in the four exhibition wings that is not itself an exhibit.
+##
+## SIGHTLINES ARE THE BINDING CONSTRAINT HERE, not floor space. Each wing's three
+## exhibits must stay visible from one nominated camera post
+## (test_map_verification raycasts mount -> anomaly anchor), and a hit counts as
+## the exhibit only within EXHIBIT_SELF_CLEARANCE = 1.7 m of the anchor. Every
+## position below was chosen against the actual rays:
+##
+##   CAM 05 (16.4, 3.0, -7.8) -> the Wing A row at z -4.5. All three rays run
+##   through the wing's NORTH half, descending from y 3.0 to y 1.55, so Wing A's
+##   floor dressing lives at z >= 0 and its overhead dressing hangs no lower than
+##   y 2.0 where a ray could still be that high.
+##   CAM 07 (33.6, 2.9, -30.8) -> Wing C. SpaceProps.dress_wing_c states it
+##   traced all three of these clear, so it is taken as-is.
+##   CAM 11 (42.2, 2.9, 6.8) -> Wing D. Its three rays sweep the wing's
+##   south-west quadrant, so the Wing D dressing is either north of them or has
+##   no collider at all.
+##
+## The second constraint is the Curator. Doorways are 1.8 m and the bake erodes
+## 0.45 m per side, so nothing solid goes within 1.6 m of a doorway centre line:
+## Wing A's are at (15, 0) and (41, 0), Wing B's at (0, -15), (0, -33) and
+## (13, -24), Wing C's at (13, -24), Wing D's at (41, 0).
+func _add_wing_dressing(parent: Node) -> void:
+	var root := parent as Node3D
+
+	# --- Gravity Wing A: x 15.35..40.65, z -8.65..8.65 -----------------------
+	# Those four numbers are the ROOM-SIDE WALL FACES, C +- (S / 2 -
+	# WALL_THICKNESS), the convention _add_model_archive spells out. They used to
+	# read 15.175..40.825 / -8.825..8.825, which is C +- (S / 2 -
+	# WALL_THICKNESS / 2) -- the line each wall slab is CENTRED on, 0.175 m
+	# further out than any surface a prop can be stood against. Anything aimed at
+	# those numbers lands inside the wall.
+	# Anchor plates read as the fixings a wing that manipulates weight would need
+	# on every surface: three in the soffit directly over the cases, three in the
+	# floor behind them. The ceiling trio sits at y 3.39, above the y 3.0 the
+	# camera itself hangs at, so no ray can reach them; the floor trio sits at
+	# z -6.6, where the three rays have only travelled to x 18.3 / 20.6 / 23.3
+	# and are nowhere near the plates at x 21.5 / 28 / 35.5.
+	for x: float in [21.5, 28.0, 35.5]:
+		GravityProps.build_anchor_plate(root, Vector3(x, CEILING_SOFFIT_Y, -4.5),
+			Vector3.DOWN, true)
+		GravityProps.build_anchor_plate(root, Vector3(x, 0, -6.6), Vector3.UP, false)
+	# Debris still tethered to its anchor, hanging over the wing's south half.
+	# The builder hangs everything BELOW origin and guarantees the lowest piece
+	# stays above 1.90 m from an origin at y >= 3.25.
+	GravityProps.build_tethered_debris(root, Vector3(38.5, 3.35, 7.0), 5, 1.0, 3)
+	GravityProps.build_tethered_debris(root, Vector3(19.0, 3.35, 4.0), 4, 0.9, 7)
+	# Dust falling sideways out of a floor crack into the north wall. The whole
+	# point of the prop is the wedge piled where the stream stops, so the far end
+	# has to MEET a wall; both halves of that used to be wrong.
+	#
+	#   HEADING. Godot's Y rotation sends local +X to world -Z at yaw +90 and to
+	#   +Z at -90 (the mirror of the local-+Z rule CorridorProps states in its
+	#   header). At the old -90 the stream ran SOUTH into the middle of the wing
+	#   and the wall drift stood in open floor with nothing behind it: measured,
+	#   the prop occupied z -6.27..-3.19, its far end 5.5 m from any surface.
+	#   ORIGIN. The wedge's flat face lands at length + 0.21 = 2.81 m along local
+	#   +X, so the crack belongs 2.81 m out from the face it piles against. The
+	#   north face is z -8.65, not the -8.825 the old comment used, which is the
+	#   wall slab's centre line -- aiming at it would have buried the drift.
+	#
+	# -5.84 - 2.81 = -8.65 exactly. 0.97 m tall, so all three CAM 05 rays (y 2.05
+	# and above at this x) clear it, and GravityProps builds no colliders at all,
+	# so neither the sightline tests nor the navmesh bake can see it.
+	GravityProps.build_sideways_dust_column(root, Vector3(24.0, 0, -5.84),
+		90.0, 2.6, true, 2)
+	# Floor paint on the entrance axis. Chevrons run in from local +Z, which
+	# heading 90 sends to world +X, so the approach reads from the Atrium door at
+	# x = 15. Paint has no collider and cannot touch the bake.
+	GravityProps.build_floor_stencil(root, Vector3(18.0, 0, 0), 90.0, 2.6, 3)
+
+	# --- Time Wing B: room centre (0, -24), 26 x 18 -------------------------
+	# dress_time_wing derives its wall mounts from room_size * 0.5, so it is
+	# handed the INNER dimensions (26 - 2 * WALL_THICKNESS by 18 - 2 *
+	# WALL_THICKNESS). Handed the nominal 26 x 18 it puts the nine-dial clock
+	# bank at x -13.0, which is the outer edge of a wall slab spanning
+	# -13.0..-12.65 -- the bank would have been built inside the wall.
+	TimeProps.dress_time_wing(root, Vector3(0, 0, -24),
+		Vector2(26.0 - WALL_THICKNESS * 2.0, 18.0 - WALL_THICKNESS * 2.0))
+
+	# --- Space Wing C -------------------------------------------------------
+	# One call. The library placed and measured this set against Wing C's own
+	# walls and against CAM 07's rays to all three exhibits.
+	SpaceProps.dress_wing_c(root)
+
+	# --- Mass Wing D: x 41.35..62.65, z -7.65..7.65 -------------------------
+	# Room-side wall faces again, not the 41.175..62.825 / -7.825..7.825 slab
+	# centre lines this header used to quote. All three builders below were
+	# measured back off the built tree against the corrected box: chains
+	# x 45.24..47.37 z -5.01..-2.79, load frame x 56.17..59.83 z -5.12..-1.17,
+	# buckled deck x 49.78..54.22 z 0.41..3.38.
+	# Every piece here is deliberately one of MassProps' COLLIDER-FREE builders.
+	# The wing already carries three exhibit plinths, the containment ring and
+	# the concrete panel, its only door is at x = 41, and CAM 11's three rays
+	# cross most of the open floor -- so the dressing buys silhouette without
+	# putting one more box in front of the camera or the Curator.
+	# Chains: navmesh-neutral by design, over empty floor west of the sphere.
+	MassProps.build_tension_chains(root, Vector3(46.5, 0, -4.0), 3.30, 3, 1.15)
+	# Load frame: no colliders unless `solid`, which is left false. Its chevron
+	# band runs -Z only, so from (58, -3) it occupies z -5.12..-1.17, clear of
+	# the pendulum at z 3.57..4.43 and of the sphere at x 50.4..53.6.
+	MassProps.build_load_frame(root, Vector3(58, 0, -3.0), 3.4, 3.4, 0.0, false, true)
+	# Buckled floor plates: no colliders at all, so this is the one builder in
+	# the library that can be walked over and pathed over freely. 3 x 2 plates of
+	# 1.4 m give a 4.44 x 2.97 m patch at z 0.12..3.09, north of the sphere and
+	# west of the pendulum.
+	MassProps.build_buckled_deck(root, Vector3(52, 0, 1.9), 3, 2, 1.4, 0.0, 5)
+
+
+## The authored exhibit for a slot, built by the wing's own prop library.
+##
+## These take precedence over `fallback_shape`. Each wing shipped a library of
+## measured, purpose-built geometry for its three slots; the primitive shapes
+## below them are the older safety net and stay in place for any slot a library
+## does not claim.
+##
+## The gravity, time and space builders all fit inside the 2.25 x 2.10 x 2.25 m
+## glass case on top of the 0.7 m pedestal, so those slots keep both. Mass Wing
+## D's do not -- MassProps builds its own plinth and the superheavy sphere alone
+## is 3.27 m across -- so those three slots are declared PLINTH_FREE_EXHIBITS
+## below and get neither pedestal nor case.
+##
+## Returns true when it built something, false to fall through.
+func _add_authored_exhibit(parent: Node, model_name: String,
+		at: Vector3) -> bool:
+	# GravityProps and TimeProps measure from the FLOOR centre of the slot, which
+	# is `at` verbatim. SpaceProps measures from the surface the prop stands on,
+	# so those three are lifted onto the 0.70 m pedestal deck.
+	var deck := at + Vector3(0, 0.7, 0)
+	match model_name:
+		"falling_cube":
+			GravityProps.build_falling_cube_rig(parent as Node3D, at)
+		"inversion_room":
+			GravityProps.build_inversion_cell(parent as Node3D, at)
+		"levitating_column":
+			GravityProps.build_levitating_column(parent as Node3D, at)
+		"broken_clock":
+			TimeProps.broken_clock(parent as Node3D, at)
+		"frozen_drop":
+			TimeProps.frozen_drop(parent as Node3D, at)
+		"time_loop":
+			TimeProps.time_loop(parent as Node3D, at)
+		"portal_arch":
+			# 0.62 is the largest scale whose 1.46 x 1.62 x 0.58 envelope fits
+			# the case; at 1.0 the arch is 2.62 m tall and wears the lid.
+			SpaceProps.portal_arch(parent as Node3D, deck, 0.0, 0.62)
+		"star_globe":
+			SpaceProps.star_globe(parent as Node3D, deck)
+		"orrery":
+			SpaceProps.orrery(parent as Node3D, deck)
+		"superheavy_sphere":
+			MassProps.build_superheavy_sphere(parent as Node3D, at)
+		"dense_ingot":
+			MassProps.build_dense_ingot(parent as Node3D, at, 12.0)
+		"mass_pendulum":
+			# Yaw 0 puts its two columns at x 56.70 / 59.30, within 5 cm of the
+			# 56.8 / 59.2 the hand-built frame that used to stand here occupied,
+			# so the wing's silhouette from the doorway is unchanged.
+			MassProps.build_mass_pendulum(parent as Node3D, at, 0.0)
+		_:
+			return false
+	return true
+
+
+## Slots whose authored exhibit brings its own plinth and is too large for the
+## standard case. They keep the anomaly anchor and the plaque and lose the
+## 2.8 m pedestal and the glass box.
+const PLINTH_FREE_EXHIBITS := ["superheavy_sphere", "dense_ingot", "mass_pendulum"]
 
 
 func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
@@ -1399,12 +1958,16 @@ func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
 		emission_energy: float) -> void:
 	var anomaly_anchor:=Marker3D.new(); anomaly_anchor.name="Anomaly Anchor - %s"%exhibit_name
 	anomaly_anchor.position=exhibit_position+Vector3(0,1.55,0); parent.add_child(anomaly_anchor)
-	_box(parent, "%s Pedestal" % exhibit_name,
-		exhibit_position + Vector3(0, 0.35, 0),
-		Vector3(2.8, 0.7, 2.8), Color(0.16, 0.16, 0.15))
+	var cased: bool = model_name not in PLINTH_FREE_EXHIBITS
+	if cased:
+		_box(parent, "%s Pedestal" % exhibit_name,
+			exhibit_position + Vector3(0, 0.35, 0),
+			Vector3(2.8, 0.7, 2.8), Color(0.16, 0.16, 0.15))
 
-	# Try a real model first; otherwise build the procedural fallback.
-	if MuseumModels.place(parent, model_name,
+	# Authored geometry first, then a real model, then the primitive fallback.
+	if _add_authored_exhibit(parent, model_name, exhibit_position):
+		pass
+	elif MuseumModels.place(parent, model_name,
 			exhibit_position + Vector3(0, 1.55, 0), 1.0, 0.0) == null:
 		match fallback_shape:
 			"box":
@@ -1485,8 +2048,9 @@ func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
 	# Dedicated glass material: the old call passed `true` into the float
 	# emission_energy argument (a type error in Godot 4) and used the
 	# rough noise material, which does not read as glass.
-	_glass_case(parent, "%s Glass Case" % exhibit_name,
-		exhibit_position + Vector3(0, 1.4, 0), Vector3(2.25, 2.1, 2.25))
+	if cased:
+		_glass_case(parent, "%s Glass Case" % exhibit_name,
+			exhibit_position + Vector3(0, 1.4, 0), Vector3(2.25, 2.1, 2.25))
 	_add_label(parent, exhibit_name,
 		exhibit_position + Vector3(0, 2.75, 0),
 		Color(0.82, 0.82, 0.72))
@@ -1503,90 +2067,39 @@ func _add_planetarium_details(parent: Node) -> void:
 		var tint := 0.7 + rng.randf() * 0.3
 		_box(parent, "Star %d" % i, star_pos, Vector3(0.06, 0.06, 0.06),
 			Color(tint, tint, 1.0), rng.randf_range(1.2, 2.6), 0.0, false)
-	# Central orrery: emissive sun, three planets on flat brass rings.
-	_cylinder(parent, "Orrery Pedestal", c + Vector3(0, 0.3, 0), 0.8, 0.6,
-		Color(0.09, 0.09, 0.11))
-	_cylinder(parent, "Orrery Stem", c + Vector3(0, 0.95, 0), 0.07, 0.7,
-		Color(0.2, 0.17, 0.1))
-	_sphere(parent, "Orrery Sun", c + Vector3(0, 1.45, 0), 0.32,
-		Color(0.95, 0.66, 0.22), 1.5)
-	var orbits := [
-		[1.0, 0.10, Color(0.62, 0.56, 0.5), 0.9],
-		[1.6, 0.14, Color(0.3, 0.5, 0.75), 3.0],
-		[2.2, 0.12, Color(0.75, 0.4, 0.3), 5.1],
-	]
-	for i in range(orbits.size()):
-		var o: Array = orbits[i]
-		var ring_radius: float = o[0]
-		_torus(parent, "Orrery Ring %d" % i, c + Vector3(0, 1.45, 0),
-			ring_radius - 0.03, ring_radius, Color(0.45, 0.38, 0.2), 0.25, false)
-		var ang: float = o[3]
-		_sphere(parent, "Orrery Planet %d" % i,
-			c + Vector3(cos(ang) * ring_radius, 1.45, sin(ang) * ring_radius),
-			o[1], o[2], 0.4)
-	_add_stanchions(parent, c, 3.1, 8)
-	# Ring of low benches facing the orrery.
-	for i in range(4):
-		var a := PI * 0.25 + i * PI * 0.5
-		var bench := Node3D.new()
-		bench.name = "Planetarium Bench %d" % i
-		bench.position = c + Vector3(cos(a) * 5.2, 0, sin(a) * 5.2)
-		bench.rotation.y = -a - PI * 0.5
-		parent.add_child(bench)
-		_box(bench, "Seat", Vector3(0, 0.42, 0), Vector3(2.4, 0.12, 0.55),
-			Color(0.16, 0.14, 0.18))
-		_box(bench, "Base", Vector3(0, 0.2, 0), Vector3(2.1, 0.32, 0.4),
-			Color(0.10, 0.09, 0.12))
-	# Dead projector console by the door.
-	_box(parent, "Projector Console", c + Vector3(6.5, 0.55, 6.4),
-		Vector3(1.6, 1.1, 0.7), Color(0.07, 0.08, 0.1))
-	_box(parent, "Projector Console Screen", c + Vector3(6.5, 1.02, 6.02),
-		Vector3(1.1, 0.4, 0.04), Color(0.05, 0.2, 0.16), 0.5, 0.0, false)
+	# The room proper: a flat saucer dome, the shrouded projector under it, a
+	# raked seating bank and the operator's booth. One call -- the library placed
+	# and measured all four against this room's 20 x 16 footprint and its single
+	# doorway at (0, -33), and reports the nearest collider to that doorway at
+	# 4.9 m.
+	#
+	# This REPLACES the small brass orrery, its stanchion ring, the four radial
+	# benches and the dead console that used to stand here. Every one of them was
+	# in the way: the orrery sat at the room centre where the projector stands,
+	# the benches at radius 5.2 ran into the seating bank at z -48.1..-42.3, and
+	# the console at (6.5, -34.6) was inside the booth's 3.73 x 5.43 m footprint.
+	PlanetariumProps.build_all(parent as Node3D, c)
 	_add_label(parent, tr("EXHIBIT_PLANETARIUM_SIGN"), c + Vector3(0, 2.9, 6.0),
 		Color(0.55, 0.62, 0.95))
 
 
 func _add_lab_details(parent: Node) -> void:
 	var c := Vector3(-25, 0, 22)
-	# Workbench with a half-restored statue and its detached head.
-	_box(parent, "Lab Workbench Top", c + Vector3(-5, 0.92, 2.6),
-		Vector3(3.4, 0.1, 1.2), Color(0.17, 0.14, 0.11))
-	for off in [Vector3(-6.5, 0.45, 2.15), Vector3(-3.5, 0.45, 2.15),
-			Vector3(-6.5, 0.45, 3.05), Vector3(-3.5, 0.45, 3.05)]:
-		_box(parent, "Lab Workbench Leg", c + off, Vector3(0.1, 0.9, 0.1),
-			Color(0.08, 0.08, 0.08))
-	var torso := _cone(parent, "Half-Restored Torso", c + Vector3(-5.5, 1.14, 2.6),
-		0.3, 0.16, 0.85, Color(0.44, 0.42, 0.38))
-	torso.rotation_degrees = Vector3(0, 0, 90)
-	_sphere(parent, "Detached Statue Head", c + Vector3(-4.3, 1.13, 2.85), 0.16,
-		Color(0.44, 0.42, 0.38))
-	_box(parent, "Chisel", c + Vector3(-4.6, 0.99, 2.3), Vector3(0.3, 0.03, 0.03),
-		Color(0.5, 0.5, 0.55), 0.0, 0.7, false)
-	_box(parent, "Mallet", c + Vector3(-4.1, 1.0, 2.35), Vector3(0.12, 0.12, 0.28),
-		Color(0.25, 0.18, 0.1), 0.0, 0.0, false)
-	# Steel racks along the south wall, stacked with crates.
-	for rx in [-4.0, 4.0]:
-		var rack := Node3D.new()
-		rack.name = "Lab Shelf Rack %d" % int(rx)
-		rack.position = c + Vector3(rx, 0, 4.1)
-		parent.add_child(rack)
-		for px in [-1.4, 1.4]:
-			for pz in [-0.35, 0.35]:
-				_box(rack, "Rack Post", Vector3(px, 1.1, pz),
-					Vector3(0.08, 2.2, 0.08), Color(0.1, 0.11, 0.12))
-		for level in [0.35, 1.1, 1.85]:
-			_box(rack, "Rack Shelf", Vector3(0, level, 0),
-				Vector3(2.9, 0.06, 0.8), Color(0.14, 0.15, 0.16))
-		for b in range(3):
-			_box(rack, "Rack Crate %d" % b, Vector3(-0.9 + b * 0.9, 1.32, 0),
-				Vector3(0.55, 0.38, 0.55), Color(0.23, 0.19, 0.13), 0.0, 0.0, false)
-	# Sealed crate under warning tape near the east wall.
-	_box(parent, "Sealed Crate", c + Vector3(7.6, 0.5, -2.5),
-		Vector3(1.4, 1.0, 1.4), Color(0.2, 0.17, 0.12))
-	_box(parent, "Sealed Crate Lid", c + Vector3(7.6, 1.2, -2.5),
-		Vector3(1.0, 0.4, 1.0), Color(0.22, 0.19, 0.14))
-	_plane(parent, "Warning Tape", c + Vector3(7.6, 0.02, -2.5), Vector2(2.6, 2.6),
-		Color(0.6, 0.5, 0.1), true, false, 0.25, false)
+	# The Restoration Lab in one call. It replaces the half-restored torso on its
+	# bench, the two crate racks and the taped sealed crate that stood here: the
+	# library puts a work bench on the same north wall at (-31, 0, 18.1), a fume
+	# hood on the east wall, an opened crate at (-20, 0, 24.9) with its foam
+	# cut-out in the shape of what left it, and Exhibit 9 under a dust sheet on
+	# the room's centre line -- 2.49 m of covered figure, which is taller than a
+	# person, standing where the flashlight finds it first.
+	#
+	# The doorway approach along x = -25 stays clear for 6 m by construction, and
+	# the tripod lamp aimed at the sheet casts the only real shadow in the room.
+	#
+	# Both strings are already translated when they arrive; PROP_EXHIBIT_9_TAG and
+	# PROP_CRATE_DO_NOT_OPEN are both in localization/game.csv.
+	ArchiveProps.build_restoration_lab(parent as Node3D, c, 0.0,
+		tr("PROP_EXHIBIT_9_TAG"), tr("PROP_CRATE_DO_NOT_OPEN"))
 	_add_label(parent, tr("EXHIBIT_LAB_SIGN"),
 		c + Vector3(0, 2.7, 0), Color(0.9, 0.6, 0.3))
 
@@ -1633,65 +2146,31 @@ func _add_extra_exhibits(parent: Node) -> void:
 	var crest_star := _box(parent, "Atrium Crest Star", Vector3(0, 0.03, -8),
 		Vector3(1.9, 0.02, 1.9), Color(0.45, 0.36, 0.16), 0.3, 0.6, false)
 	crest_star.rotation_degrees = Vector3(0, 45, 0)
-	# Archive: reading desk with a lamp and an opened ledger.
-	var a := Vector3(-25, 0, -11)
-	_box(parent, "Archive Desk", a + Vector3(0, 0.78, 0), Vector3(1.8, 0.08, 0.9),
-		Color(0.18, 0.14, 0.1))
-	for off in [Vector3(-0.8, 0.38, -0.35), Vector3(0.8, 0.38, -0.35),
-			Vector3(-0.8, 0.38, 0.35), Vector3(0.8, 0.38, 0.35)]:
-		_box(parent, "Archive Desk Leg", a + off, Vector3(0.08, 0.76, 0.08),
-			Color(0.1, 0.08, 0.06))
-	var page_l := _box(parent, "Archive Ledger L", a + Vector3(-0.14, 0.84, 0.05),
-		Vector3(0.26, 0.02, 0.38), Color(0.78, 0.74, 0.62), 0.1, 0.0, false)
-	page_l.rotation_degrees = Vector3(0, 0, 4)
-	var page_r := _box(parent, "Archive Ledger R", a + Vector3(0.14, 0.84, 0.05),
-		Vector3(0.26, 0.02, 0.38), Color(0.72, 0.68, 0.56), 0.1, 0.0, false)
-	page_r.rotation_degrees = Vector3(0, 0, -4)
-	_cylinder(parent, "Archive Desk Lamp Stem", a + Vector3(0.6, 1.0, -0.25),
-		0.03, 0.4, Color(0.1, 0.1, 0.1))
-	_sphere(parent, "Archive Desk Lamp Shade", a + Vector3(0.6, 1.22, -0.25),
-		0.11, Color(0.9, 0.75, 0.5), 1.4)
-	for b in range(3):
-		_box(parent, "Archive Box %d" % b, a + Vector3(1.6, 0.24 + b * 0.42, 0.1),
-			Vector3(0.6, 0.4, 0.5), Color(0.24, 0.2, 0.14))
-	# Equipment Storage: paired steel racks on both side walls. The central
-	# north-south aisle remains clear from the office to the restoration lab.
-	var storage_racks := [
-		Vector3(-32.6, 0, 10.0), Vector3(-32.6, 0, 14.0),
-		Vector3(-17.4, 0, 10.0), Vector3(-17.4, 0, 14.0),
-	]
-	for rack_index in range(storage_racks.size()):
-		var rack := Node3D.new()
-		rack.name = "Storage Rack %d" % (rack_index + 1)
-		rack.position = storage_racks[rack_index]
-		parent.add_child(rack)
-		for pz in [-1.2, 1.2]:
-			for px in [-0.3, 0.3]:
-				_box(rack, "Post", Vector3(px, 1.1, pz), Vector3(0.08, 2.2, 0.08),
-					Color(0.1, 0.11, 0.12))
-		for level in [0.4, 1.15, 1.9]:
-			_box(rack, "Shelf", Vector3(0, level, 0), Vector3(0.75, 0.06, 2.6),
-				Color(0.14, 0.15, 0.16))
-		for b in range(2):
-			_box(rack, "Stored Box %d" % b, Vector3(0, 1.38, -0.7 + b * 1.4),
-				Vector3(0.55, 0.4, 0.55), Color(0.2, 0.18, 0.13), 0.0, 0.0, false)
+	# The Archive's reading desk, ledger, lamp and box files used to be built here
+	# around (-25, 0, -11). ArchiveProps.build_archive puts a reading desk at
+	# (-28.6, 0, -9.3) and box-file stacks against both side walls, so keeping
+	# these would have furnished the room twice.
+	#
+	# Equipment Storage's four steel racks used to be built here, at
+	# (+-32.6 / +-17.4, 0, 10 and 14). Every one of them stood inside a bench:
+	# GameManager._build_devices() builds four 6.8 x 1.25 m equipment benches at
+	# x -34.15..-27.35 and -22.65..-15.85, z 8.575..9.825 and 14.375..15.625, and
+	# the racks at z 8.7..11.3 and 12.7..15.3 overlapped all four. That collision
+	# predates this change and is why the room is dressed from the walls now --
+	# see _add_storage_props.
 
 
 func _add_furnishings(parent: Node) -> void:
-	# Containment dome under the atrium skylight: the museum centerpiece and
-	# the object that breaks free during the night-shift accident.
-	_cylinder(parent, "Containment Dais", Vector3(0, 0.14, 0), 1.5, 0.28,
-		Color(0.82, 0.81, 0.78))
-	_cylinder(parent, "Containment Pedestal", Vector3(0, 0.6, 0), 0.55, 0.65,
-		Color(0.30, 0.30, 0.32))
-	_sphere(parent, "Anomalous Core", Vector3(0, 1.35, 0), 0.32,
-		Color(0.45, 0.95, 0.75), 1.6)
-	var dome := _glass_case(parent, "Containment Dome",
-		Vector3(0, 1.15, 0), Vector3(1.7, 1.8, 1.7))
-	_apply_dome_shader(dome)
-	_add_stanchions(parent, Vector3(0, 0, 0), 2.6, 10)
-	_add_label(parent, "Object 01 - do not touch the glass",
-		Vector3(0, 2.6, -0.7), Color(0.2, 0.55, 0.4))
+	# The containment core used to be built here, as a thin dais / pedestal /
+	# sphere / dome stack with a ring of stanchions and an untranslated English
+	# label reading "Object 01 - do not touch the glass". AtriumProps.build_atrium
+	# (called from build_map) now builds the whole assembly, and it rebuilds
+	# "Anomalous Core" and "Containment Dome" under those EXACT node names with
+	# the same ContainmentDome.gdshader on the dome -- which is what
+	# GameManager._tint_core() and GameManager._set_dome_breach() resolve with
+	# find_child(). Leaving the old block in would have doubled the geometry on
+	# the origin and given both of those lookups two candidates to choose
+	# between. The plaque that replaces the label reads tr("EXHIBIT_CONTAINMENT_CORE").
 
 	# Wing banners flanking the atrium doorways.
 	_box(parent, "Wing Banner NW", Vector3(-3.2, 2.4, -14.45),
@@ -1729,39 +2208,20 @@ func _add_furnishings(parent: Node) -> void:
 	_add_label(parent, tr("EXHIBIT_HOVER_STONES"), Vector3(28, 2.6, 5),
 		Color(0.30, 0.35, 0.45))
 
-	# Time Wing: a row of wall clocks frozen at different hours.
-	var clock_xs: Array = [-9.0, -5.0, 5.0, 9.0]
-	for i in range(clock_xs.size()):
-		var cx: float = clock_xs[i]
-		var clock := _cylinder(parent, "Wall Clock %d" % i,
-			Vector3(cx, 2.3, -32.35), 0.34, 0.07, Color(0.90, 0.89, 0.84))
-		clock.rotation_degrees = Vector3(90, 0, 0)
-		var hand := _box(parent, "Wall Clock Hand %d" % i,
-			Vector3(cx, 2.32, -32.28), Vector3(0.05, 0.24, 0.02),
-			Color(0.1, 0.1, 0.1), 0.0, 0.0, false)
-		hand.rotation_degrees = Vector3(0, 0, 25.0 + 47.0 * float(i))
+	# The Time Wing's row of four wall clocks used to be built here, on the north
+	# wall at z -32.35. TimeProps.dress_time_wing hangs a nine-dial clock bank on
+	# the west wall and three single dials including "Gallery Clock North" at
+	# (-5, 2.15, -32.65) -- 0.30 m behind where "Wall Clock 1" stood, at the same
+	# x, so the two would have intersected. The row is the library's now.
 
-	# Archive: two balanced wall bays keep a quiet central reading axis.
-	for rack_x in [-30.0, -20.0]:
-		_box(parent, "Archive Rack", Vector3(rack_x, 1.1, -16.2),
-			Vector3(4.6, 2.2, 0.6), Color(0.36, 0.30, 0.24))
-		for s in range(3):
-			_box(parent, "Archive Rack Shelf",
-				Vector3(rack_x, 0.55 + float(s) * 0.7, -15.85),
-				Vector3(4.4, 0.06, 0.1), Color(0.30, 0.25, 0.20), 0.0, 0.0, false)
-	_box(parent, "Document Boxes", Vector3(-32.5, 0.4, -9),
-		Vector3(1.2, 0.8, 0.9), Color(0.55, 0.48, 0.36))
+	# The Archive's two wall bays, its shelves and its document boxes were built
+	# here; ArchiveProps.build_archive lays out the whole room, its rolling
+	# stacks reaching z -16.44, which is where "Archive Rack" stood at -16.2.
 
-	# Storage: hazardous barrels grouped in one marked corner; the work cart is
-	# parked beside a rack rather than abandoned in the circulation aisle.
-	for i in range(3):
-		_cylinder(parent, "Storage Barrel %d" % i,
-			Vector3(-32.7 + float(i) * 1.05, 0.45, 15.4), 0.42, 0.9,
-			Color(0.35, 0.38, 0.30))
-	_box(parent, "Work Cart", Vector3(-20.0, 0.5, 15.3),
-		Vector3(1.4, 0.12, 0.8), Color(0.45, 0.45, 0.48))
-	_cylinder(parent, "Work Cart Pole", Vector3(-19.5, 0.9, 15.3), 0.03, 0.7,
-		Color(0.30, 0.30, 0.32))
+	# Equipment Storage's barrels and work cart stood at z 15.3..15.4, inside the
+	# footprint of the equipment benches GameManager._build_devices() builds at
+	# z 14.375..15.625. StorageProps dresses the room now, from _add_storage_props,
+	# which was written against those bench extents.
 
 
 func _add_more_interior(parent: Node) -> void:
@@ -1802,33 +2262,16 @@ func _add_more_interior(parent: Node) -> void:
 		gnomon.rotation_degrees = Vector3(0, 0, -35)
 	_add_label(parent, tr("EXHIBIT_SUNDIAL"), Vector3(11, 1.8, -18), Color(0.45, 0.38, 0.25))
 
-	# --- Archive: central catalogue island ---
-	_box(parent, "Archive Catalogue Table", Vector3(-25, 0.72, -14.0), Vector3(2.4, 0.08, 0.9),
-		Color(0.40, 0.33, 0.26))
-	for leg_offset in [Vector3(-0.7, 0, -0.3), Vector3(0.7, 0, -0.3),
-			Vector3(-0.7, 0, 0.3), Vector3(0.7, 0, 0.3)]:
-		_box(parent, "Archive Catalogue Leg", Vector3(-25, 0.36, -14.0) + leg_offset,
-			Vector3(0.08, 0.72, 0.08), Color(0.34, 0.28, 0.22), 0.0, 0.0, false)
-	_box(parent, "Archive Chair", Vector3(-25, 0.3, -13.0), Vector3(0.5, 0.6, 0.5),
-		Color(0.30, 0.26, 0.22))
-	_plane(parent, "Archive Papers", Vector3(-25.3, 0.78, -14.0), Vector2(0.5, 0.35),
-		Color(0.88, 0.86, 0.78), true, false, 0.0, false)
-	_cylinder(parent, "Archive Lamp Stem", Vector3(-24.2, 0.95, -14.2), 0.03, 0.35,
-		Color(0.20, 0.20, 0.22))
-	_sphere(parent, "Archive Lamp Shade", Vector3(-24.2, 1.16, -14.2), 0.11,
-		Color(0.40, 0.70, 0.50), 0.9)
+	# The Archive's central catalogue island stood at (-25, 0, -14) with its chair
+	# at (-25, 0, -13). ArchiveProps.build_archive opens an aisle through its
+	# rolling stacks at x -29.71 and runs a paper trail out of it to z -13.1, and
+	# its card catalogue occupies (-23.65, 0, -15.95). The island was in the way
+	# of both, so the room's centre line is left clear for them.
 
-	# --- Storage: janitor clutter ---
-	var ladder := _box(parent, "Storage Ladder", Vector3(-34.0, 1.5, 12.0),
-		Vector3(0.12, 3.0, 0.5), Color(0.55, 0.50, 0.40))
-	ladder.rotation_degrees = Vector3(0, 0, 12)
-	_box(parent, "Toolbox", Vector3(-18.2, 0.2, 15.5), Vector3(0.6, 0.35, 0.35),
-		Color(0.65, 0.20, 0.15))
-	_cylinder(parent, "Mop Bucket", Vector3(-17.0, 0.25, 8.2), 0.24, 0.5,
-		Color(0.75, 0.65, 0.20))
-	var mop := _cylinder(parent, "Mop Handle", Vector3(-17.0, 1.0, 8.2), 0.025, 1.5,
-		Color(0.50, 0.42, 0.30))
-	mop.rotation_degrees = Vector3(12, 0, 0)
+	# Storage's ladder, toolbox, mop and bucket stood at x -34.0 / -18.2 / -17.0.
+	# The mop and bucket at (-17.0, 8.2) were inside GameManager's east bench
+	# (x -22.65..-15.85, z 8.575..9.825) and the toolbox at (-18.2, 15.5) inside
+	# its south-east one. Storage is dressed from _add_storage_props now.
 
 	# --- Watcher Office: corkboard and water cooler ---
 	_box(parent, "Office Corkboard", Vector3(-34.4, 1.9, 3), Vector3(0.06, 1.0, 1.6),
@@ -2012,6 +2455,16 @@ func _add_street_extras(parent: Node) -> void:
 		Color(0.86, 0.90, 0.80))
 
 
+## NO LONGER CALLED. The containment dome is built by AtriumProps.build_atrium()
+## now, and that file applies the shader itself through an identical
+## ResourceLoader.exists() guard chain, so this function has no call site left in
+## the project.
+##
+## It is kept rather than deleted because it is cited by name, as the reference
+## implementation of that guard chain, from two files that are not mine to edit:
+## game/CRTOverlay.gd:93 and game/props/AtriumProps.gd:299. Deleting it would
+## leave both comments pointing at nothing. Delete it together with those
+## references, or leave it; it costs one unreferenced function.
 func _apply_dome_shader(dome: MeshInstance3D) -> void:
 	# Force-field glass: screen refraction, chromatic aberration and a
 	# damage flicker driven by GameManager. Falls back to plain glass
@@ -2278,6 +2731,11 @@ func _intro_shots() -> Array:
 
 var _flicker_time := 0.0
 
+## The museum's wayfinding net -- game/Compass.gd, installed and fed by
+## game/NavigationDirector.gd. Null in the editor and if the director could not
+## install; see _install_navigation_aid().
+var _nav_aid: NavigationDirector = null
+
 @export_category("Editable generated layout")
 @export_multiline var layout_help := "GeneratedMap is saved with the scene. Expand it and move, rotate, scale, duplicate or delete any object, then save the scene. Toggle Rebuild Generated Layout only when you want to discard manual placement and regenerate the default museum."
 @export var rebuild_generated_layout := false:
@@ -2311,6 +2769,61 @@ func _ready() -> void:
 		# (children first), but relying on that ordering for a one-shot fixup is
 		# not worth the coupling.
 		call_deferred("_hide_signage_from_cctv")
+		_install_navigation_aid()
+
+
+## Install the museum's wayfinding net.
+##
+## game/Compass.gd and game/NavigationDirector.gd are a finished feature that,
+## until this call, only the optional tutorial scene ever instantiated -- so on
+## the shipping path the owner's fourth complaint, "непонятно, где я и куда
+## идти", was still true of every one of the eleven rooms. This is the line that
+## puts it in the museum.
+##
+## WHAT THE DIRECTOR NEEDS, AND WHERE EACH PIECE COMES FROM. Nothing is passed
+## in, and that is the design rather than an omission: every input has exactly
+## one owner already, and handing over a second copy would create a number that
+## can disagree with the first.
+##
+##   the player     -- Compass._initialize() takes the "player" group, which
+##                     PlayerController._ready() joins. _add_player_spawn()
+##                     builds that node, so it exists before this runs.
+##   the objective  -- Compass._update_target() reads GameManager's `_state`,
+##                     `_carried_id` and the exhibit puzzle controller's
+##                     get_incident_origin(), i.e. the same night loop that
+##                     writes the objective band. The director only overrides it
+##                     when a caller asks for aim_at(); the museum does not, so
+##                     the arrow follows the shift: office, then storage, then
+##                     the incident.
+##   the room table -- SecurityCameraTablet.ROOMS, read out of the script
+##                     constant map. The eleven rectangles test_map_verification
+##                     already pins to this file's own geometry.
+##   disturbance    -- Compass.signal_quality() reads THIS node's
+##                     `_blackout_done` and the Curator out of
+##                     GameplayEnhancements' `_watcher`; the director adds the
+##                     breach clock and per-night wear on top as a floor.
+##
+## The director is installed under this node, which is the scene root, so the
+## Compass node it builds lands beside GameManager and SecurityCameraTablet --
+## the sibling relationship both of those files resolve each other through.
+## install() is idempotent, which matters because this _ready() runs again on
+## every return from the menu and after the win screen.
+##
+## THE HORROR CONSTRAINT IS NOT WAIVED HERE. All three readouts are on, and all
+## three still die with the building: after the blackout the net drops to
+## DEGRADED everywhere outside the security office, and inside the Curator's
+## 27 m it goes DOWN and the room name becomes a last fix. Turning any of that
+## off would need code in Compass, not a flag here -- which is the right shape.
+func _install_navigation_aid() -> void:
+	_nav_aid = NavigationDirector.install(self)
+	if _nav_aid == null:
+		push_warning("FirstMuseumMap: navigation aid could not be installed")
+		return
+	# Room readout, objective bearing, held-open floor plan. Stated rather than
+	# left to the director's defaults: this scene is the museum, its room table
+	# IS the museum's, so all three are meaningful here -- unlike the tutorial
+	# sector, which asks for the bearing alone.
+	_nav_aid.set_features(true, true, true)
 
 
 ## Drop CCTV_HIDDEN_MASK from the cull_mask of every feed camera the security
@@ -2341,6 +2854,10 @@ func _hide_signage_from_cctv() -> void:
 
 
 func _process(delta: float) -> void:
+	# First, before any early return below: an owed navmesh rebake outranks
+	# lighting. The cutscene check would otherwise stall it for the whole
+	# opening, and a night-3 resume can owe one during exactly that.
+	_nav_watchdog()
 	# Daytime intro keeps steady lighting. Once the player reaches the
 	# office the blackout fires and only the red emergency light pulses.
 	if Engine.is_editor_hint():
@@ -2399,32 +2916,50 @@ func build_map() -> void:
 	#                                                        [ Space Wing C ](24,-24) (locked, east of Time)
 	# White-marble museum palette. The entrance also opens south onto the
 	# street: the game now starts outside in daylight.
-	_add_room(map_root, "Entrance Zone", Vector3(0, 0, 25), Vector2(22, 20),
+	#
+	# The second argument of each call is the NODE name and the third is the
+	# catalogue key the room's sign is drawn from. They are index-aligned with
+	# SecurityCameraTablet.ROOMS -- same eleven rooms, same eleven keys -- so the
+	# name on the wall and the name on the mini-map are one row of game.csv.
+	_add_room(map_root, "Entrance Zone", "CAM_ENTRANCE",
+		Vector3(0, 0, 25), Vector2(22, 20),
 		Color(0.85, 0.84, 0.81), {"N": DOOR_GAP, "S": DOOR_GAP})
-	_add_room(map_root, "Central Atrium", Vector3(0, 0, 0), Vector2(30, 30),
+	_add_room(map_root, "Central Atrium", "CAM_ROOM_ATRIUM",
+		Vector3(0, 0, 0), Vector2(30, 30),
 		Color(0.88, 0.87, 0.85),
 		{"N": DOOR_GAP, "S": DOOR_GAP, "E": DOOR_GAP, "W": DOOR_GAP})
-	_add_room(map_root, "Watcher Office", Vector3(-25, 0, 0), Vector2(20, 14),
+	_add_room(map_root, "Watcher Office", "CAM_ROOM_OFFICE",
+		Vector3(-25, 0, 0), Vector2(20, 14),
 		Color(0.55, 0.57, 0.58), {"E": DOOR_GAP, "N": DOOR_GAP, "S": DOOR_GAP})
-	_add_room(map_root, "Equipment Storage", Vector3(-25, 0, 12), Vector2(20, 10),
+	_add_room(map_root, "Equipment Storage", "CAM_ROOM_STORAGE",
+		Vector3(-25, 0, 12), Vector2(20, 10),
 		Color(0.52, 0.52, 0.48), {"N": DOOR_GAP, "S": DOOR_GAP})
-	_add_room(map_root, "Archive", Vector3(-25, 0, -12), Vector2(20, 10),
+	_add_room(map_root, "Archive", "CAM_ROOM_ARCHIVE",
+		Vector3(-25, 0, -12), Vector2(20, 10),
 		Color(0.60, 0.58, 0.54), {"S": DOOR_GAP})
-	_add_room(map_root, "Gravity Wing A", Vector3(28, 0, 0), Vector2(26, 18),
+	_add_room(map_root, "Gravity Wing A", "CAM_ROOM_WING_A",
+		Vector3(28, 0, 0), Vector2(26, 18),
 		Color(0.78, 0.81, 0.86), {"W": DOOR_GAP, "E": DOOR_GAP})
-	_add_room(map_root, "Time Wing B", Vector3(0, 0, -24), Vector2(26, 18),
+	_add_room(map_root, "Time Wing B", "CAM_ROOM_WING_B",
+		Vector3(0, 0, -24), Vector2(26, 18),
 		Color(0.85, 0.79, 0.70), {"S": DOOR_GAP, "N": DOOR_GAP, "E": DOOR_GAP})
 	# Wings C and D now have real doorways, sealed by blast doors until
-	# nights 2 and 3 (see _add_locked_doors / unlock_wing in MapStructure).
-	_add_room(map_root, "Space Wing C Locked", Vector3(24, 0, -24), Vector2(22, 16),
+	# nights 2 and 3 (see _add_locked_doors / unlock_wing in MapStructure). Their
+	# signs name the wing, not its lock: the blast door in front of the player is
+	# already saying the room is shut, and it says so in its own notice.
+	_add_room(map_root, "Space Wing C Locked", "CAM_ROOM_WING_C",
+		Vector3(24, 0, -24), Vector2(22, 16),
 		Color(0.68, 0.70, 0.75), {"W": DOOR_GAP})
-	_add_room(map_root, "Mass Wing D Locked", Vector3(52, 0, 0), Vector2(22, 16),
+	_add_room(map_root, "Mass Wing D Locked", "CAM_ROOM_WING_D",
+		Vector3(52, 0, 0), Vector2(22, 16),
 		Color(0.76, 0.72, 0.63), {"W": DOOR_GAP})
 	# New annexes: a planetarium behind Time Wing and a restoration lab
 	# behind Storage.
-	_add_room(map_root, "Planetarium", Vector3(0, 0, -41), Vector2(20, 16),
+	_add_room(map_root, "Planetarium", "CAM_PLANETARIUM",
+		Vector3(0, 0, -41), Vector2(20, 16),
 		Color(0.62, 0.65, 0.78), {"S": DOOR_GAP})
-	_add_room(map_root, "Restoration Lab", Vector3(-25, 0, 22), Vector2(20, 10),
+	_add_room(map_root, "Restoration Lab", "CAM_ROOM_LAB",
+		Vector3(-25, 0, 22), Vector2(20, 10),
 		Color(0.72, 0.68, 0.66), {"N": DOOR_GAP})
 
 	# Door frames dress the seam on the shared wall between two rooms with
@@ -2445,14 +2980,27 @@ func build_map() -> void:
 	_add_room_lights(map_root)
 	_add_atrium_landmarks(map_root)
 	_add_atrium_decor(map_root)
+	# The containment core, its signage, the rope barrier, the cable runs, the
+	# reception desk and the directory board. This must run AFTER
+	# _add_atrium_decor (which is where the old thin core used to be built from
+	# _add_furnishings) and BEFORE _add_navigation, so its 45 static bodies are
+	# in the tree when the bake walks the map. It rebuilds "Anomalous Core" and
+	# "Containment Dome" under those exact names for GameManager's two find_child
+	# lookups -- see the note in _add_furnishings.
+	AtriumProps.build_atrium(map_root, Vector3.ZERO)
 	_add_entrance_details(map_root)
 	_add_office_details(map_root)
+	_add_storage_props(map_root)
+	# Both room builders are pure composition around their own room centre.
+	ArchiveProps.build_archive(map_root, Vector3(-25, 0, -12))
 	_add_exhibits(map_root)
 	_add_planetarium_details(map_root)
 	_add_lab_details(map_root)
 	_add_extra_exhibits(map_root)
 	_add_furnishings(map_root)
 	_add_more_interior(map_root)
+	_add_service_fittings(map_root)
+	_add_light_fittings(map_root)
 	_add_outdoor(map_root)
 	_add_street_extras(map_root)
 	_add_cameras(map_root)

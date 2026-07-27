@@ -1,35 +1,158 @@
 extends Control
-## Premium settings overlay built entirely from native Godot controls.
-
-signal closed
-
-# The eight colour constants and the `_style()` factory that used to live here
-# were promoted wholesale into game/UITheme.gd -- that file is literally this
-# file's shape with the padding lifted into arguments. Everything below now
-# routes through UITheme, so there is one palette instead of two.
+## The settings screen, rendered as one page of the Night Containment Service
+## terminal.
+##
+## signal closed -- emitted by ESC / pad B / pad START and by the rail's Back
+## button. MenuManager owns the visibility; this node never hides itself.
+##
+#
+# STAGE 9.2 -- THE DIALOG BECOMES A SCREEN
+#
+# Until now this was a 980x610 floating card centred on a scrim: its own header,
+# its own glow, its own idea of what a panel is. Every other full-screen surface
+# in the game is moving onto game/TerminalFrame.gd, and a settings dialog that
+# hovers in front of the terminal instead of being drawn BY it is the last place
+# the player can see two different devices at once. So the card is gone. What is
+# left of the old `_build()` is the part that was never chrome -- the rail, the
+# scrolling page and the rows -- and it now lives in `frame.body`.
+#
+# What the frame supplies, so this file stopped drawing it:
+#   masthead      HUD_PROTO_HEADER, the institution line every screen carries.
+#   title         MENU_SETTINGS, in the frame's own TITLE slot.
+#   status        the night readout, the shift clock and the signal-integrity
+#                 meter. The clock is deliberately blank (the frame prints an em
+#                 dash): the shift is paused while this page is up, and a
+#                 running clock on a configuration screen would be a lie.
+#   legend        ESC / Back, silkscreen along the bottom.
+#   scrim + glow  replaced by the frame's opaque SURFACE backdrop and the CRT
+#                 glass. There is nothing to dim, because the terminal is not a
+#                 window over the world -- it IS the screen.
+# The core-state chip stays hidden: it needs the TERM_CORE_* rows, which are not
+# in localization/game.csv yet, and TerminalFrame hides the chip on an empty key
+# rather than inventing a state.
+#
+# Corruption is left at 0. The settings page is the one screen the player must be
+# able to read when everything else has gone wrong -- a rotting Language row is a
+# player who cannot switch back to a language they can read.
 #
 #
-# KEYBOARD AND GAMEPAD (stage 5.2)
+# PLANES AND CONTRAST -- RECOMPUTED, BECAUSE THE PAGE BEHIND THE ROWS CHANGED
 #
-# This dialog could not be operated without a mouse. The sidebar tabs were
-# FOCUS_NONE, so the four pages were unreachable; the sliders, switches and
-# dropdowns were focusable by Godot's defaults but sat inside a ScrollContainer
-# with follow_focus off, so tabbing onto a row below the fold moved an invisible
-# cursor. Both are fixed below, and the focus graph is now *stated* rather than
-# inferred -- see `_wire_focus()` for why inference cannot work here.
+# The old dialog was SURFACE_RAISED with SURFACE row cards recessed into it. The
+# terminal page is SURFACE, so keeping the cards at SURFACE would have left them
+# with no fill step at all -- the 1.08:1 bug this project already fixed once,
+# re-created by moving the page out from under them. The cards are therefore
+# RAISED now, and the rail lost its slab entirely in favour of a hairline rule,
+# which is the frame's own vocabulary.
 #
-# What the player can do now, with no mouse at all:
-#   Tab / Shift+Tab ....... the whole dialog in visual order, wrapping
+# WCAG 2.1, channels linearised with `c/12.92 if c <= 0.04045 else
+# ((c+0.055)/1.055) ** 2.4`, `L = 0.2126R + 0.7152G + 0.0722B`, ratio
+# `(Lhi+0.05)/(Llo+0.05)`. Measured through the tube: TerminalFrame runs
+# CRTOverlay at CRT_INTENSITY_CLEAN here (corruption is 0), whose worst-lit pixel
+# leaves k = 0.882 of every channel -- the same k its own contrast table uses,
+# and a conservative floor for the body region, which is better lit than the
+# corners the table was measured at.
+#
+#   text                        on            clean    through the tube
+#   ON_SURFACE  row title       SURFACE_RAISED 11.99         9.92
+#   MUTED       row description SURFACE_RAISED  6.30         5.32
+#   ACCENT      row value       SURFACE_RAISED  6.09         5.15
+#   MUTED       page subtitle   SURFACE         9.08         7.18
+#   ACCENT      rail eyebrow    SURFACE         8.78         6.94
+#   ON_SURFACE  info card       ACCENT_FILL/S. 12.13        10.51
+#   ACCENT      info card head  ACCENT_FILL/S.  6.29         5.45
+# Worst text on this page: 5.15 : 1, against a gate of 4.5.
+#
+# Non-text, gate 3:1. A row card's BORDER hairline is 3.18:1 against its own
+# SURFACE_RAISED fill clean but only 2.79:1 through the tube -- so the hairline is
+# NOT what makes a card readable here, and is not asked to be: the fill carries a
+# 1.44:1 step over the page and the border is measured against the page it is
+# drawn on, SURFACE, where it is 3.76:1. The focus ring is BORDER_ACCENT, 5.15:1
+# against the card fill through the tube.
+#
+#
+# MEANING IS NEVER CARRIED BY COLOUR ALONE
+#
+# The selected tab used to differ from the other three only in hue -- accent fill,
+# accent border, accent text. It now also carries a 4 px bar down its left edge,
+# which is shape and survives a monochrome display, and it is still the only
+# button whose page is on screen, which is position. Every row's state is spoken
+# in words (SET_ON / SET_OFF, the percentage beside each slider, the dropdown's
+# own text), never by a colour swatch.
+#
+#
+# NOTHING HERE ANIMATES
+#
+# This file starts no tween, no timer and no _process. The only moving parts on
+# the screen belong to TerminalFrame and CRTOverlay, both of which read
+# SettingsManager.reduced_flashes themselves and go still when it is on -- which
+# is the state a player configuring the game from this very page can reach
+# without leaving it, because the frame subscribes to `settings_changed`.
+#
+#
+# KEYBOARD AND GAMEPAD (stage 5.2, unchanged in shape)
+#
+#   Tab / Shift+Tab ....... the whole page in visual order, wrapping
 #   Up / Down ............. within the column you are in (rail, or page)
 #   Left / Right .......... cross between the rail and the page
 #                           (on a slider, Left/Right is the value -- Godot's
 #                            Slider consumes those two and only those two)
 #   Enter / Space / pad A .. activate (ui_accept)
-#   Escape / pad START ..... close (the "pause" action, as before)
+#   Escape / pad START ..... close (the "pause" action)
 #   Escape / pad B ......... close (ui_cancel, the console-conventional back)
-# The pad's D-pad and left stick drive ui_up/down/left/right out of the box --
-# game/InputBootstrap.gd deliberately leaves the D-pad free of game actions for
-# exactly this -- so no new binding was needed to make the dialog pad-navigable.
+# The Back button moved out of the old header and into the foot of the rail, so
+# the rail is now the whole left-hand column of the focus graph: four tabs, then
+# Back. See `_wire_focus()` for why every edge is stated rather than inferred.
+
+signal closed
+
+## Progress file GameManager writes and MenuManager reads. Duplicated here for
+## one readout -- the night on the terminal's status cluster -- rather than
+## reaching into a sibling script's privates for it. Nothing in this file writes.
+const SAVE_PATH := "user://museum_save.cfg"
+## Highest night the game ships, i.e. GameManager.MAX_NIGHT. Only used to reject
+## a corrupt save; a wrong number here shows a wrong readout, never a crash.
+const MAX_NIGHT := 3
+
+## The four pages, in rail order. Kept as keys rather than as translated strings
+## so `_retranslate()` can rebuild the rail when the player changes the language
+## from the row two pages down.
+const TAB_KEYS := ["SET_TAB_AUDIO", "SET_TAB_GRAPHICS", "SET_TAB_CONTROLS", "SET_TAB_ACCESS"]
+## Geometric symbols, not emoji: they carry no colour, no script and no cultural
+## reading, and every one of them is paired with the tab's own translated name.
+##
+## AND EVERY ONE OF THEM IS IN THE FONT THAT DRAWS THEM. This read
+## ["◉", "◇", "⌁", "＋"], and the rail is a column of Buttons, which resolve
+## ui/museum_theme.tres -> fonts/JetBrainsMono.ttf. Checked in-engine with
+## Font.has_char(): that face carries ◇ and does NOT carry ◉, ⌁ or ＋. Three of
+## the four tabs were drawing .notdef, which reads as a mojibake bug rather than
+## as an icon, and it fails the same way in Open Sans SemiBold (the engine
+## fallback, which is missing all four) -- so this was not a stock-Godot problem
+## that the new fonts fixed.
+##
+## The replacements are present in JetBrains Mono, in Oswald and in the engine
+## fallback, so the rail cannot box whichever of the three a control ends up
+## resolving. The guard for the next edit is TerminalType.has_glyphs(), which
+## asks the face the Control really has instead of a list somebody wrote down.
+##
+##   ≈  audio: a waveform.
+##   ¤  graphics: a disc throwing light, which is a screen.
+##   ×  controls: a four-way cross, which is a d-pad.
+##   ±  access: an adjustment, which is what the page is.
+const TAB_ICONS := ["≈", "¤", "×", "±"]
+
+## The mixer, in the order the audio page shows it. `bus` is the AudioServer bus
+## name game/AudioManager.gd routes its players to (Master -> Music / Ambience /
+## SFX); the labels are catalogue keys owned by the localization pass this round.
+##
+## Master is NOT in this table. It already has a row driven by
+## SettingsManager.set_master_volume(), which is the one bus level that is
+## persisted to user://museum_settings.cfg -- see the note above `_build_audio()`.
+const VOLUME_ROWS := [
+	{"bus": "Music", "label": "SET_MUSIC_VOLUME", "desc": "SET_MUSIC_VOLUME_DESC"},
+	{"bus": "SFX", "label": "SET_SFX_VOLUME", "desc": "SET_SFX_VOLUME_DESC"},
+	{"bus": "Ambience", "label": "SET_AMBIENCE_VOLUME", "desc": "SET_AMBIENCE_VOLUME_DESC"},
+]
 
 ## Row labels for the Controls tab, paired with the actions they describe.
 ##
@@ -56,10 +179,16 @@ const BINDING_ROWS := [
 ## Printed when an action carries no binding of the kind a column shows.
 const NO_BINDING := "—"
 
+## Width of the marker down the selected tab's left edge. Shape, not hue.
+const TAB_MARKER_WIDTH := 4
+
 var _settings: Node
+var _frame: TerminalFrame
 var _content: VBoxContainer
 var _scroll: ScrollContainer
 var _tabs: Array[Button] = []
+var _eyebrow: Label
+var _autosave_hint: Label
 var _close_button: Button
 var _active_tab := 0
 ## Focusable controls on the page currently shown, in visual top-to-bottom
@@ -102,6 +231,11 @@ func _input(event: InputEvent) -> void:
 func _on_visibility_changed() -> void:
 	if visible and is_inside_tree():
 		_grab_initial_focus()
+		# The frame caches reduced_flashes and the CRT settings; re-reading them
+		# as the screen is raised is one group lookup and a repaint.
+		if _frame != null:
+			_frame.refresh()
+			_frame.set_night(_saved_night())
 
 
 ## Opening the dialog lands on the tab that is already selected, not on the
@@ -114,70 +248,39 @@ func _grab_initial_focus() -> void:
 
 
 func _build() -> void:
-	# A modal dim over whatever is running behind, so SCRIM -- the same call
-	# MenuManager._open_pause_menu() makes for the same job.
-	var shade := ColorRect.new()
-	shade.color = UITheme.SCRIM
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(shade)
+	_frame = TerminalFrame.new()
+	_frame.name = "Terminal"
+	add_child(_frame)
+	_frame.set_title("MENU_SETTINGS")
+	# Night from the save, clock blank. See the header for why the clock is a
+	# deliberate em dash rather than a number.
+	_frame.set_status(_saved_night(), -1.0)
+	# The legend is the frame's silkscreen: it never rots and never dims, which
+	# is exactly the guarantee the one key that leaves this screen needs.
+	_frame.set_keys([["ESC", "MENU_BACK"]])
 
-	# Subtle glow behind the panel, retinted from the old one-off mint to the CRT
-	# green. Alpha drops 0.12 -> 0.05 because ACCENT is far brighter than that
-	# mint: this rect is larger than the dialog, so it IS the dialog's immediate
-	# surround, and at 0.12 it lifts the backdrop until SURFACE_RAISED reads only
-	# 1.209:1 above it -- under the 1.30 gate, i.e. the bug this stage removes,
-	# re-created by decoration. At 0.05 it is 1.356:1, matching the old mint's
-	# 1.357:1 exactly: same visual weight, palette hue, plane step intact.
-	var glow := ColorRect.new()
-	glow.color = Color(UITheme.ACCENT, 0.05)
-	glow.anchor_left = 0.16
-	glow.anchor_top = 0.12
-	glow.anchor_right = 0.84
-	glow.anchor_bottom = 0.88
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shade.add_child(glow)
+	var columns := HBoxContainer.new()
+	columns.name = "Settings Body"
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 0)
+	_frame.body.add_child(columns)
 
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shade.add_child(center)
+	columns.add_child(_sidebar())
 
-	# PLANE 2 of 3 -- the dialog itself. Was BG #11161d, which the sidebar sat
-	# 1.04:1 from and the row cards 1.08:1 from: three planes, all the same
-	# colour. panel_raised() is SURFACE_RAISED, 1.44:1 above the SCRIM behind
-	# it and carrying the BORDER hairline, exactly like MenuManager's feedback
-	# dialog. Everything inside is now measured against this.
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(980, 610)
-	UITheme.apply_panel(panel)
-	center.add_child(panel)
-
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 0)
-	panel.add_child(outer)
-
-	var header := _header()
-	outer.add_child(header)
-
-	var divider := HSeparator.new()
-	divider.add_theme_constant_override("separation", 1)
-	outer.add_child(divider)
-
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 0)
-	outer.add_child(body)
-
-	var sidebar := _sidebar()
-	body.add_child(sidebar)
+	# The rail used to be a recessed slab welded to the dialog's left edge. On a
+	# page that is already SURFACE a second SURFACE slab is invisible, and a
+	# raised one would put the navigation on the same plane as the row cards. A
+	# hairline is what the terminal uses everywhere else to divide a region, and
+	# UITheme.build_theme() already dresses VSeparator with BORDER.
+	columns.add_child(VSeparator.new())
 
 	var content_margin := MarginContainer.new()
 	content_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content_margin.add_theme_constant_override("margin_left", 34)
-	content_margin.add_theme_constant_override("margin_top", 28)
-	content_margin.add_theme_constant_override("margin_right", 34)
-	content_margin.add_theme_constant_override("margin_bottom", 24)
-	body.add_child(content_margin)
+	content_margin.add_theme_constant_override("margin_left", 26)
+	content_margin.add_theme_constant_override("margin_top", 4)
+	content_margin.add_theme_constant_override("margin_right", 6)
+	content_margin.add_theme_constant_override("margin_bottom", 4)
+	columns.add_child(content_margin)
 
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -196,82 +299,90 @@ func _build() -> void:
 	_scroll.add_child(_content)
 
 
-func _header() -> Control:
-	var margin := MarginContainer.new()
-	margin.custom_minimum_size.y = 104
-	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_right", 24)
-	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_bottom", 18)
-	var row := HBoxContainer.new()
-	margin.add_child(row)
-	var titles := VBoxContainer.new()
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(titles)
-	var eyebrow := Label.new()
-	eyebrow.text = tr("SET_EYEBROW")
-	UITheme.apply_text(eyebrow, UITheme.CAPTION, UITheme.ACCENT)
-	titles.add_child(eyebrow)
-	var title := Label.new()
-	title.text = tr("MENU_SETTINGS")
-	UITheme.apply_text(title, UITheme.TITLE)
-	titles.add_child(title)
-	_close_button = Button.new()
-	_close_button.text = tr("SET_BACK")
-	_close_button.custom_minimum_size = Vector2(142, 44)
-	_style_button(_close_button, false)
-	_close_button.pressed.connect(func() -> void: closed.emit())
-	_close_button.focus_entered.connect(_hover_sfx)
-	row.add_child(_close_button)
-	return margin
-
-
 func _sidebar() -> Control:
-	# PLANE 1 of 3 -- the rail, recessed. Was #0d1218 against BG #11161d: 1.04:1,
-	# i.e. nothing. SURFACE is 1.44:1 *below* the SURFACE_RAISED dialog, keeping
-	# the original intent (the rail is the darkest thing on screen) while making
-	# it an actual step. Hand-rolled rather than apply_panel(panel, false)
-	# because the rail is welded to the dialog's left edge: it needs radius 0 and
-	# no border, or it becomes a rounded box floating inside the frame.
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 228
-	panel.add_theme_stylebox_override("panel",
-		UITheme.stylebox(UITheme.SURFACE, Color.TRANSPARENT, 0, 0))
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 26)
-	panel.add_child(margin)
+	margin.name = "Rail"
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_bottom", 4)
+
 	var box := VBoxContainer.new()
+	box.custom_minimum_size.x = 214
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
-	var names := [tr("SET_TAB_AUDIO"), tr("SET_TAB_GRAPHICS"), tr("SET_TAB_CONTROLS"), tr("SET_TAB_ACCESS")]
-	var icons := ["◉", "◇", "⌁", "＋"]
-	for i in range(names.size()):
+
+	# What the old dialog printed above its own title. The frame owns the title
+	# now, so the eyebrow becomes what it always read as: the heading of the
+	# navigation list. Wrapped, because it is a long line in both locales and the
+	# rail is 214 px wide.
+	_eyebrow = Label.new()
+	_eyebrow.text = tr("SET_EYEBROW")
+	_eyebrow.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UITheme.apply_text(_eyebrow, UITheme.CAPTION, UITheme.ACCENT)
+	box.add_child(_eyebrow)
+
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 6
+	box.add_child(gap)
+
+	for i in range(TAB_KEYS.size()):
 		var button := Button.new()
-		button.text = "%s    %s" % [icons[i], names[i]]
+		button.text = _tab_text(i)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.custom_minimum_size = Vector2(190, 48)
 		# Was FOCUS_NONE, which is what made the other three pages unreachable
 		# without a mouse. _style_button() reads this back, so leaving Godot's
 		# default (FOCUS_ALL) is all that is needed to get the ring as well.
-		button.pressed.connect(_show_tab.bind(i))
+		button.pressed.connect(_on_tab_pressed.bind(i))
 		button.mouse_entered.connect(_hover_sfx)
 		# The rail's hover click, now also on arrival by keyboard or pad: the
 		# same event from the player's point of view, so the same sound.
 		button.focus_entered.connect(_hover_sfx)
 		box.add_child(button)
 		_tabs.append(button)
+
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(spacer)
-	var hint := Label.new()
-	hint.text = tr("SET_AUTOSAVE_HINT")
-	UITheme.apply_text(hint, UITheme.CAPTION, UITheme.MUTED)
-	box.add_child(hint)
-	return panel
+
+	# The old header's Back button. It says only "Back": the frame's legend
+	# already prints the key that does the same thing, and a button captioned
+	# with its own shortcut next to a legend printing that shortcut is the same
+	# sentence twice.
+	_close_button = Button.new()
+	_close_button.text = tr("MENU_BACK")
+	_close_button.custom_minimum_size.y = 44
+	_style_button(_close_button, false)
+	_close_button.pressed.connect(func() -> void: closed.emit())
+	_close_button.focus_entered.connect(_hover_sfx)
+	box.add_child(_close_button)
+
+	_autosave_hint = Label.new()
+	_autosave_hint.text = tr("SET_AUTOSAVE_HINT")
+	UITheme.apply_text(_autosave_hint, UITheme.CAPTION, UITheme.MUTED)
+	box.add_child(_autosave_hint)
+	return margin
 
 
+func _tab_text(index: int) -> String:
+	# Concatenated rather than formatted: the icon is a layout glyph, not part of
+	# a translated sentence, so there is no format string here to put in the
+	# catalogue and no `%` for a translated argument to be fed to.
+	return TAB_ICONS[index] + "    " + tr(TAB_KEYS[index])
+
+
+func _on_tab_pressed(index: int) -> void:
+	if index == _active_tab:
+		# Re-pressing the page you are already on should still feel like a press,
+		# but there is nothing to rebuild and no reason to throw the focus.
+		_select_sfx()
+		return
+	_show_tab(index)
+	_select_sfx()
+
+
+## Rebuild the page. Silent on purpose: this runs on the very first build and on
+## every language change as well as on a real tab press, and a click on startup
+## is a sound the player did not ask for. `_on_tab_pressed()` adds the click.
 func _show_tab(index: int) -> void:
 	_active_tab = index
 	for i in range(_tabs.size()):
@@ -287,7 +398,6 @@ func _show_tab(index: int) -> void:
 		3: _build_accessibility()
 	_wire_focus()
 	_restore_focus_after_rebuild()
-	_select_sfx()
 
 
 ## The page the focus was standing on has just been freed. Switching tabs is
@@ -309,55 +419,52 @@ func _restore_focus_after_rebuild() -> void:
 ## The focus graph, written out in VISUAL order.
 ##
 ## Godot derives the Tab ring from scene-tree order and the arrow-key neighbours
-## from geometry, and neither survives this dialog. Tree order is construction
-## order, and construction order here is header -> rail -> page while the page is
-## torn down and rebuilt on every tab switch, so any link the engine cached
-## points at a freed node. Geometry is no better: the rail is a column of four
-## buttons beside a column of rows of differing heights, so "nearest control to
-## the right" resolves to a different row for each tab, and to the value label
-## rather than the slider whenever a row happens to be tall. So every edge is
-## stated, and stated in the order the eye reads them.
+## from geometry, and neither survives this page. Tree order is construction
+## order, and construction order here is rail -> page while the page is torn down
+## and rebuilt on every tab switch, so any link the engine cached points at a
+## freed node. Geometry is no better: the rail is a column of five buttons beside
+## a column of rows of differing heights, so "nearest control to the right"
+## resolves to a different row for each tab, and to the value label rather than
+## the slider whenever a row happens to be tall. So every edge is stated, and
+## stated in the order the eye reads them.
 ##
-##   Tab / Shift+Tab  one ring over everything: the Back button (topmost
-##                    interactive element, in the header), then the rail top to
-##                    bottom, then the page top to bottom. Wraps.
-##   Up / Down        stays in its column -- the rail wraps within its four
-##                    tabs, the page wraps within Back plus its own controls
-##                    (Back sits at the top of the page's column, not the
-##                    rail's).
-##   Left / Right     crosses the gutter: any tab -> the first control on the
-##                    page, any page control -> the tab that is currently lit.
+##   Tab / Shift+Tab  one ring over everything: the rail top to bottom (four
+##                    tabs, then Back), then the page top to bottom. Wraps.
+##   Up / Down        stays in its column -- the rail wraps within its five
+##                    buttons, the page wraps within its own controls.
+##   Left / Right     crosses the gutter: any rail button -> the first control on
+##                    the page, any page control -> the tab that is currently
+##                    lit.
 ##
 ## Left/Right is inert while a slider has the focus, by design: Godot's Slider
 ## consumes ui_left / ui_right to change the value and passes ui_up / ui_down
 ## through, which is why the vertical ring is the one that has to be complete.
 func _wire_focus() -> void:
-	var page: Array[Control] = []
-	if _close_button != null:
-		page.append(_close_button)
-	page.append_array(_page_focusables)
-
 	var rail: Array[Control] = []
 	for tab in _tabs:
 		rail.append(tab)
+	if _close_button != null:
+		rail.append(_close_button)
+
+	var page: Array[Control] = []
+	page.append_array(_page_focusables)
 
 	var ring: Array[Control] = []
-	if _close_button != null:
-		ring.append(_close_button)
 	ring.append_array(rail)
-	ring.append_array(_page_focusables)
+	ring.append_array(page)
 
 	_link_ring(ring, false)
 	_link_ring(rail, true)
 	_link_ring(page, true)
 
-	# Right off the rail aims at the first *row*, not at Back: Back is already a
-	# key press away (Escape), and landing on the top of the page is what the
-	# player asked for by pressing towards it.
-	var page_entry: Control = _page_focusables[0] if not _page_focusables.is_empty() else _close_button
-	for tab in rail:
+	# Right off the rail aims at the first *row*: landing on the top of the page
+	# is what the player asked for by pressing towards it. With an empty page
+	# (which no tab produces today) it falls back to Back, so the key is never a
+	# dead press.
+	var page_entry: Control = page[0] if not page.is_empty() else _close_button
+	for control in rail:
 		if page_entry != null:
-			tab.focus_neighbor_right = tab.get_path_to(page_entry)
+			control.focus_neighbor_right = control.get_path_to(page_entry)
 	var rail_entry: Control = _tabs[_active_tab] if _active_tab < _tabs.size() else null
 	for control in page:
 		if rail_entry != null:
@@ -403,25 +510,65 @@ func _on_row_focus_entered(card: PanelContainer) -> void:
 	_hover_sfx()
 	if card == null or not is_instance_valid(card):
 		return
-	# UITheme.panel() with the hairline swapped for the focus ring's colour and
-	# width. Content margins are set explicitly by the factory, so widening the
-	# border cannot move anything inside the card.
+	# UITheme.panel_raised() with the hairline swapped for the focus ring's colour
+	# and width. Content margins are set explicitly by the factory, so widening
+	# the border cannot move anything inside the card. The FILL is unchanged, so
+	# focusing a row does not make it jump a plane.
 	card.add_theme_stylebox_override("panel", UITheme.stylebox(
-		UITheme.SURFACE, UITheme.BORDER_ACCENT, UITheme.FOCUS_WIDTH,
+		UITheme.SURFACE_RAISED, UITheme.BORDER_ACCENT, UITheme.FOCUS_WIDTH,
 		UITheme.RADIUS_LG, UITheme.PAD_X + 4, UITheme.PAD_Y + 4))
 
 
 func _on_row_focus_exited(card: PanelContainer) -> void:
 	if card != null and is_instance_valid(card):
-		UITheme.apply_panel(card, false)
+		UITheme.apply_panel(card)
 
 
+## Master plus one row per mixer bus.
+##
+## Master goes through SettingsManager, which is the only path that PERSISTS: it
+## writes user://museum_settings.cfg and re-applies on launch. The other three
+## call AudioManager.set_bus_volume_linear() directly and are therefore live for
+## the session only -- SettingsManager has no field for them and that file is not
+## this agent's to change. The handoff names the four lines it needs; until they
+## land, a player who turns the ambience down finds it up again next launch.
+##
+## A bus that is not in the layout gets no row at all. A slider that moves and
+## changes nothing is the exact sin the accessibility note below is about, and it
+## is no less a lie about audio than it is about flashes.
 func _build_audio() -> void:
 	_section_title(tr("SET_TAB_AUDIO"), tr("SET_AUDIO_DESC"))
-	_slider_row(tr("SET_MASTER_VOLUME"), tr("SET_MASTER_VOLUME_DESC"), "volume",
+	_slider_row(tr("SET_MASTER_VOLUME"), tr("SET_MASTER_VOLUME_DESC"), true,
 		_settings.master_volume * 100.0, 0.0, 100.0, 1.0,
 		func(value: float) -> void: _settings.set_master_volume(value / 100.0))
+	for row: Dictionary in VOLUME_ROWS:
+		var bus: String = row["bus"]
+		if AudioServer.get_bus_index(bus) < 0:
+			continue
+		var label_key: String = row["label"]
+		var desc_key: String = row["desc"]
+		_slider_row(tr(label_key), tr(desc_key), true,
+			_bus_linear(bus) * 100.0, 0.0, 100.0, 1.0,
+			func(value: float) -> void: _set_bus_linear(bus, value / 100.0))
 	_info_card(tr("SET_CARD_AUDIO_TITLE"), tr("SET_CARD_AUDIO_BODY"))
+
+
+## Where a bus slider starts. Read back off AudioServer rather than remembered,
+## because AudioManager and SettingsManager both write these levels and the
+## server is the one place that knows the answer after they have.
+func _bus_linear(bus_name: String) -> float:
+	var index := AudioServer.get_bus_index(bus_name)
+	if index < 0:
+		return 1.0
+	if AudioServer.is_bus_mute(index):
+		return 0.0
+	return clampf(db_to_linear(AudioServer.get_bus_volume_db(index)), 0.0, 1.0)
+
+
+func _set_bus_linear(bus_name: String, linear: float) -> void:
+	var audio := _audio()
+	if audio != null and audio.has_method("set_bus_volume_linear"):
+		audio.set_bus_volume_linear(bus_name, linear)
 
 
 func _build_graphics() -> void:
@@ -441,7 +588,7 @@ func _build_graphics() -> void:
 
 func _build_controls() -> void:
 	_section_title(tr("SET_TAB_CONTROLS"), tr("SET_CONTROLS_DESC"))
-	_slider_row(tr("SET_MOUSE_SENS"), tr("SET_MOUSE_SENS_DESC"), "sensitivity",
+	_slider_row(tr("SET_MOUSE_SENS"), tr("SET_MOUSE_SENS_DESC"), false,
 		_settings.mouse_sensitivity * 100000.0, 100.0, 600.0, 5.0,
 		func(value: float) -> void: _settings.set_mouse_sensitivity(value / 100000.0))
 	for row: Dictionary in BINDING_ROWS:
@@ -544,12 +691,24 @@ func _gamepad_glyph(event: InputEvent) -> String:
 
 ## One dropdown and three toggles, every one of which does something (5.1).
 ##
+## Re-audited this round, reader by reader, because a switch that promises an
+## accommodation and delivers none is worse for the player who needs it than an
+## option that is honestly absent:
+##   language        SettingsManager.set_language -> TranslationServer.set_locale
+##                   plus a NOTIFICATION_TRANSLATION_CHANGED sweep, which this
+##                   file now answers as well (see `_notification`).
+##   reduced_flashes read by FirstMuseumMap's alarm pulse, GameplayEnhancements
+##                   (void + watch), SecurityCameraTablet's static, Compass,
+##                   TaskBlock, LightProps, CRTOverlay and TerminalFrame.
+##   high_contrast   SettingsManager._apply_contrast, a floor over the map's own
+##                   colour grade.
+##   large_text      SettingsManager._apply_ui_scale -> content_scale_factor.
+## All four are real. Nothing on this page is write-only.
+##
 ## "Субтитры" and "Уменьшить движение" used to sit in this list. Both wrote to
-## the config file and were read by nothing, anywhere -- a switch that promises
-## an accommodation and delivers none, which for the player who needs it is
-## worse than an option that is honestly absent. They are gone from here and
-## from game/SettingsManager.gd; the reasoning and the route back are recorded
-## at the top of that file.
+## the config file and were read by nothing, anywhere. They are gone from here
+## and from game/SettingsManager.gd; the reasoning and the route back are
+## recorded at the top of that file.
 func _build_accessibility() -> void:
 	_section_title(tr("SET_TAB_ACCESS"), tr("SET_ACCESS_DESC"))
 	_option_row(tr("ACCESS_LANGUAGE"), tr("SET_LANGUAGE_DESC"), ["Русский", "English"],
@@ -572,10 +731,13 @@ func _build_accessibility() -> void:
 	_register_focusable(reset)
 
 
+## SECTION, not TITLE: the frame's own header already carries a TITLE-sized
+## "Настройки" two rules above this, and two 28 px headings stacked on one page
+## is a hierarchy that says nothing. The page heading is now the step below it.
 func _section_title(title_text: String, subtitle: String) -> void:
 	var title := Label.new()
 	title.text = title_text
-	UITheme.apply_text(title, UITheme.TITLE)
+	UITheme.apply_text(title, UITheme.SECTION)
 	_content.add_child(title)
 	var sub := Label.new()
 	sub.text = subtitle
@@ -586,7 +748,11 @@ func _section_title(title_text: String, subtitle: String) -> void:
 	_content.add_child(gap)
 
 
-func _slider_row(title_text: String, description: String, key: String,
+## One slider row. `as_percent` picks the readout beside it: a 0..100 bus level
+## prints "72%", and the mouse sensitivity -- which is a 100..600 stand-in for
+## 0.001..0.006 radians per pixel -- prints "2.50". Two formats, one flag,
+## no key strings threaded through the row builder to mean "which one".
+func _slider_row(title_text: String, description: String, as_percent: bool,
 		value: float, min_value: float, max_value: float, step: float,
 		callback: Callable) -> void:
 	var row := _row_shell()
@@ -605,14 +771,18 @@ func _slider_row(title_text: String, description: String, key: String,
 	slider.step = step
 	slider.value = value
 	slider.value_changed.connect(func(v: float) -> void:
-		value_label.text = "%d%%" % int(v) if key == "volume" else "%.2f" % (v / 100.0)
+		value_label.text = _slider_text(v, as_percent)
 		callback.call(v))
 	row.add_child(slider)
-	value_label.text = "%d%%" % int(value) if key == "volume" else "%.2f" % (value / 100.0)
+	value_label.text = _slider_text(value, as_percent)
 	# Left / Right adjust the value, Up / Down leave the slider -- Godot's Slider
 	# consumes only the axis it is drawn on, so a horizontal one hands the
 	# vertical pair straight back to focus navigation.
 	_register_focusable(slider, card)
+
+
+func _slider_text(value: float, as_percent: bool) -> String:
+	return "%d%%" % int(value) if as_percent else "%.2f" % (value / 100.0)
 
 
 func _toggle_row(title_text: String, description: String, value: bool,
@@ -675,15 +845,14 @@ func _key_row(action: String, keyboard: String, gamepad: String) -> void:
 
 
 func _row_shell(height := 74) -> HBoxContainer:
-	# PLANE 3 of 3 -- the row cards. Was SURFACE #171e27 on BG #11161d: 1.08:1,
-	# with a BORDER only 1.61:1 from its own fill, so the cards were invisible
-	# twice over. panel() is SURFACE, 1.44:1 *below* the SURFACE_RAISED dialog,
-	# plus the BORDER hairline at 3.18:1 against the dialog and 4.58:1 against
-	# the card's own fill. Recessed rather than raised because the page they sit
-	# on is already the raised plane.
+	# The row cards, RAISED. They used to be the recessed plane inside a raised
+	# dialog; the dialog is gone and the page behind them is the terminal's own
+	# SURFACE, so recessed would mean "the same colour as the page" -- the 1.08:1
+	# bug this project already fixed once. panel_raised() puts them 1.44:1 above
+	# the page, with the BORDER hairline reading 3.76:1 against that page.
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.y = height
-	UITheme.apply_panel(panel, false)
+	UITheme.apply_panel(panel)
 	_content.add_child(panel)
 	# Handed to the caller through a field rather than a second return value:
 	# only the three interactive row builders want it, and every one of them
@@ -742,7 +911,7 @@ func _info_card(title_text: String, body: String) -> void:
 func _style_button(button: Button, active: bool) -> void:
 	# apply_button re-enables focus by default; pass through whatever the caller
 	# already decided rather than forcing it, so a button that is deliberately
-	# out of the tab order stays out of it. Nothing in this dialog is any more:
+	# out of the tab order stays out of it. Nothing on this page is any more:
 	# the rail's FOCUS_NONE was the whole of bug 5.2, and it is gone. Every
 	# button here therefore arrives with Godot's FOCUS_ALL and keeps it, focus
 	# ring included -- _show_tab() re-styles the four tabs on every switch, and
@@ -750,29 +919,87 @@ func _style_button(button: Button, active: bool) -> void:
 	UITheme.apply_button(button, UITheme.LABEL,
 		UITheme.ACCENT if active else UITheme.ON_SURFACE,
 		button.focus_mode != Control.FOCUS_NONE)
-	if active:
-		# UITheme has no "selected" state, but it has the pair the palette uses
-		# for one: ACCENT_FILL over an ACCENT border, i.e. button_pressed().
-		button.add_theme_stylebox_override("normal", UITheme.button_pressed())
+	if not active:
+		return
+	# UITheme has no "selected" state, but it has the pair the palette uses for
+	# one: ACCENT_FILL over an ACCENT border, i.e. button_pressed(). The heavy
+	# left edge is added on top so the selection is also a SHAPE -- on a
+	# monochrome display, or for a player who cannot separate the accent from the
+	# page, the lit tab is still the one with the bar down its side.
+	var style := UITheme.button_pressed()
+	style.border_width_left = TAB_MARKER_WIDTH
+	button.add_theme_stylebox_override("normal", style)
 
 
 func _reset_defaults() -> void:
 	_settings.reset_defaults()
-	_show_tab(_active_tab)
+	# Full retranslate, not just a page rebuild: reset_defaults() puts the locale
+	# back to Russian by calling TranslationServer directly, WITHOUT the
+	# propagate_notification() that set_language() sends -- so nothing else is
+	# going to repaint the rail, and an English player would be left with English
+	# tabs over a Russian page.
+	_retranslate()
 	_select_sfx()
 
 
-func _hover_sfx() -> void:
-	if not is_inside_tree():
+## Re-read every string this file owns. Godot delivers
+## NOTIFICATION_TRANSLATION_CHANGED to the whole tree when
+## SettingsManager.set_language() propagates it, and until now this panel ignored
+## it: switching to English left the rail, the rows and the hint in Russian until
+## the player closed the screen and opened it again -- from the very row that had
+## just promised to change the language.
+##
+## TerminalFrame answers the same notification for its own masthead, title and
+## legend, so nothing here touches those.
+##
+## Deferred by one idle frame because the notification arrives from inside
+## `_settings.set_language()`, which this page reaches through an OptionButton's
+## own `item_selected` -- rebuilding the page synchronously would free that
+## button, and its popup, while both are still unwinding.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or _content == null:
 		return
-	var audio := get_tree().get_first_node_in_group("audio_manager")
+	_retranslate.call_deferred()
+
+
+func _retranslate() -> void:
+	# Reachable one idle frame late, so re-check what `_notification` checked.
+	if _content == null or not is_inside_tree():
+		return
+	for i in range(_tabs.size()):
+		_tabs[i].text = _tab_text(i)
+	if _eyebrow != null:
+		_eyebrow.text = tr("SET_EYEBROW")
+	if _autosave_hint != null:
+		_autosave_hint.text = tr("SET_AUTOSAVE_HINT")
+	if _close_button != null:
+		_close_button.text = tr("MENU_BACK")
+	_show_tab(_active_tab)
+
+
+## The night the terminal reports, read from the progress file GameManager
+## writes. A missing or unreadable file is night 1, which is what the main menu
+## shows for the same state.
+func _saved_night() -> int:
+	var config := ConfigFile.new()
+	if config.load(SAVE_PATH) != OK:
+		return 1
+	return clampi(int(config.get_value("progress", "night", 1)), 1, MAX_NIGHT)
+
+
+func _audio() -> Node:
+	if not is_inside_tree():
+		return null
+	return get_tree().get_first_node_in_group("audio_manager")
+
+
+func _hover_sfx() -> void:
+	var audio := _audio()
 	if audio != null and audio.has_method("play_sfx"):
 		audio.play_sfx("menu_move", -8.0)
 
 
 func _select_sfx() -> void:
-	if not is_inside_tree():
-		return
-	var audio := get_tree().get_first_node_in_group("audio_manager")
+	var audio := _audio()
 	if audio != null and audio.has_method("play_sfx"):
 		audio.play_sfx("menu_select", -7.0)

@@ -83,8 +83,11 @@ extends RefCounted
 ## after re-enabling focus there would be nothing to see. `focus()` supplies
 ## the missing ring and `apply_button()` re-enables focus by default.
 ##
-## No font resource is shipped, so nothing here names one; the tokens are
-## sizes and colours only and ride on Godot's default font.
+## Two OFL faces now ship in fonts/ and are named further down, in the FONTS
+## section: JetBrains Mono for instrument data and Oswald for the institutional
+## voice. Before them the project had no font file at all, so every screen
+## rendered in Godot's stock sans -- which is why "it looks like stock Godot"
+## was a literal description of the build rather than an impression.
 
 # --- TYPE SCALE -------------------------------------------------------------
 # Six steps, replacing the 17 ad-hoc sizes currently in the codebase. Ratio is

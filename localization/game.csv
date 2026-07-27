@@ -3,8 +3,6 @@ ACCESS_HIGH_CONTRAST,High contrast,Высокий контраст
 ACCESS_LANGUAGE,Language,Язык
 ACCESS_LARGE_UI,Large interface,Крупный интерфейс
 ACCESS_REDUCED_FLASHES,Reduce flashes,Уменьшить мерцание
-ACCESS_REDUCED_MOTION,Reduce motion,Уменьшить движение
-ACCESS_SUBTITLES,Subtitles,Субтитры
 ADMIN_CLOSE,CLOSE · F9,ЗАКРЫТЬ · F9
 ADMIN_DESC_ASCENT,"Climb the ledges: checkpoints, moving tiles, fog","Подъём по уступам: контрольные точки, движущиеся плиты, туман"
 ADMIN_DESC_ECHO,Memorize and repeat the sequence of column flashes,Запомните и повторите последовательность вспышек колонн
@@ -64,6 +62,16 @@ CAM_WING_A_GRAVITY,Wing A — Gravity,Крыло A — гравитация
 CAM_WING_B_TIME,Wing B — Time,Крыло B — время
 CAM_WING_C_DOOR,Wing C — Space,Крыло C — космос
 CAM_WING_D_MASS,Wing D — Mass,Крыло D — масса
+COMPASS_BEARING,%s · %d m,%s · %d м
+COMPASS_CAPTION_HEADING,OBJECTIVE,ЦЕЛЬ
+COMPASS_CAPTION_POSITION,POSITION,ПОЛОЖЕНИЕ
+COMPASS_LEGEND_YOU,you,вы
+COMPASS_MAP_HINT,M — hold for the floor plan,M — удерживать: план этажа
+COMPASS_MAP_TITLE,FLOOR PLAN,ПЛАН ЭТАЖА
+COMPASS_ROOM_STALE,%s — last fix,%s — последняя отметка
+COMPASS_ROOM_UNKNOWN,Off the floor plan,Вне плана этажа
+COMPASS_SIGNAL_LOST,WAYFINDING NET DOWN,СЕТЬ НАВИГАЦИИ: НЕТ СВЯЗИ
+COMPASS_SIGNAL_WEAK,WAYFINDING NET DEGRADED,СЕТЬ НАВИГАЦИИ: ПОМЕХИ
 EXHIBIT_BROKEN_CLOCK,Broken Clock,Сломанные часы
 EXHIBIT_CENTRAL_CORE,the central core,центральное ядро
 EXHIBIT_CLOAKROOM,CLOAKROOM · SEARCH,ГАРДЕРОБ · ДОСМОТР
@@ -139,11 +147,11 @@ HUD_PROTO_FOOTER,E / ENTER — close · The screen closes on its own,E / ENTER �
 HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУЗЕЙ · СЛУЖБА НОЧНОГО СДЕРЖИВАНИЯ
 HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
 HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
-HUD_PROTO_TITLE,CONTAINMENT PROTOCOL: %s,ПРОТОКОЛ ЛОКАЛИЗАЦИИ: %s
 HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
 HUD_SOURCE_CONFIRMED,SOURCE CONFIRMED. PROTOCOL UNLOCKED.,ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.
 HUD_STAMINA,STAMINA,ВЫНОСЛИВОСТЬ
 HUD_STAMINA_EXHAUSTED,EXHAUSTED — CATCH YOUR BREATH,ИСТОЩЕНИЕ — ПЕРЕВЕДИТЕ ДЫХАНИЕ
+HUD_TASK_CARRYING,Carrying: %s,В руках: %s
 HUD_TERMINAL_BREACH,!! CONTAINMENT BREACH !!\n%s\n%s,!! НАРУШЕНИЕ СДЕРЖИВАНИЯ !!\n%s\n%s
 HUD_TERMINAL_IDLE,SYSTEM NOMINAL\nALL EXHIBITS STABLE,СИСТЕМА В НОРМЕ\nВСЕ ЭКСПОНАТЫ СТАБИЛЬНЫ
 HUD_TERMINAL_RESTORED,"SYSTEM: CONTAINMENT RESTORED\nGOOD NIGHT, OBSERVER","СИСТЕМА: СДЕРЖИВАНИЕ ВОССТАНОВЛЕНО\nДОБРОЙ НОЧИ, НАБЛЮДАТЕЛЬ"
@@ -196,10 +204,20 @@ OBJ_NIGHT_DONE,Night %d complete. ENTER - next night.,Ночь %d пройден
 OBJ_NIGHT_INTRO,Night %d. Look around the museum. The security office is in the west wing.,Ночь %d. Осмотрите музей. Офис охраны — в западном крыле.
 OBJ_NIGHT_RESTART,Night %d. The core is unstable again...,Ночь %d. Ядро снова нестабильно...
 OBJ_TRIAL,Clear the pocket dimension and forge the stabilization key.,Пройдите карманное измерение и создайте ключ стабилизации.
+PROP_CRATE_DO_NOT_OPEN,DO NOT OPEN,НЕ ВСКРЫВАТЬ
+PROP_EXHIBIT_9_TAG,EXHIBIT 9,ЭКСПОНАТ 9
+PROP_STORAGE_BAY_CONSUMABLES,CONSUMABLES,РАСХОДНЫЕ МАТЕРИАЛЫ
+PROP_STORAGE_BAY_SPARES,SPARE PARTS,ЗАПЧАСТИ
+PROP_STORAGE_BAY_TOOLS,HAND TOOLS,РУЧНОЙ ИНСТРУМЕНТ
+PROP_STORAGE_HAZARD_PLACARD,DO NOT OPEN,НЕ ВСКРЫВАТЬ
+PROP_STORAGE_SIGN_CHARGING,CHARGING STATIONS,ЗАРЯДНЫЕ СТАНЦИИ
+PROP_STORAGE_SIGN_DEVICES,CONTAINMENT DEVICES,УСТРОЙСТВА СДЕРЖИВАНИЯ
+PROP_STORAGE_TOOLBOARD_NOTICE,NOT RETURNED,НЕ СДАНО
 SET_ACCESS_DESC,Reduce visual load and improve readability,Снизьте визуальную нагрузку и улучшите читаемость
+SET_AMBIENCE_VOLUME,Ambience volume,Громкость окружения
+SET_AMBIENCE_VOLUME_DESC,Room tone and the hum of anomalies,Фон залов и гул аномалий
 SET_AUDIO_DESC,Tune the museum's atmosphere and volume,Настройте атмосферу и громкость музея
 SET_AUTOSAVE_HINT,Changes are saved\nautomatically,Изменения сохраняются\nавтоматически
-SET_BACK,ESC   BACK,ESC   НАЗАД
 SET_BIND_DROP,Drop device,Бросить прибор
 SET_BIND_INTERACT,Interact,Взаимодействие
 SET_BIND_MOVE,Movement,Движение
@@ -223,6 +241,8 @@ SET_MASTER_VOLUME,Master volume,Общая громкость
 SET_MASTER_VOLUME_DESC,"Music, ambience and sound effects","Музыка, окружение и звуковые эффекты"
 SET_MOUSE_SENS,Mouse sensitivity,Чувствительность мыши
 SET_MOUSE_SENS_DESC,First-person look speed,Скорость обзора от первого лица
+SET_MUSIC_VOLUME,Music volume,Громкость музыки
+SET_MUSIC_VOLUME_DESC,Soundtrack only,Только музыкальное сопровождение
 SET_OFF,OFF,ВЫКЛ
 SET_ON,ON,ВКЛ
 SET_PAD_LEFT_STICK,Left stick,Левый стик
@@ -230,11 +250,11 @@ SET_QUALITY_HIGH,High,Высокое
 SET_QUALITY_LOW,Low,Низкое
 SET_QUALITY_MEDIUM,Medium,Среднее
 SET_REDUCED_FLASHES_DESC,Softens the emergency lighting and the void effect,Смягчает аварийный свет и эффект пустоты
-SET_REDUCED_MOTION_DESC,Disables camera shake and harsh transitions,Отключает тряску камеры и резкие переходы
 SET_RESET_DEFAULTS,Restore default settings,Восстановить настройки по умолчанию
 SET_RESOLUTION,Window resolution,Разрешение окна
 SET_RESOLUTION_DESC,Size of the test and windowed mode,Размер тестового и оконного режима
-SET_SUBTITLES_DESC,Shows text for speech and important sounds,Показывает текст для речи и важных звуков
+SET_SFX_VOLUME,Effects volume,Громкость эффектов
+SET_SFX_VOLUME_DESC,"Footsteps, alarms and the Curator","Шаги, тревога и Куратор"
 SET_TAB_ACCESS,Accessibility,Доступность
 SET_TAB_AUDIO,Audio,Аудио
 SET_TAB_CONTROLS,Controls,Управление
@@ -258,7 +278,7 @@ STORY_PROLOGUE_09,For three weeks the round log has carried the same entry: ther
 TEACH_HINT_LANTERN,Press E at the null lantern to take it.,"Нажмите E у нуль-фонаря, чтобы взять его."
 TEACH_HINT_LOOK,Move the mouse to look around.,"Поводите мышью, чтобы осмотреться."
 TEACH_HINT_OFFICE,West through the atrium and in through the office door.,На запад через атриум и внутрь через дверь офиса.
-TEACH_HINT_PROTOCOL,"E closes the protocol screen; the alarm terminal repeats it, also on E.","E закрывает экран протокола; терминал тревоги повторит его — тоже на E."
+TEACH_HINT_PROTOCOL,"E closes the protocol screen; the alarm terminal repeats it, also on E.",E закрывает экран протокола; терминал тревоги повторит его — тоже на E.
 TEACH_HINT_TABLET,Press TAB at the office desk to raise the camera tablet.,"Нажмите TAB за столом офиса, чтобы поднять планшет камер."
 TEACH_OBJ_FLASHLIGHT,Check your flashlight while the lights are still on.,"Проверьте фонарик, пока свет ещё горит."
 TEACH_OBJ_LANTERN,The equipment store is south of the office. Take the null lantern.,Склад оборудования — к югу от офиса. Возьмите нуль-фонарь.
@@ -268,6 +288,10 @@ TEACH_OBJ_OFFICE,Take up your post: the security office is in the west wing.,З�
 TEACH_OBJ_PROTOCOL,The protocol screen names the device the breach needs. Read it.,"Экран протокола называет прибор, который нужен при прорыве. Прочтите его."
 TEACH_OBJ_SPRINT,Tonight you will have to cover ground fast. Try a run.,Ночью придётся передвигаться быстро. Попробуйте бег.
 TEACH_OBJ_TABLET,Back at the desk: the cameras show what you cannot see from here.,"Вернитесь к столу: камеры показывают то, чего отсюда не видно."
+TERM_CORE_CRITICAL,CORE: CRITICAL,ЯДРО: КРИТИЧНО
+TERM_CORE_NOMINAL,CORE: NOMINAL,ЯДРО: НОРМА
+TERM_CORE_UNSTABLE,CORE: UNSTABLE,ЯДРО: НЕСТАБИЛЬНО
+TERM_SIGNAL_LOST,SIGNAL LOST,СИГНАЛ ПОТЕРЯН
 TOOL_CHRONO_STABILIZER_HINT,Evens out the flow of time in the incident zone,Выравнивает ход времени в зоне аварии
 TOOL_CHRONO_STABILIZER_NAME,Chrono Stabilizer,Хроностабилизатор
 TOOL_CONTAINMENT_ROD_HINT,Damps the exhibit's radiation bloom,Гасит радиационное цветение экспоната

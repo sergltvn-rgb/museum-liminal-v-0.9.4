@@ -7,14 +7,101 @@ extends Node
 ## every player teleport used to run off _process, so they moved further per second
 ## the faster the machine drew. The frame is split now -- see _process and
 ## _physics_process below for exactly what went where and why.
+##
+##
+## THE TRIAL HUD IS NOT A SECOND HUD
+##
+## It used to be one: two hand-built Panels on their own CanvasLayer at 30, a
+## centred TITLE for the trial name, a BODY line under it rewritten every frame,
+## and a second strip below that fading its own alpha. Nothing about it said
+## "the same operator, the same terminal" -- a trial simply replaced the night's
+## instruments with different ones, which is why entering a pocket dimension read
+## as changing games rather than as the job going wrong.
+##
+## It is now the two shared components, and nothing else:
+##
+##   TerminalFrame  the instrument itself, at TRIAL_FRAME_LAYER. Same chrome the
+##                  full-screen surfaces wear, held at TRIAL_CORRUPTION so the
+##                  glass, the broken rules and the integrity percentage all say
+##                  "abnormal conditions" without a word of new text. A rule of
+##                  the dimension biting (a dose reset, a dropped load, a missed
+##                  sequence) stabs it further through _fault().
+##   TaskBlock      the one place the game says what to do now -- shared with the
+##                  night HUD rather than duplicated, see _resolve_task_block().
+##                  Slot 1 the objective, slot 3 the trial's teaching line, slot 4
+##                  the dimension's name as a quiet caption. Transient feedback
+##                  goes through flash(), so the one-primary-line rule holds inside
+##                  a trial exactly as it does outside one.
+##
+## WHY THE FRAME SHOWS NO MASTHEAD AND NO TITLE. The frame's contrast table is
+## computed against its own opaque backdrop, and this instance hides that backdrop
+## -- the pocket dimension is what the operator is looking at, so the page behind
+## the chrome has to go. Every glyph the frame draws would then sit on live 3D,
+## where no ratio can be computed: a yellow-halls wall and a void-rift floor are
+## eleven stops apart. The two unplated labels (masthead, title) are therefore
+## left empty and the trial's name moves into TaskBlock, whose panel is opaque.
+## What is left of the frame draws on its own plates or is not text at all: the
+## status chips carry a SURFACE fill each, the rules and the murk are chrome, and
+## the tube is the tube. The key legend is dropped for the same reason plus a
+## second one -- its descriptions are unplated too, and at BEZEL from the bottom
+## edge it lands squarely on PlayerController's stamina panel.
 
 const ORIGIN := Vector3(0, 72, -260)
 const USE_DISTANCE := 2.8
 const LOOP_DURATION := 18.0
-# How long the one-shot teaching hints stay up when a trial opens, and how much
-# of that tail is spent fading them out.
-const TUTORIAL_HINT_SECONDS := 5.0
-const TUTORIAL_HINT_FADE := 0.8
+## CanvasLayer for the trial's terminal frame.
+##
+## 500-589 is the "trial / pocket-dimension HUD" band of the decade scale written
+## out in game/TaskBlock.gd and tabulated in full above GameManager._build_hud().
+## The old 30 was above the menus and the old 18 was below the fail page; both
+## are the wrong way round on that ladder.
+##
+## MUST SIT ABOVE:
+##   110 compass / night HUD ....... the trial replaces the night's instruments
+##                                   while it is open; it does not share a rung
+##                                   with them.
+##   199 TaskBlock ................. deliberate: the glass and the dropped lines
+##                                   fall across the task readout the way they
+##                                   fall across everything else this terminal
+##                                   draws. The block stays legible through them
+##                                   because it owns an opaque panel.
+##   200 CCTV tablet / 210 protocol  neither exists inside a pocket dimension,
+##                                   and a stale one must not outrank the frame.
+## MUST SIT BELOW:
+##   590 Curator catch screen ...... the catch veil covers every surface a shift
+##                                   can raise, this one included.
+##   610 MenuManager ............... raising the pause menu is not seen through
+##                                   a failing tube. This is the invariant the
+##                                   old 30 broke.
+##
+## THE ONE INVERSION THIS BAND BUYS. The night timer can expire while a trial is
+## open, and GameManager's fail page (420) is then UNDER this frame. That is why
+## _cleanup() hides this layer explicitly instead of trusting z-order to bury it.
+const TRIAL_FRAME_LAYER := 510
+## Layer a TaskBlock built by THIS file is parked at. GameManager owns the real
+## one and puts it at its own HUD_TASK_LAYER; _resolve_task_block() only ever
+## constructs a block when no shift HUD exists at all (headless suites, a trial
+## driven straight from a test). Kept equal to GameManager.HUD_TASK_LAYER so the
+## fallback lands on the same rung of the ladder rather than on TaskBlock's own
+## legacy TASK_LAYER = 17, which is below every screen listed above.
+const HUD_TASK_LAYER := 199
+## Sustained corruption while the operator is inside a pocket dimension. Reads as
+## 60% signal integrity, two dropped lines and a walk of the accent family towards
+## amber -- heavier than any night should reach, and still inside the frame's
+## contrast budget, which holds all the way to 1.0.
+const TRIAL_CORRUPTION := 0.40
+## Extra corruption, and for how long, when a rule of the dimension bites.
+const FAULT_PULSE := 0.45
+const FAULT_PULSE_SECONDS := 1.1
+## Group the single TaskBlock is published under, so the night HUD and this
+## manager converge on one instance instead of stacking two identical panels.
+const TASK_BLOCK_GROUP := "task_block"
+## Priority the trial's standing line carries in GameManager's objective registry.
+## The same 50 GameManager._begin_trial() opens the "trial" source at -- above the
+## incident (30) and the CCTV confirmation (40), because inside a pocket dimension
+## neither of those is a thing the operator can act on. Spelled here as well so a
+## _say() that arrives before _begin_trial() cannot quietly demote itself.
+const TRIAL_OBJECTIVE_PRIORITY := 50
 const TRIAL_SCENES := {
 	"gravity_surge": preload("res://scenes/trials/GravityArchiveTrial.tscn"),
 	"temporal_drift": preload("res://scenes/trials/MissingMinuteTrial.tscn"),
@@ -35,11 +122,8 @@ var _active := false
 var _kind := ""
 var _saved := Transform3D.IDENTITY
 var _layer: CanvasLayer
-var _title: Label
-var _status: Label
-var _hint_panel: Panel
-var _hint: Label
-var _hint_time := 0.0
+var _frame: TerminalFrame
+var _block: TaskBlock
 var _active_trial: RiftTrial
 var last_fail_reason := ""
 var last_fail_detail := ""
@@ -141,6 +225,17 @@ func begin(kind: String, player: CharacterBody3D) -> void:
 	if _active or player == null: return
 	_active = true; _kind = kind; _player = player; _saved = player.global_transform; _step = 0
 	last_fail_reason = ""; last_fail_detail = ""
+	_resolve_task_block()
+	# Take the two slots a pocket dimension speaks in, before anything writes them.
+	# GameManager._begin_trial() has just released slot 3 and told the anomaly to
+	# release slot 4, on this same frame and before calling in here, so both claims
+	# land on free slots. Slots 1, 2 and 5 are NOT taken: the standing line reaches
+	# slot 1 through GameManager's objective registry (see _say), the incident clock
+	# keeps running while the operator is in here, and stamina is a fact about the
+	# operator that a change of dimension does not suspend.
+	if _block != null:
+		_block.claim(TaskBlock.Slot.HINT, TaskBlock.OWNER_TRIAL)
+		_block.claim(TaskBlock.Slot.STATUS, TaskBlock.OWNER_TRIAL)
 	var trial_scene: PackedScene = TRIAL_SCENES.get(kind, TRIAL_SCENES["void_rift"])
 	_active_trial = trial_scene.instantiate() as RiftTrial
 	add_child(_active_trial)
@@ -154,6 +249,10 @@ func begin(kind: String, player: CharacterBody3D) -> void:
 	_player.reset_gravity_direction()
 	_player.controls_enabled = true
 	_layer.visible = true
+	# Same one-line refresh SecurityCameraTablet does when the screen goes up: the
+	# frame re-reads reduced_flashes and quality_preset instead of caching whatever
+	# was true when it was built, which may have been before the settings existed.
+	_frame.refresh()
 	_show_tutorial()
 
 func abort() -> void:
@@ -179,7 +278,7 @@ func _dispatch_interact() -> void:
 	# handed the body it is meant to act on rather than having to look again.
 	var body := _nearest_target("")
 	if body == null:
-		_status.text = tr("TRIAL_MOVE_CLOSER"); return
+		_report("TRIAL_MOVE_CLOSER", [], TaskBlock.Tone.WARN); return
 	if is_instance_valid(_active_trial): _active_trial._on_interact(self, body)
 	else: _interact_trial_legacy(body)
 
@@ -199,7 +298,6 @@ func _dispatch_fall() -> void:
 func _process(delta: float) -> void:
 	if not _active or not is_instance_valid(_player):
 		return
-	if _hint_time > 0.0: _update_tutorial_hint(delta)
 	if is_instance_valid(_active_trial): _active_trial._tick_visuals(self, delta)
 	else: _visual_trial_legacy(_kind, delta)
 
@@ -259,43 +357,63 @@ func trial_definition() -> Dictionary:
 func trial_fail_tip() -> String:
 	return TrialRegistry.fail_tip_for(_kind, TranslationServer.get_locale().begins_with("en"))
 
-# --- One-shot teaching hints ----------------------------------------------
-# Every trial carries a TRIAL_*_TUTORIAL line pair explaining its rules. They
-# cannot ride on _status: the per-trial updates rewrite that label every frame,
-# so the hint would vanish on the next tick. Instead they get their own strip
-# directly under the objective panel, inside the HUD layer that already exists,
-# and fade out once the player has had time to read them.
+# --- The teaching line ------------------------------------------------------
+# Every trial carries a TRIAL_*_TUTORIAL row explaining its rules. It used to own
+# a strip of its own that faded itself out after five seconds, because it could
+# not ride on the objective label the per-trial updates rewrite every frame.
+# TaskBlock's slot 3 is exactly that channel and it is permanent: LABEL 14 in
+# MUTED, half the objective's size and a dimmer token, so it reads as a footnote
+# to the task for as long as the trial lasts instead of expiring while the player
+# is still working out what the room is.
+#
+# The row is passed as a KEY, not as text: TaskBlock collapses its "\n" into one
+# line itself and re-resolves nothing, and a two-line teaching row is a footnote
+# either way. Rows past roughly 95 characters are trimmed with a word ellipsis in
+# a block this narrow -- see the note in the hand-off; four of the ten are close
+# to that ceiling and the catalogue's owner, not this file, decides how to cut.
 func _show_tutorial() -> void:
-	var lines := TrialRegistry.tutorial_for(_kind)
-	if lines.is_empty():
-		_hide_tutorial(); return
-	_hint.text = "\n".join(lines)
-	_hint_panel.modulate.a = 1.0
-	_hint_panel.visible = true
-	_hint_time = TUTORIAL_HINT_SECONDS
-
-func _update_tutorial_hint(delta: float) -> void:
-	_hint_time -= delta
-	if _hint_time <= 0.0:
-		_hide_tutorial(); return
-	_hint_panel.modulate.a = minf(1.0, _hint_time / TUTORIAL_HINT_FADE)
+	var definition := trial_definition()
+	if _block != null:
+		_block.set_hint(String(definition.get("tutorial_key", "")), [], TaskBlock.OWNER_TRIAL)
 
 func _hide_tutorial() -> void:
-	_hint_time = 0.0
-	if is_instance_valid(_hint_panel):
-		_hint_panel.visible = false
-		_hint_panel.modulate.a = 1.0
+	if _block != null:
+		_block.set_hint("", [], TaskBlock.OWNER_TRIAL)
+
+## Name the dimension and state the objective. Both come from the registry rather
+## than from ten copies inside the builders below, which is what lets a migrated
+## trial and a legacy one be labelled by the same three lines.
+func _apply_trial_identity() -> void:
+	var definition := trial_definition()
+	var title_key := String(definition.get("title_key", ""))
+	# A migrated trial may name itself; its export is a KEY, which is what both
+	# components want, so it wins over the registry when it is filled in.
+	if is_instance_valid(_active_trial) and String(_active_trial.title_key) != "":
+		title_key = String(_active_trial.title_key)
+	if _block != null:
+		# Slot 4, the status line: the dimension's name is a state, not a
+		# measurement, and it is exactly "what the world is doing to the operator".
+		# It goes here and not in slot 5 because slot 5 stays the night HUD's --
+		# stamina and what is in your hands do not stop mattering in a rift.
+		_block.set_status(title_key, [], TaskBlock.OWNER_TRIAL)
+	_say(String(definition.get("objective_key", "")))
+	if _frame == null: return
+	# The status line a trial reports: the night still counts, the shift clock does
+	# not report at all from inside a rift (an em dash, not a wrong time), and the
+	# core is critical for as long as the operator is standing in the anomaly.
+	_frame.set_status(_night_number(), -1.0, "TERM_CORE_CRITICAL", TerminalFrame.CORE_CRITICAL)
+	_frame.set_corruption(TRIAL_CORRUPTION)
+
+func _night_number() -> int:
+	if _game == null: return -1
+	var value: Variant = _game.get("_night")
+	return int(value) if typeof(value) == TYPE_INT else -1
 
 func _build_world() -> void:
 	_world = Node3D.new(); _world.name = "Pocket Dimension — %s" % _kind
 	get_tree().current_scene.add_child(_world)
-	if is_instance_valid(_active_trial):
-		# title_key was scene data nothing read. Seeding the header from it means a
-		# migrated trial gets its name for free; the legacy builders then set the
-		# same string again, so nothing changes for the nine that have not moved.
-		var scene_title := _active_trial.localized_title()
-		if scene_title != "": _title.text = scene_title
-		_active_trial._build(self)
+	_apply_trial_identity()
+	if is_instance_valid(_active_trial): _active_trial._build(self)
 	else: _build_trial_legacy(_kind)
 	_add_bounds()
 	if _kind in ["void_rift", "scrap_run", "yellow_halls"]:
@@ -323,8 +441,6 @@ func _spawn_position() -> Vector3:
 
 # --- Gravity Archive -------------------------------------------------------
 func _build_gravity_archive() -> void:
-	_title.text=tr("TRIAL_GRAVITY_TITLE")
-	_status.text=tr("TRIAL_GRAVITY_OBJECTIVE")
 	_box("Floor", ORIGIN+Vector3(0,0,-3), Vector3(20,.6,24), Color(.12,.08,.2))
 	_box("West Wall",ORIGIN+Vector3(-10,6,-3),Vector3(.6,12,24),Color(.1,.07,.18))
 	_box("East Wall",ORIGIN+Vector3(10,6,-3),Vector3(.6,12,24),Color(.1,.07,.18))
@@ -339,17 +455,16 @@ func _anchor(index:int,pos:Vector3,text:String)->void:
 	var body:=_target(index,pos,Color(.68,.3,1),text); body.set_meta("type","gravity_anchor")
 
 func _gravity_anchor(index:int)->void:
-	if index != _step: _status.text=tr("TRIAL_GRAVITY_ANCHOR_LOCKED"); return
+	if index != _step: _report("TRIAL_GRAVITY_ANCHOR_LOCKED",[],TaskBlock.Tone.WARN); return
 	_mark(_targets[index]); _step+=1
 	if _step==1:
-		_player.set_gravity_direction(Vector3.LEFT); _status.text=tr("TRIAL_GRAVITY_STEP1")
+		_player.set_gravity_direction(Vector3.LEFT); _say("TRIAL_GRAVITY_STEP1")
 	elif _step==2:
-		_player.set_gravity_direction(Vector3.FORWARD); _status.text=tr("TRIAL_GRAVITY_STEP2")
+		_player.set_gravity_direction(Vector3.FORWARD); _say("TRIAL_GRAVITY_STEP2")
 	else: _complete()
 
 # --- The Missing Minute ----------------------------------------------------
 func _build_missing_minute() -> void:
-	_title.text=tr("TRIAL_TIME_TITLE"); _status.text=tr("TRIAL_TIME_OBJECTIVE")
 	_box("Loop Floor",ORIGIN+Vector3(0,0,-4),Vector3(22,.6,26),Color(.2,.13,.06))
 	_plates=[ORIGIN+Vector3(-7,.35,-6),ORIGIN+Vector3(0,.35,-11),ORIGIN+Vector3(7,.35,-6)]
 	for i in range(3):
@@ -370,7 +485,7 @@ func _update_time_loop(delta:float)->void:
 		for echo in _echoes:
 			if echo.global_position.distance_to(_plates[i])<1.45: occupied[i]=true
 	if occupied[0] and occupied[1] and occupied[2]: _complete(); return
-	_status.text=Loc.fmt("TRIAL_TIME_HUD",[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)])
+	_say("TRIAL_TIME_HUD",[maxf(0.,LOOP_DURATION-_loop_time),_echoes.size(),str(occupied)])
 	if _loop_time>=LOOP_DURATION: _finish_loop()
 
 func _finish_loop()->void:
@@ -391,8 +506,6 @@ func _make_echo()->Node3D:
 
 # --- Critical Mass Choir ---------------------------------------------------
 func _build_critical_mass() -> void:
-	_title.text=tr("TRIAL_RADIATION_TITLE")
-	_status.text=tr("TRIAL_RADIATION_OBJECTIVE")
 	_box("Choir Floor",ORIGIN+Vector3(0,0,-4),Vector3(22,.6,24),Color(.04,.16,.07))
 	_sockets=[ORIGIN+Vector3(-7,.4,1),ORIGIN+Vector3(0,.4,1),ORIGIN+Vector3(7,.4,1),ORIGIN+Vector3(-7,.4,-9),ORIGIN+Vector3(0,.4,-9),ORIGIN+Vector3(7,.4,-9)]
 	_socket_occupants=[0,1,2,3,-1,-1]; _monolith_socket=[0,1,2,3]; _frequencies=[0,0,0,0]; _carried_monolith=-1; _carried_from_socket=-1; _dose=0.; _monoliths.clear()
@@ -425,7 +538,7 @@ func _radiation_interact(body:StaticBody3D)->void:
 
 func _tune_nearest()->void:
 	var body:=_nearest_target("monolith")
-	if body==null: _status.text=tr("TRIAL_RADIATION_NEAR_MONOLITH"); return
+	if body==null: _report("TRIAL_RADIATION_NEAR_MONOLITH",[],TaskBlock.Tone.WARN); return
 	var i:=int(body.get_meta("index",-1)); _frequencies[i]=(int(_frequencies[i])+1)%4
 	var symbols := ["▲", "●", "◆", "■"]
 	var feedback := tr("TRIAL_RADIATION_RESONANCE") if _frequencies[i] == _target_frequencies[i] else Loc.fmt("TRIAL_RADIATION_NEED", [_target_frequencies[i]])
@@ -443,7 +556,7 @@ func _update_radiation(delta:float)->void:
 		if _monolith_socket[i] == _target_sockets[i]: placed += 1
 		if _frequencies[i] == _target_frequencies[i]: tuned += 1
 	var action := tr("TRIAL_RADIATION_ACT_PLACE") if _carried_monolith >= 0 else tr("TRIAL_RADIATION_ACT_PICK")
-	_status.text=Loc.fmt("TRIAL_RADIATION_HUD",[action,placed,tuned,_dose])
+	_say("TRIAL_RADIATION_HUD",[action,placed,tuned,_dose])
 	if _dose>=100.: _reset_radiation()
 
 func _check_radiation_solution()->void:
@@ -452,11 +565,10 @@ func _check_radiation_solution()->void:
 func _reset_radiation()->void:
 	_dose=25.; _carried_monolith=-1; _carried_from_socket=-1; _socket_occupants=[0,1,2,3,-1,-1]; _monolith_socket=[0,1,2,3]; _frequencies=[0,0,0,0]
 	for i in range(4): _monoliths[i].global_position=_sockets[i]+Vector3(0,1,0); _monoliths[i].visible=true; _monoliths[i].collision_layer=1
-	_status.text=tr("TRIAL_RADIATION_RESET")
+	_fault("TRIAL_RADIATION_RESET")
 
 # --- Negative Space --------------------------------------------------------
 func _build_negative_space()->void:
-	_title.text=tr("TRIAL_VOID_TITLE");_status.text=tr("TRIAL_VOID_OBJECTIVE")
 	_box("Пол сектора",ORIGIN+Vector3(0,0,-8),Vector3(30,.6,36),Color(.008,.012,.018))
 	var walls:Array=[ [Vector3(-8,15,1),Vector3(.6,30,12)],[Vector3(7,15,-1),Vector3(.6,30,10)],[Vector3(-2,15,-6),Vector3(12,30,.6)],[Vector3(4,15,-13),Vector3(14,30,.6)],[Vector3(-9,15,-18),Vector3(12,30,.6)],[Vector3(10,15,-20),Vector3(.6,30,12)],[Vector3(-15,24,-8),Vector3(.8,48,36.8)],[Vector3(15,24,-8),Vector3(.8,48,36.8)],[Vector3(0,24,10),Vector3(30.8,48,.8)],[Vector3(0,24,-26),Vector3(30.8,48,.8)] ]
 	for i in range(walls.size()):_box("Стена %d"%i,ORIGIN+(walls[i][0] as Vector3),walls[i][1] as Vector3,Color(.025,.035,.05))
@@ -526,13 +638,12 @@ func _update_negative_space(_delta:float)->void:
 		if _game!=null and str(_game.get("_carried_id"))=="thread_spool":monster_speed*=.75
 		if d.length()>.1:_void_monster.velocity=d.normalized()*monster_speed;_void_monster.move_and_slide()
 		if d.length()<1.15:_dispatch_fall()
-	_status.text=Loc.fmt("TRIAL_VOID_HUD",[_void_activated])
+	_say("TRIAL_VOID_HUD",[_void_activated])
 	if _void_activated>=3 and _player.global_position.distance_to(_void_exit)<1.8:_complete()
 
 
 # --- Эхо-камера (Запомни и повтори) --------------------------------------
 func _build_echo_chamber()->void:
-	_title.text=tr("TRIAL_ECHO_TITLE");_status.text=tr("TRIAL_ECHO_OBJECTIVE")
 	_box("Пол камеры",ORIGIN+Vector3(0,0,0),Vector3(20,.6,20),Color(.05,.06,.09))
 	_echo_pads.clear();_echo_sequence.clear();_echo_round=0;_echo_input=0;_echo_showing=false;_echo_glow_on=false
 	var names:Array[String]=[tr("TRIAL_PROP_COLUMN_RED"),tr("TRIAL_PROP_COLUMN_BLUE"),tr("TRIAL_PROP_COLUMN_GREEN"),tr("TRIAL_PROP_COLUMN_YELLOW")]
@@ -551,15 +662,15 @@ func _start_echo_round()->void:
 	_echo_input=0;_echo_showing=false;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.2
 	if _echo_look<=0.0:
 		_echo_showing=true
-		_status.text=Loc.fmt("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
+		_say("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
 
 func _update_echo(delta:float)->void:
 	if _echo_look>0.0:
 		_echo_look-=delta
-		_status.text=Loc.fmt("TRIAL_ECHO_LOOK_TIMER",[maxi(1,int(ceil(_echo_look)))])
+		_say("TRIAL_ECHO_LOOK_TIMER",[maxi(1,int(ceil(_echo_look)))])
 		if _echo_look<=0.0:
 			_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.0
-			_status.text=Loc.fmt("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
+			_say("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
 		return
 	if not _echo_showing:return
 	_echo_show_timer-=delta
@@ -570,7 +681,7 @@ func _update_echo(delta:float)->void:
 		return
 	_echo_show_index+=1
 	if _echo_show_index>=_echo_sequence.size():
-		_echo_showing=false;_status.text=Loc.fmt("TRIAL_ECHO_ROUND_REPEAT",[_echo_round])
+		_echo_showing=false;_say("TRIAL_ECHO_ROUND_REPEAT",[_echo_round])
 		return
 	_set_pad_glow(_echo_pads[_echo_sequence[_echo_show_index]],true)
 	_echo_glow_on=true;_echo_show_timer=.85
@@ -591,10 +702,10 @@ func _dim_all_pads()->void:
 
 func _echo_interact(index:int)->void:
 	if _echo_look>0.0:
-		_status.text=tr("TRIAL_ECHO_NOT_STARTED")
+		_report("TRIAL_ECHO_NOT_STARTED",[],TaskBlock.Tone.WARN)
 		return
 	if _echo_showing:
-		_status.text=tr("TRIAL_ECHO_WAIT")
+		_report("TRIAL_ECHO_WAIT",[],TaskBlock.Tone.WARN)
 		return
 	if _echo_sequence.is_empty():return
 	var am:=get_tree().get_first_node_in_group("audio_manager")
@@ -606,20 +717,23 @@ func _echo_interact(index:int)->void:
 			if _echo_round>=3:
 				_complete()
 				return
-			_status.text=Loc.fmt("TRIAL_ECHO_ROUND_DONE",[_echo_round])
+			_report("TRIAL_ECHO_ROUND_DONE",[_echo_round],TaskBlock.Tone.GOOD)
 			_dim_all_pads()
 			_start_echo_round()
-		else:_status.text=Loc.fmt("TRIAL_ECHO_CORRECT",[_echo_input,_echo_sequence.size()])
+		else:_say("TRIAL_ECHO_CORRECT",[_echo_input,_echo_sequence.size()])
 	else:
 		var failed_step:=_echo_input+1
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-6.0)
 		_dim_all_pads()
 		_echo_input=0;_echo_showing=true;_echo_glow_on=false;_echo_show_index=-1;_echo_show_timer=1.8
-		_status.text=Loc.fmt("TRIAL_ECHO_MISTAKE",[failed_step])
+		_fault("TRIAL_ECHO_MISTAKE",[failed_step])
+		# The round is about to be replayed, so the standing line has to say so --
+		# the flash above hands slot 1 back in 2.4 s and must not hand it back to a
+		# stale "4 of 5 correct".
+		_say("TRIAL_ECHO_ROUND_WATCH",[_echo_round])
 
 # --- Зыбкий мост (фантомные плиты) ---------------------------------------
 func _build_glass_bridge()->void:
-	_title.text=tr("TRIAL_BRIDGE_TITLE");_status.text=tr("TRIAL_BRIDGE_OBJECTIVE")
 	_box("Стартовая площадка",ORIGIN+Vector3(0,0,8),Vector3(8,.6,6),Color(.07,.08,.11))
 	_box("Финишная площадка",ORIGIN+Vector3(0,0,-19.5),Vector3(8,.6,7),Color(.07,.11,.09))
 	_bridge_tiles.clear();_bridge_fake.clear();_bridge_done.clear()
@@ -661,7 +775,6 @@ func _update_glass_bridge()->void:
 
 # --- Зал отражений (дефектные зеркала) ---------------------------------
 func _build_mirror_maze()->void:
-	_title.text=tr("TRIAL_MIRROR_TITLE");_status.text=tr("TRIAL_MIRROR_OBJECTIVE")
 	_box("Пол зала",ORIGIN+Vector3(0,0,-4),Vector3(28,.6,28),Color(.09,.1,.12))
 	var panels:Array=[ [Vector3(-6,2,-2),Vector3(.35,4,10)],[Vector3(6,2,-10),Vector3(.35,4,10)],[Vector3(0,2,-6),Vector3(10,4,.35)],[Vector3(-9,2,-12),Vector3(6,4,.35)],[Vector3(9,2,-1),Vector3(6,4,.35)],[Vector3(0,2,-14),Vector3(.35,4,6)] ]
 	for i in range(panels.size()):
@@ -708,21 +821,20 @@ func _mirror_interact(body:StaticBody3D,index:int)->void:
 		if _mirror_found>=3:
 			var exit_pad:=_target(9,ORIGIN+Vector3(0,1,4),Color(.25,1,.45),tr("TRIAL_PROP_HALL_EXIT"))
 			exit_pad.set_meta("type","mirror_exit")
-			_status.text=tr("TRIAL_MIRROR_ALL_FOUND")
-		else:_status.text=Loc.fmt("TRIAL_MIRROR_TAGGED",[_mirror_found])
+			_say("TRIAL_MIRROR_ALL_FOUND")
+		else:_say("TRIAL_MIRROR_TAGGED",[_mirror_found])
 	else:
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-8.0)
 		_mirror_errors+=1
 		if _mirror_errors>=3:
 			_mirror_errors=0
 			_reshuffle_mirrors()
-			_status.text=tr("TRIAL_MIRROR_RESHUFFLE")
+			_fault("TRIAL_MIRROR_RESHUFFLE")
 		else:
-			_status.text=Loc.fmt("TRIAL_MIRROR_STABLE",[_mirror_errors])
+			_report("TRIAL_MIRROR_STABLE",[_mirror_errors],TaskBlock.Tone.WARN)
 
 # --- Жёлтые залы (Backrooms Level 0) --------------------------------------
 func _build_yellow_halls()->void:
-	_title.text=tr("TRIAL_YELLOW_TITLE");_status.text=tr("TRIAL_YELLOW_OBJECTIVE")
 	_tapes_found=0;_yellow_tapes.clear()
 	var wall_color: Color = Color(.52,.47,.22)
 	_box("Пол залов",ORIGIN+Vector3(0,0,-5),Vector3(34,.6,32),Color(.35,.3,.16))
@@ -791,14 +903,13 @@ func _update_yellow(delta:float)->void:
 				if is_instance_valid(tape) and not tape.visible:
 					tape.visible=true;tape.collision_layer=1
 					break
-			_status.text=Loc.fmt("TRIAL_YELLOW_TAPE_LOST",[_tapes_found])
-		else:_status.text=tr("TRIAL_YELLOW_CAUGHT")
+			_fault("TRIAL_YELLOW_TAPE_LOST",[_tapes_found])
+		else:_fault("TRIAL_YELLOW_CAUGHT")
 		var am:=get_tree().get_first_node_in_group("audio_manager")
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-4.0)
 
 # --- Служба извлечения (R.E.P.O. / Lethal Company) -----------------------
 func _build_scrap_run()->void:
-	_title.text=tr("TRIAL_SCRAP_TITLE");_status.text=tr("TRIAL_SCRAP_OBJECTIVE")
 	_box("Пол склада",ORIGIN+Vector3(-6,0,-6),Vector3(20,.6,32),Color(.03,.035,.05))
 	_box("Дальний пол",ORIGIN+Vector3(11,0,-6),Vector3(10,.6,32),Color(.03,.035,.05))
 	_box("Мостик между секциями",ORIGIN+Vector3(5,0,-6),Vector3(2.4,.55,2.2),Color(.05,.06,.08))
@@ -824,7 +935,7 @@ func _build_scrap_run()->void:
 
 func _update_scrap(delta:float)->void:
 	if _scrap_carrying>=0 and is_instance_valid(_scrap_items[_scrap_carrying]):
-		_status.text=Loc.fmt("TRIAL_SCRAP_HUD_CARRY",[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value])
+		_say("TRIAL_SCRAP_HUD_CARRY",[str(_scrap_items[_scrap_carrying].name),_scrap_delivered,_scrap_value])
 	if not is_instance_valid(_scrap_drone) or not is_instance_valid(_player):return
 	_drone_angle+=delta*.55
 	var sweep:Vector3=ORIGIN+Vector3(cos(_drone_angle)*10.0,4.4,-6.0+sin(_drone_angle*2.0)*11.0)
@@ -836,34 +947,38 @@ func _update_scrap(delta:float)->void:
 		if is_instance_valid(dropped):dropped.visible=true;dropped.collision_layer=1
 		_scrap_carrying=-1
 		_drop_carry_visual()
-		_status.text=tr("TRIAL_SCRAP_DRONE_CAUGHT")
+		_fault("TRIAL_SCRAP_DRONE_CAUGHT")
 		var am:=get_tree().get_first_node_in_group("audio_manager")
 		if am!=null and am.has_method("play_sfx"):am.play_sfx("fail",-4.0)
 
 func _valuable_interact(body:StaticBody3D,index:int)->void:
 	if _scrap_carrying>=0:
-		_status.text=tr("TRIAL_SCRAP_HANDS_FULL")
+		_report("TRIAL_SCRAP_HANDS_FULL",[],TaskBlock.Tone.WARN)
 		return
 	_scrap_carrying=index;body.visible=false;body.collision_layer=0
 	_set_carry_visual(Color(.95,.8,.35))
-	_status.text=Loc.fmt("TRIAL_SCRAP_PICKED",[str(body.name),int(body.get_meta("value",0))])
+	# A flash rather than the standing line: _update_scrap() rewrites slot 1 with
+	# the carry readout on the very next frame, so a task write here would never
+	# be seen at all.
+	_report("TRIAL_SCRAP_PICKED",[str(body.name),int(body.get_meta("value",0))],TaskBlock.Tone.GOOD)
 
 func _extract_interact()->void:
 	if _scrap_carrying<0:
-		_status.text=Loc.fmt("TRIAL_SCRAP_BRING",[_scrap_delivered])
+		_report("TRIAL_SCRAP_BRING",[_scrap_delivered],TaskBlock.Tone.WARN)
 		return
 	if is_instance_valid(_scrap_items[_scrap_carrying]):_scrap_value+=int(_scrap_items[_scrap_carrying].get_meta("value",0))
 	_scrap_carrying=-1;_scrap_delivered+=1
 	_drop_carry_visual()
 	if _scrap_delivered>=3:
-		_status.text=Loc.fmt("TRIAL_SCRAP_ALL_DONE",[_scrap_value])
+		# _cleanup() empties the block's slots but deliberately leaves a running
+		# flash alone, so this last line finishes its dwell over the museum.
+		_report("TRIAL_SCRAP_ALL_DONE",[_scrap_value],TaskBlock.Tone.GOOD)
 		_complete()
 		return
-	_status.text=Loc.fmt("TRIAL_SCRAP_PROGRESS",[_scrap_delivered,_scrap_value])
+	_say("TRIAL_SCRAP_PROGRESS",[_scrap_delivered,_scrap_value])
 
 # --- Восхождение (PEAK: туман поднимается) ------------------------------
 func _build_ascent()->void:
-	_title.text=tr("TRIAL_ASCENT_TITLE");_status.text=tr("TRIAL_ASCENT_OBJECTIVE")
 	_ascent_time=0.0;_ascent_movers.clear();_ascent_mover_base.clear();_ascent_cps.clear();_ascent_checkpoint=_spawn_position()
 	_box("Базовая площадка",ORIGIN+Vector3(0,0,6),Vector3(10,.6,8),Color(.07,.08,.1))
 	var steps:Array[Vector3]=[Vector3(0.00,1.20,2.60),Vector3(-3.07,2.15,1.68),Vector3(-5.13,3.10,-0.76),Vector3(-5.52,4.05,-3.94),Vector3(-4.10,5.00,-6.81),Vector3(-1.34,5.95,-8.44),Vector3(1.86,6.90,-8.28),Vector3(4.45,7.85,-6.40),Vector3(5.59,8.80,-3.41),Vector3(4.89,9.75,-0.28),Vector3(2.60,10.70,1.96),Vector3(-0.54,11.65,2.57),Vector3(-3.51,12.60,1.37),Vector3(-5.33,13.55,-1.27),Vector3(-5.40,14.50,-4.47),Vector3(-3.71,15.45,-7.19)]
@@ -896,12 +1011,14 @@ func _update_ascent(delta:float)->void:
 	for cp in _ascent_cps:
 		if cp.y>_ascent_checkpoint.y and _player.global_position.distance_to(cp)<1.7:
 			_ascent_checkpoint=cp
-			_status.text=Loc.fmt("TRIAL_ASCENT_CHECKPOINT",[int(cp.y-ORIGIN.y)])
+			# Fires once per plate: the guard above only passes while the checkpoint
+			# is genuinely higher than the one already banked.
+			_report("TRIAL_ASCENT_CHECKPOINT",[int(cp.y-ORIGIN.y)],TaskBlock.Tone.GOOD)
 	if _player.global_position.y<ORIGIN.y+_fog_y-.2:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.velocity=Vector3.ZERO
 		_player.global_position=_ascent_checkpoint
-		_status.text=tr("TRIAL_ASCENT_FOG")
+		_fault("TRIAL_ASCENT_FOG")
 
 # --- Помощники доработанных измерений -------------------------------------
 func _reshuffle_mirrors()->void:
@@ -962,9 +1079,9 @@ func _interact_trial_legacy(body:StaticBody3D)->void:
 	elif type=="bridge_exit":_complete()
 	elif type=="mirror_frame":_mirror_interact(body,index)
 	elif type=="mirror_exit":_complete()
-	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_status.text=Loc.fmt("TRIAL_YELLOW_TAPE_FOUND",[_tapes_found])
+	elif type=="vhs_tape":body.visible=false;body.collision_layer=0;_tapes_found+=1;_say("TRIAL_YELLOW_TAPE_FOUND",[_tapes_found])
 	elif type=="yellow_exit" and _tapes_found>=3:_complete()
-	elif type=="yellow_exit":_status.text=Loc.fmt("TRIAL_YELLOW_EXIT_LOCKED",[_tapes_found])
+	elif type=="yellow_exit":_report("TRIAL_YELLOW_EXIT_LOCKED",[_tapes_found],TaskBlock.Tone.WARN)
 	elif type=="valuable":_valuable_interact(body,index)
 	elif type=="extract_pad":_extract_interact()
 	elif type=="ascent_exit":_complete()
@@ -997,11 +1114,11 @@ func _reset_after_fall_legacy(kind:String)->void:
 		if is_instance_valid(dropped):dropped.visible=true;dropped.collision_layer=1
 		_scrap_carrying=-1
 		_drop_carry_visual()
-		_status.text=tr("TRIAL_SCRAP_DROPPED")
+		_fault("TRIAL_SCRAP_DROPPED")
 	if kind=="ascent" and _ascent_checkpoint!=Vector3.ZERO:
 		_fog_y=minf(_fog_y,_ascent_checkpoint.y-ORIGIN.y-7.0)
 		_player.global_position=_ascent_checkpoint
-		_status.text=tr("TRIAL_ASCENT_RESPAWN")
+		_fault("TRIAL_ASCENT_RESPAWN")
 		return
 	if kind=="void_rift":
 		if _player.has_method("safe_teleport"):_player.call_deferred("safe_teleport",_spawn_position(),Vector3.DOWN)
@@ -1020,6 +1137,11 @@ func _return_player()->void:
 
 func _cleanup()->void:
 	_active=false; _layer.visible=false; _hide_tutorial()
+	# A hidden CanvasLayer draws nothing, but the frame would keep ticking at
+	# GLITCH_HZ behind it; dropping the level to zero is what turns its _process
+	# back off. The layer is hidden first so the clean repaint is never seen.
+	if _frame!=null: _frame.set_corruption(0.0)
+	_release_task_block()
 	if is_instance_valid(_active_trial):
 		_active_trial._teardown(self)
 		_active_trial.queue_free()
@@ -1054,17 +1176,110 @@ func _mark(body:StaticBody3D)->void:
 	var visual:=body.get_child(1) as MeshInstance3D; var mat:=visual.material_override as StandardMaterial3D; mat.emission=Color(.4,1,.7); mat.albedo_color=Color(.08,.4,.23)
 func _find_label(body:Node)->Label3D: return body.get_node_or_null("Label") as Label3D
 
-# Stage 6.2: both strips are Panels rather than ColorRects now, because a
-# ColorRect has no stylebox and therefore cannot take UITheme.apply_panel() --
-# it can only be handed a flat fill, which is the ad-hoc styling this migration
-# exists to remove. Every anchor is byte-for-byte the one that was here before;
-# only the fill, the hairline and the type scale changed. The objective strip is
-# the page-level surface and the teaching strip the raised one, so the hint
-# genuinely reads as floating above the objective it interrupts.
+# --- The terminal, and the one place the game says what to do now -----------
+
+## The chrome. Built once, shown only while a trial is open. Everything the
+## player reads goes through the block below; what the frame contributes is the
+## instrument around it -- see the header for why its two unplated labels are
+## deliberately left empty.
 func _build_hud()->void:
-	_layer=CanvasLayer.new(); _layer.layer=30; _layer.visible=false; add_child(_layer)
-	var panel:=Panel.new(); panel.anchor_left=.14; panel.anchor_top=.025; panel.anchor_right=.86; panel.anchor_bottom=.17; panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; UITheme.apply_panel(panel,false); _layer.add_child(panel)
-	_title=Label.new(); _title.anchor_right=1.; _title.anchor_bottom=.4; _title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; UITheme.apply_text(_title,UITheme.TITLE,UITheme.ACCENT); _title.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_title)
-	_status=Label.new(); _status.anchor_top=.4; _status.anchor_right=1.; _status.anchor_bottom=1.; _status.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _status.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; UITheme.apply_text(_status,UITheme.BODY); _status.mouse_filter=Control.MOUSE_FILTER_IGNORE; panel.add_child(_status)
-	_hint_panel=Panel.new(); _hint_panel.anchor_left=.14; _hint_panel.anchor_top=.185; _hint_panel.anchor_right=.86; _hint_panel.anchor_bottom=.295; _hint_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.visible=false; UITheme.apply_panel(_hint_panel,true); _layer.add_child(_hint_panel)
-	_hint=Label.new(); _hint.anchor_right=1.; _hint.anchor_bottom=1.; _hint.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; _hint.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; _hint.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; UITheme.apply_text(_hint,UITheme.BODY,UITheme.WARNING); _hint.mouse_filter=Control.MOUSE_FILTER_IGNORE; _hint_panel.add_child(_hint)
+	_layer=CanvasLayer.new(); _layer.name="Rift Terminal"; _layer.layer=TRIAL_FRAME_LAYER; _layer.visible=false; add_child(_layer)
+	_frame=TerminalFrame.new()
+	_frame.name="Rift Frame"
+	# The pocket dimension is what the operator is looking AT, so the page behind
+	# the chrome comes out. This is the one thing the frame has no setter for; the
+	# node is named and null-guarded rather than indexed, so a future rename
+	# degrades to an opaque page instead of a crash.
+	var backdrop:=_frame.get_node_or_null("Backdrop") as ColorRect
+	if backdrop!=null: backdrop.visible=false
+	# The frame defaults to MOUSE_FILTER_STOP, which is right for a screen that has
+	# taken the game away and wrong for one drawn over live play: this is a trial,
+	# the operator is walking around behind it, and a full-rect Control that
+	# swallows GUI events is how a HUD eats the mouse. Every other over-gameplay
+	# surface in the project (the proximity band, the task block, the old trial
+	# strips) is IGNORE for the same reason.
+	_frame.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	_frame.set_institution("")
+	_frame.set_title("")
+	_layer.add_child(_frame)
+
+## The single task block, wherever it came from.
+##
+## TaskBlock's whole thesis is that exactly ONE of them exists -- "what to do now"
+## drifting away from "how long is left" is the defect it was written to remove,
+## and two panels at the same anchors on the same layer would reintroduce it in
+## the worst possible form. So this adopts the block the shift HUD already owns
+## and only builds one when there is none: by group first (cheap), by type second
+## (correct even if the owner never joined the group), and either way the result
+## is published under TASK_BLOCK_GROUP so the next lookup from anywhere is O(1).
+func _resolve_task_block()->void:
+	if is_instance_valid(_block) or not is_inside_tree(): return
+	var shared:Node=get_tree().get_first_node_in_group(TASK_BLOCK_GROUP)
+	if shared==null:
+		var found:=get_tree().get_root().find_children("*","TaskBlock",true,false)
+		if not found.is_empty(): shared=found[0]
+	if shared==null:
+		shared=TaskBlock.new()
+		add_child(shared)
+		# Only a block WE built is renumbered: an adopted one already carries the
+		# layer its owner chose. See HUD_TASK_LAYER for why 17 is not acceptable.
+		(shared as CanvasLayer).layer=HUD_TASK_LAYER
+	_block=shared as TaskBlock
+	if _block!=null and not _block.is_in_group(TASK_BLOCK_GROUP):
+		_block.add_to_group(TASK_BLOCK_GROUP)
+
+## Hand the block back. Slot by slot rather than clear(): a message flashed on the
+## way out ("all valuables delivered") is allowed to finish its dwell over the
+## museum, and GameManager's own objective takes the line back the moment it does.
+##
+## release(), not set_hint(""). The other half of the handshake begin() opened, and
+## the only thing that drops a lease: an empty string means "I own this and have
+## nothing to say", which is a thing an owner does constantly. Blank first, then
+## release, because the blanking is itself an owner's write.
+func _release_task_block()->void:
+	if _block==null: return
+	# Slot 1 is not ours to clear -- our standing line lives in GameManager's
+	# objective registry under the "trial" source, so this drops it there. Only the
+	# headless fallback in _say() ever leases the slot directly, and only that path
+	# has to hand it back here.
+	if _game!=null and _game.has_method("clear_objective"):
+		_game.clear_objective("trial")
+	elif _block.slot_owner(TaskBlock.Slot.PRIMARY)==TaskBlock.OWNER_TRIAL:
+		_block.set_task("",[],TaskBlock.OWNER_TRIAL)
+		_block.release(TaskBlock.Slot.PRIMARY,TaskBlock.OWNER_TRIAL)
+	_block.set_hint("",[],TaskBlock.OWNER_TRIAL)
+	_block.set_status("",[],TaskBlock.OWNER_TRIAL)
+	_block.release(TaskBlock.Slot.HINT,TaskBlock.OWNER_TRIAL)
+	_block.release(TaskBlock.Slot.STATUS,TaskBlock.OWNER_TRIAL)
+	_block=null
+
+## Slot 1: the standing line, what the operator has to do in here right now.
+## Callers pass a catalogue KEY and its arguments, never text -- Loc.fmt() resolves
+## it and the block drops the write when nothing changed, which is what makes it
+## safe to call from a per-frame update.
+##
+## It goes THROUGH GameManager's objective registry rather than into the block.
+## Slot 1 already multiplexes four sources by priority (game / incident / cctv /
+## trial) and picks a winner; a second writer of that Label would defeat the
+## arbitration, so the trial publishes into the registry at the priority
+## _begin_trial() opened for it and slot 1 keeps exactly one owner. The direct
+## write is the headless fallback, for a manager driven with no GameManager at all.
+func _say(key:String,args:Array=[])->void:
+	if key=="": return
+	if _game!=null and _game.has_method("set_objective"):
+		_game.set_objective("trial",Loc.fmt(key,args),TRIAL_OBJECTIVE_PRIORITY)
+		return
+	if _block!=null: _block.set_task(key,args,TaskBlock.OWNER_TRIAL)
+
+## A transient event: takes slot 1 for a moment and hands it back to the standing
+## line by itself, so a trial can answer the player without losing its objective.
+func _report(key:String,args:Array=[],tone:TaskBlock.Tone=TaskBlock.Tone.INFO)->void:
+	if _block!=null: _block.flash(key,args,tone)
+
+## A rule of the dimension just bit. Says so, and stabs the terminal: the pulse is
+## the same channel the night's proximity systems use, it composes with the
+## sustained TRIAL_CORRUPTION without disturbing it, and under reduced_flashes it
+## steps up and back down once instead of ramping.
+func _fault(key:String,args:Array=[])->void:
+	_report(key,args,TaskBlock.Tone.BAD)
+	if _frame!=null: _frame.pulse_corruption(FAULT_PULSE,FAULT_PULSE_SECONDS)

@@ -35,8 +35,6 @@ var stamina := 100.0
 var flashlight_enabled := true
 var _recovery_delay := 0.0
 var _exhausted := false
-var _stamina_bar: ProgressBar
-var _stamina_label: Label
 var gravity_direction := Vector3.DOWN
 var _coyote_left := 0.0
 var _jump_buffer_left := 0.0
@@ -50,7 +48,6 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera.current = true
 	stamina = max_stamina
-	_build_stamina_ui()
 
 
 ## SettingsManager pushes the saved sensitivity onto whatever is in the "player"
@@ -134,7 +131,7 @@ func _physics_process(delta: float) -> void:
 	elif grounded: velocity+=gravity_direction.normalized()*.1
 	if grounded and gravity_direction.is_equal_approx(Vector3.DOWN): _try_step_up(direction,speed,delta)
 	var was_falling := velocity.dot(gravity_direction.normalized())>3.0
-	move_and_slide(); _update_safe_transform(delta); _update_footsteps(delta,wants_run,was_falling); _update_stamina_ui()
+	move_and_slide(); _update_safe_transform(delta); _update_footsteps(delta,wants_run,was_falling)
 
 func _try_step_up(direction:Vector3,speed:float,delta:float)->void:
 	if direction.length_squared()<.01 or step_height<=0.0:return
@@ -166,62 +163,38 @@ func return_to_last_safe_position()->void:
 	if _last_safe_transform!=Transform3D.IDENTITY: await safe_teleport(_last_safe_transform.origin+Vector3.UP*.12)
 
 
-func _build_stamina_ui() -> void:
-	var layer := CanvasLayer.new()
-	layer.name = "Player Status HUD"
-	layer.layer = 14
-	add_child(layer)
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	panel.offset_left = 24.0
-	panel.offset_top = -82.0
-	panel.offset_right = 284.0
-	panel.offset_bottom = -24.0
-	# UITheme.apply_panel() is deliberately NOT used here: it hands back
-	# panel_raised(), whose RADIUS_LG corners and PAD+4 margins push the combined
-	# minimum size past this panel's fixed 260x58 offsets, and Godot would grow
-	# the control to fit -- a layout change, which this restyle is not allowed to
-	# make. Same tokens, HUD-sized: RADIUS_SM is the nearest step to the old 7,
-	# and the default PAD_X/PAD_Y still leave the 232px bar room inside 260px.
-	var panel_style := UITheme.stylebox(UITheme.SURFACE_RAISED, UITheme.BORDER,
-		UITheme.BORDER_WIDTH, UITheme.RADIUS_SM)
-	panel.add_theme_stylebox_override("panel", panel_style)
-	layer.add_child(panel)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 5)
-	panel.add_child(box)
-	_stamina_label = Label.new()
-	_stamina_label.text = tr("HUD_STAMINA")
-	UITheme.apply_text(_stamina_label, UITheme.CAPTION, UITheme.MUTED)
-	box.add_child(_stamina_label)
-	_stamina_bar = ProgressBar.new()
-	_stamina_bar.custom_minimum_size = Vector2(232, 14)
-	_stamina_bar.max_value = max_stamina
-	_stamina_bar.value = stamina
-	_stamina_bar.show_percentage = false
-	# Track and fill are drawn with zero border width and zero padding: Godot
-	# draws the fill over the full height of the bar, from the left edge, so a
-	# border on the track would be swallowed as the bar fills and any content
-	# margin on the fill would shift where 0% and 100% land. Colours only.
-	var background := UITheme.stylebox(UITheme.SURFACE, UITheme.BORDER, 0,
-		UITheme.RADIUS_SM, 0, 0)
-	var fill := UITheme.stylebox(UITheme.ACCENT, UITheme.ACCENT, 0,
-		UITheme.RADIUS_SM, 0, 0)
-	_stamina_bar.add_theme_stylebox_override("background", background)
-	_stamina_bar.add_theme_stylebox_override("fill", fill)
-	box.add_child(_stamina_bar)
+# --- STAMINA READOUT --------------------------------------------------------
+#
+# The panel this file used to build is gone. It was a 260x58 card pinned to the
+# bottom-left corner on its own CanvasLayer (14), which made it the fifth of the
+# seven controls that between them answered "what am I doing now" -- each in a
+# different corner, each owned by a different file, none of them louder than the
+# others. game/TaskBlock.gd's header lists all seven and the layout defect they
+# add up to; the fix is one block, so stamina moved into its status slot with
+# the objective, the countdown and the hint.
+#
+# What is left here is the two facts the block needs. This node no longer draws
+# anything, holds no Control references and no longer runs a per-physics-frame
+# UI update: GameManager polls these while it is composing the block, which is
+# once per render frame rather than once per physics step.
+#
+# Both are read-only and allocation-free, and both stay correct when the block
+# does not exist at all (a headless suite, or a scene without a GameManager).
 
 
-func _update_stamina_ui() -> void:
-	if _stamina_bar == null:
-		return
-	_stamina_bar.max_value = max_stamina
-	_stamina_bar.value = stamina
-	var ratio := stamina / maxf(max_stamina, 1.0)
-	var fill := _stamina_bar.get_theme_stylebox("fill") as StyleBoxFlat
-	if fill != null:
-		fill.bg_color = UITheme.DANGER if _exhausted else (UITheme.WARNING if ratio < 0.3 else UITheme.ACCENT)
-	_stamina_label.text = tr("HUD_STAMINA_EXHAUSTED") if _exhausted else tr("HUD_STAMINA")
+## Stamina as 0..1. The block hides the bar entirely at full, so a player who is
+## not sprinting never sees a gauge pegged at 100% -- a bar that never moves is
+## furniture, and this one now appears exactly when it has something to say.
+func stamina_ratio() -> float:
+	return clampf(stamina / maxf(max_stamina, 1.0), 0.0, 1.0)
+
+
+## True while sprinting is locked out. The block pairs this with a different
+## caption row (HUD_STAMINA_EXHAUSTED), not with a colour change alone: the old
+## panel signalled exhaustion by turning its fill red, which says nothing to a
+## deuteranope and nothing at all on a washed-out panel.
+func is_exhausted() -> bool:
+	return _exhausted
 
 
 func _update_footsteps(delta: float, running: bool, was_falling: bool) -> void:

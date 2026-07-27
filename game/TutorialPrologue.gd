@@ -27,6 +27,41 @@ extends Node3D
 ## SettingsManager: without it the saved mouse sensitivity was never applied,
 ## because PlayerController pulls it from the "settings_manager" group in
 ## _ready() and this scene had nothing in that group to pull from.
+##
+##
+## IT IS THE SAME TERMINAL AS THE REST OF THE GAME
+##
+## Stage 9.3. This scene used to be the last screen that looked like it came out
+## of a different build: a free-floating translucent card of labels, and a
+## success banner that was one centred word on a scrim. Both now render as the
+## Night Containment Service's own device.
+##
+##   * The checklist readout wears the terminal's chrome -- masthead, rule,
+##     opaque SURFACE plate with a hairline -- the same shapes TerminalFrame puts
+##     on every full-screen page. Opaque, not translucent: it hangs over a 3D
+##     room whose brightness this scene does not control, and a see-through plate
+##     would make every contrast ratio in it depend on what was behind it.
+##   * The completion screen IS a TerminalFrame, so the handover to the shift is
+##     rendered by the machine the shift is run on. It carries no night and no
+##     clock (both readouts blank rather than invent a number) and no core chip,
+##     because the orientation sector contains none of those things.
+##
+##
+## THE COMPASS IS TAUGHT HERE
+##
+## game/Compass.gd is the museum's wayfinding net, and the two steps that ask the
+## player to walk to a specific object are the only place in the game where a
+## bearing can be introduced with nothing else happening. NavigationDirector
+## installs it and this file feeds it the step's own target, so the arrow appears
+## exactly when there is somewhere to go and is gone the rest of the time.
+##
+## The ROOM READOUT and the FLOOR PLAN are switched OFF here, and that is not a
+## simplification. The compass reads its room table out of
+## SecurityCameraTablet.ROOMS, which describes the museum -- eleven rooms that
+## are nowhere near this corridor. Left on, it would confidently name a room the
+## player is not standing in and draw a plan of a building they have not entered
+## yet, which is worse than saying nothing. The bearing needs no table: it is
+## computed from two positions this scene owns.
 
 const PROGRESS_PATH := "user://museum_progress.cfg"
 const MAIN_SCENE := "res://scenes/FirstMuseumMap.tscn"
@@ -68,6 +103,9 @@ var _did_jump := false
 var _console_body: StaticBody3D
 var _exit_pad: StaticBody3D
 var _console_read := false
+# Owns the compass node: created here, fed the current step's target, switched
+# off for the completion page. Null only if the director could not install.
+var _nav: NavigationDirector = null
 
 
 func _ready() -> void:
@@ -75,7 +113,20 @@ func _ready() -> void:
 	_spawn_player()
 	_build_ui()
 	_refresh_ui()
+	_install_compass()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Bearing only -- see THE COMPASS IS TAUGHT HERE at the top of the file for why
+## the other two readouts are off in this scene. Safe to call before the compass
+## node itself exists: NavigationDirector records the request and applies it when
+## it builds the node a frame later.
+func _install_compass() -> void:
+	_nav = NavigationDirector.install(self)
+	if _nav == null:
+		return
+	_nav.set_features(false, true, false)
+	_sync_compass()
 
 
 # --- Room -------------------------------------------------------------------
@@ -158,11 +209,17 @@ func _build_ui() -> void:
 	_layer.layer = 40
 	add_child(_layer)
 
-	var panel := ColorRect.new()
-	# ColorRect, not PanelContainer, so the fill is a property rather than a
-	# stylebox: UITheme.apply_panel() does not apply. The token still does --
-	# a raised surface is exactly what this is. Alpha is kept as it was.
-	panel.color = Color(UITheme.SURFACE_RAISED, 0.9)
+	# The terminal's own plate: opaque SURFACE with a hairline, the same stylebox
+	# shape TerminalFrame gives every chip on the shift terminal. It replaces a
+	# translucent SURFACE_RAISED ColorRect, which had no border and whose contrast
+	# depended on the lit 3D room behind it. Against opaque SURFACE the ratios are
+	# fixed and computed: ON_SURFACE 17.28:1, MUTED 9.08:1, ACCENT 8.78:1,
+	# WARNING 9.44:1, and the BORDER hairline 4.58:1 as a non-text token.
+	var panel := PanelContainer.new()
+	panel.name = "Orientation Readout"
+	panel.add_theme_stylebox_override("panel", UITheme.stylebox(
+		UITheme.SURFACE, UITheme.BORDER, UITheme.BORDER_WIDTH,
+		UITheme.RADIUS_SM, UITheme.PAD_X + 6, UITheme.PAD_Y + 6))
 	panel.anchor_left = 0.62
 	panel.anchor_top = 0.08
 	panel.anchor_right = 0.98
@@ -170,23 +227,38 @@ func _build_ui() -> void:
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.add_child(panel)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_bottom", 16)
-	panel.add_child(margin)
-
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	margin.add_child(box)
+	box.add_theme_constant_override("separation", 10)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(box)
+
+	# Masthead, exactly the row TerminalFrame prints at the top of every page and
+	# in the same tokens, so the orientation readout is recognisably the same
+	# device rather than a lookalike.
+	var masthead := Label.new()
+	masthead.name = "Institution"
+	masthead.text = tr("HUD_PROTO_HEADER")
+	masthead.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	masthead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.apply_text(masthead, UITheme.CAPTION, UITheme.MUTED)
+	box.add_child(masthead)
 
 	_title = Label.new()
 	_title.text = tr("TUTORIAL_TITLE")
 	UITheme.apply_text(_title, UITheme.SECTION, UITheme.ACCENT)
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_title)
+
+	# The rule under the masthead. A ColorRect and not a draw callback because
+	# this one never breaks: nothing in the orientation sector is corrupted, and
+	# a static hairline is a shape that costs no frame time and cannot animate.
+	var rule := ColorRect.new()
+	rule.name = "Rule"
+	rule.color = UITheme.BORDER
+	rule.custom_minimum_size = Vector2(0, 1)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(rule)
 
 	_checklist = Label.new()
 	UITheme.apply_text(_checklist, UITheme.BODY, UITheme.ON_SURFACE)
@@ -214,7 +286,10 @@ func _build_ui() -> void:
 	# localization key while the catalogue is still being rebuilt.
 	# Anchors are set before add_child so the offsets stay at zero.
 	_skip_track = ColorRect.new()
-	_skip_track.color = Color(UITheme.SURFACE, 0.85)
+	# Opaque, for the same reason the readout plate above is: the fill inside it
+	# is a progress reading, and a reading whose contrast depends on the wall
+	# behind it is not a reading. WARNING on SURFACE is 9.44:1.
+	_skip_track.color = UITheme.SURFACE
 	_skip_track.anchor_left = 0.40
 	_skip_track.anchor_right = 0.60
 	_skip_track.anchor_top = 0.962
@@ -226,7 +301,7 @@ func _build_ui() -> void:
 	_skip_fill = ColorRect.new()
 	# Same amber as the hint text above: this bar is the "you are about to leave"
 	# caution, and the two must not drift apart.
-	_skip_fill.color = Color(UITheme.WARNING, 0.95)
+	_skip_fill.color = UITheme.WARNING
 	_skip_fill.anchor_left = 0.0
 	_skip_fill.anchor_top = 0.0
 	_skip_fill.anchor_right = 0.0
@@ -248,13 +323,24 @@ func _step_rows() -> Array:
 
 
 func _refresh_ui() -> void:
+	_checklist.text = _checklist_text()
+	_hint.text = _current_hint()
+
+
+## The seven steps with their marks. `force_done` ticks every row, which is what
+## the completion page shows -- the same list the player has been reading all
+## along, finished, rather than a second wording of "you are finished".
+##
+## The mark is a shape, never a colour: [x] / [>] / [ ] survives a monochrome
+## display and every colour-vision profile, and it is the only thing carrying
+## progress in this list.
+func _checklist_text(force_done := false) -> String:
 	var lines := PackedStringArray()
 	for row in _step_rows():
 		var id: int = int(row["id"])
-		var mark := "[x]" if id < _step else ("[>]" if id == _step else "[ ]")
+		var mark := "[x]" if force_done or id < _step else ("[>]" if id == _step else "[ ]")
 		lines.append("%s %s" % [mark, tr(String(row["key"]))])
-	_checklist.text = "\n".join(lines)
-	_hint.text = _current_hint()
+	return "\n".join(lines)
 
 
 func _current_hint() -> String:
@@ -347,6 +433,32 @@ func _advance() -> void:
 	if _step == STEP_EXIT and _exit_pad != null:
 		_exit_pad.visible = true
 	_refresh_ui()
+	_sync_compass()
+
+
+## Feed the compass the objective this step actually has.
+##
+## Only the two steps that ask the player to reach a specific object get a
+## bearing. Walking, looking, sprinting, jumping and the flashlight are performed
+## on the spot, and an arrow pointing at nothing in particular during them would
+## teach the player that the arrow means nothing in particular.
+func _sync_compass() -> void:
+	if _nav == null or not is_instance_valid(_nav):
+		return
+	match _step:
+		STEP_INTERACT:
+			_aim_compass(_console_body, "TUT_TARGET_CONSOLE")
+		STEP_EXIT:
+			_aim_compass(_exit_pad, "TUT_TARGET_EXIT")
+		_:
+			_nav.release_aim()
+
+
+func _aim_compass(body: Node3D, room_key: String) -> void:
+	if body == null or not is_instance_valid(body) or not body.is_inside_tree():
+		_nav.release_aim()
+		return
+	_nav.aim_at(body.global_position, room_key)
 
 
 func _update_skip(delta: float) -> void:
@@ -394,25 +506,52 @@ func _finish() -> void:
 	_leave()
 
 
+## The handover to the shift, rendered by the device the shift is run on.
+##
+## A TerminalFrame rather than a scrim and a centred word: this is a full-screen
+## surface, and every other full-screen surface in the game is one page of the
+## same terminal. It covers the checklist plate and the skip hint outright --
+## both are stale the moment the seventh step lands -- and it is opaque, so the
+## contrast table in TerminalFrame.gd applies to it as written.
+##
+## No corruption is set. The orientation sector is on mains power with nothing
+## loose in it, and a clean frame calls set_process(false) on itself, so this
+## page cannot animate at all -- which is also exactly what it would do under
+## reduced_flashes.
 func _show_completion_banner() -> void:
 	if _layer == null or not is_instance_valid(_layer):
 		return
-	# Covers the checklist and the skip hint: with the tutorial over, both are
-	# stale, and the last thing on screen should be the one line that matters.
-	var veil := ColorRect.new()
-	veil.color = UITheme.SCRIM
-	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
-	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_layer.add_child(veil)
+	# The bearing belongs to the room behind the page. Leaving it drawing under an
+	# opaque full-screen frame is invisible but not free, and it would reappear
+	# for a frame if anything ever dismissed the page instead of changing scene.
+	if _nav != null and is_instance_valid(_nav):
+		_nav.set_enabled(false)
+
+	var frame := TerminalFrame.new()
+	frame.name = "Orientation Handover"
+	_layer.add_child(frame)
+	frame.set_title("TUTORIAL_COMPLETE")
+	# No shift is assigned in the orientation sector and there is no core in it,
+	# so the night and clock readouts blank rather than print a number this scene
+	# would have to invent, and "" hides the core chip instead of claiming a state
+	# for a core that is not here.
+	frame.set_status(-1, -1.0, "")
+
+	var centre := CenterContainer.new()
+	centre.name = "Summary"
+	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.body_column().add_child(centre)
 
 	var done := Label.new()
-	done.text = tr("TUTORIAL_COMPLETE")
-	done.set_anchors_preset(Control.PRESET_FULL_RECT)
-	done.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	done.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	UITheme.apply_text(done, UITheme.TITLE, UITheme.SUCCESS)
+	done.name = "Checklist"
+	done.text = _checklist_text(true)
 	done.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	veil.add_child(done)
+	# SUCCESS on the frame's opaque SURFACE is 11.56:1 before the tube, and the
+	# tube costs at most 11% of a channel at the centre of the page. The colour is
+	# not carrying the meaning either way -- every row is ticked with [x].
+	UITheme.apply_text(done, UITheme.BODY, UITheme.SUCCESS)
+	centre.add_child(done)
 	_sfx("resolve")
 
 

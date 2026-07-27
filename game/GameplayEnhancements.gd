@@ -2,6 +2,30 @@ extends Node
 ## Distinct anomaly mechanics, camera-confirmation objectives and an active
 ## "Watcher" threat. Kept separate from GameManager so the core night loop
 ## remains easy to test and maintain.
+##
+##
+## WHAT THIS FILE DRAWS, AND WHERE IT NOW DRAWS IT
+##
+## Two of the three surfaces here used to be labels of its own invention, and
+## both were on TaskBlock's list of the seven controls that made "what do I do
+## now" unanswerable. They are shared components now:
+##
+##   anomaly effect readout -> TaskBlock slots 3 and 4. It was a right-aligned
+##       three-line run drawn straight onto the 3D museum, wearing a 5 px glyph
+##       outline because its backdrop was whatever the player happened to be
+##       looking at -- an unmeasurable contrast ratio and a third voice on a
+##       screen that already had too many. See _update_readouts().
+##   the catch sequence -> a TerminalFrame in its signal-lost state. The veil was
+##       a bare ColorRect fading to SURFACE; it is the operator's own terminal
+##       losing the feed now, which is the same instrument the rest of the game
+##       wears and says what happened rather than merely hiding it. See
+##       _build_death_screen().
+##
+## The Curator proximity band below is deliberately NOT moved. It is a
+## screen-edge frame sized for peripheral vision while the eye is on a camera
+## feed in the middle of the screen, and TaskBlock is a corner panel the tablet
+## is allowed to cover; routing one through the other would delete the only
+## channel that pays back the perception the tablet takes away.
 
 const STATE_ANOMALY := 2
 ## GameManager.STATE_FAILED. Read, never written: this node asks whether the run
@@ -52,6 +76,29 @@ const WATCH_CRITICAL_RELEASE := 1.4
 const WATCH_FRAME_WIDTH := 6
 ## Half-angle of the "ahead" and "behind" sectors, as a dot product: cos(45 deg).
 const WATCH_SECTOR_DOT := 0.7071
+## CanvasLayer for that alert.
+##
+## 300-399 is the "in-world alarms drawn over the screens the player raises"
+## band of the decade scale written out in game/TaskBlock.gd and tabulated in
+## full above GameManager._build_hud(). The old 12 collided head-on with
+## GameManager's protocol screen, also 12: which of the two drew on top was
+## decided by construction order in two unrelated files, i.e. by nobody.
+##
+## MUST SIT ABOVE:
+##   199 TaskBlock ................. the alert is a full-screen border; the block
+##                                   is a corner panel and keeps its corner.
+##   200 CCTV tablet ............... THE ENTIRE POINT. The alert exists so that
+##                                   raising the tablet is a bet the player can
+##                                   see the odds on -- it has to be legible
+##                                   while the tablet owns the screen.
+##   210 protocol screen ........... the Curator does not wait for the briefing.
+## MUST SIT BELOW:
+##   420 fail / win ................ a run that has ended is not still hunted.
+##   590 the catch screen .......... _begin_death() calls _hide_watch_alert()
+##                                   anyway; z-order agrees with it rather than
+##                                   contradicting it.
+##   610 MenuManager ............... a paused game is not being hunted either.
+const WATCH_ALERT_LAYER := 320
 
 # --- Being caught (stage 4.4) -----------------------------------------------
 #
@@ -83,6 +130,44 @@ const DEATH_RELEASE := 0.45  ## Veil back off, onto GameManager's fail screen.
 ## body centre -- the thing that caught you is a camera on a neck, and framing it
 ## is the difference between a death and a collision.
 const DEATH_FOCUS_Y := 2.12
+## CanvasLayer for the catch screen -- the highest layer the shipping game draws
+## apart from the pause menu.
+##
+## 590-599 is the top of the "trial / pocket-dimension" decade on the scale
+## written out in game/TaskBlock.gd and tabulated in full above
+## GameManager._build_hud(). The catch is a takeover (400-499 by band), but it is
+## the ONE takeover that has to cover the trial HUD as well, so it is carved out
+## of the rung directly beneath the menus instead. GameManager's own migration
+## note used to prescribe 410 for this layer; 410 is wrong and this is why.
+##
+## MUST SIT ABOVE:
+##   199 TaskBlock ................. the veil at 13 did not cover it, so the
+##                                   block kept reporting the anomaly over a
+##                                   black screen.
+##   200 CCTV tablet ............... _begin_death() lowers the tablet anyway, but
+##                                   the frame it is lowered on must not show it.
+##   320 the proximity alert below . the thing it was warning about has happened.
+##   420 GameManager's fail / win .. LOAD-BEARING. _update_death() fades this
+##                                   screen back OFF to uncover the fail page:
+##                                   at 19, under 420, the fail page popped on
+##                                   top instead of being revealed, which is the
+##                                   hand-off in this file's header failing
+##                                   silently.
+##   510 the trial terminal frame .. the catch is the only surface that outranks
+##                                   an open pocket dimension.
+## MUST SIT BELOW:
+##   610 MenuManager ............... ESC during the catch still reaches the pause
+##                                   menu; a black veil over a menu is a hang.
+const DEATH_LAYER := 590
+## Group the single TaskBlock is published under. See _resolve_task_block().
+const TASK_BLOCK_GROUP := "task_block"
+## Layer a TaskBlock built by THIS file is parked at. GameManager owns the real
+## one and puts it at its own HUD_TASK_LAYER; _resolve_task_block() only ever
+## constructs a block when no shift HUD exists at all (headless suites, or an
+## _initialize() that bailed out). Kept equal to GameManager.HUD_TASK_LAYER so
+## the fallback lands on the same rung rather than on TaskBlock's own legacy
+## TASK_LAYER = 17, which is below every screen DEATH_LAYER lists.
+const HUD_TASK_LAYER := 199
 
 ## Perceived-size window each local anomaly drives the operator through, as
 ## Vector2(min, max). _update_player_scale() only interpolates between these two
@@ -115,7 +200,12 @@ var _base_gravity := 18.0
 var _base_walk := 4.5
 var _base_run := 7.5
 var _base_flash_energy := 2.4
-var _effect_label: Label
+var _block: TaskBlock
+## True while THIS node holds TaskBlock slot 4 under TaskBlock.OWNER_ANOMALY, so
+## the lease is taken once and given back exactly once. It is the local mirror of
+## `_block.slot_owner(Slot.STATUS) == OWNER_ANOMALY`, kept because the block can be
+## torn down or replaced under us and the release must not then fire blind.
+var _readouts_owned := false
 var _watcher: CuratorMonster
 var _scale_controller: Node
 var _player_camera: Camera3D
@@ -133,7 +223,7 @@ var _rift_visual: Node3D
 ## Seconds into the catch sequence, or -1.0 while it is not running.
 var _death_time := -1.0
 var _death_layer: CanvasLayer
-var _death_veil: ColorRect
+var _death_screen: TerminalFrame
 var _death_from_yaw := 0.0
 var _death_from_pitch := 0.0
 var _death_handed_off := false
@@ -217,6 +307,7 @@ func _begin_anomaly(id: String) -> void:
 			_incident_name = puzzle.get_incident_name()
 		if puzzle.has_method("get_required_camera"):
 			_required_camera = puzzle.get_required_camera() if _night >= 2 else -1
+	_resolve_task_block()
 	_build_rift_visual()
 	if _watcher != null:
 		_watcher.visible = _night >= 2
@@ -226,7 +317,7 @@ func _begin_anomaly(id: String) -> void:
 	if not _scan_complete:
 		var cam_name := "CAM %02d" % (_required_camera + 1)
 		_game.set_objective("cctv", Loc.fmt("OBJ_CCTV_CONFIRM", [_incident_name, cam_name, SCAN_TIME]), 40)
-	_update_effect_label()
+	_update_readouts()
 
 
 func _end_anomaly() -> void:
@@ -235,8 +326,7 @@ func _end_anomaly() -> void:
 	_anomaly = ""
 	_scan_progress = 0.0
 	_restore_player()
-	if _effect_label != null:
-		_effect_label.visible = false
+	_update_readouts()
 	_hide_watch_alert()
 	if _watcher != null:
 		_watcher.visible = false
@@ -262,7 +352,7 @@ func _update_anomaly(delta: float) -> void:
 	_update_player_scale()
 	_sync_watcher()
 	_update_watch_alert(delta)
-	_update_effect_label()
+	_update_readouts()
 
 
 func _update_chalk() -> void:
@@ -524,60 +614,71 @@ func _restore_player() -> void:
 
 
 func _build_hud() -> void:
-	var layer := CanvasLayer.new()
-	layer.name = "Anomaly Effects HUD"
-	layer.layer = 11
-	add_child(layer)
-	_effect_label = Label.new()
-	_effect_label.anchor_left = 0.72
-	_effect_label.anchor_top = 0.02
-	_effect_label.anchor_right = 0.98
-	_effect_label.anchor_bottom = 0.16
-	_effect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	UITheme.apply_text(_effect_label, UITheme.BODY, UITheme.ACCENT)
-	# The readout is drawn straight onto the 3D view with no panel behind it, so
-	# it keeps its outline: UITheme has no token for glyph outlines, and without
-	# one this text is illegible over a lit exhibit. The outline colour is the
-	# page surface at the alpha it already used -- it stands in for the panel
-	# this label deliberately does not have.
-	_effect_label.add_theme_color_override("font_outline_color", Color(UITheme.SURFACE, 0.9))
-	_effect_label.add_theme_constant_override("outline_size", 5)
-	_effect_label.visible = false
-	layer.add_child(_effect_label)
 	_build_watch_alert()
-	_build_death_veil()
+	_build_death_screen()
 
 
-## Full-screen veil for the catch sequence.
+## The single task block, wherever it came from.
 ##
-## Layer 13 puts it above every in-world screen this node can be caught in front
-## of -- the tablet (10), the effect readout (11), the proximity alert (12) --
-## so they all go dark with the picture, and below GameManager's OVERLAY_LAYER
-## (15), so the fail screen it hands off to draws on top of a screen that is
-## already black instead of cutting into a lit one.
-func _build_death_veil() -> void:
+## TaskBlock's premise is that exactly ONE exists -- two of them at the same
+## anchors on the same layer would be the very defect it was written to remove --
+## so this adopts the block the shift HUD already owns and only builds one when
+## there is none: by group first (cheap), by type second (correct even if the
+## owner never joined the group), and either way the result is published under
+## TASK_BLOCK_GROUP so every later lookup is O(1).
+func _resolve_task_block() -> void:
+	if is_instance_valid(_block) or not is_inside_tree():
+		return
+	var shared: Node = get_tree().get_first_node_in_group(TASK_BLOCK_GROUP)
+	if shared == null:
+		var found := get_tree().get_root().find_children("*", "TaskBlock", true, false)
+		if not found.is_empty():
+			shared = found[0]
+	if shared == null:
+		shared = TaskBlock.new()
+		add_child(shared)
+		# Only a block WE built is renumbered: an adopted one already carries the
+		# layer its owner chose. See HUD_TASK_LAYER for why 17 is not acceptable.
+		(shared as CanvasLayer).layer = HUD_TASK_LAYER
+	_block = shared as TaskBlock
+	if _block != null and not _block.is_in_group(TASK_BLOCK_GROUP):
+		_block.add_to_group(TASK_BLOCK_GROUP)
+
+
+## The catch screen: the operator's own terminal, losing the feed.
+##
+## What fades in is a TerminalFrame in its signal-lost state -- the torn picture,
+## the dead readouts, SIGNAL LOST on an opaque plate -- rather than the bare
+## ColorRect this used to be. It is still an opaque SURFACE veil by the time the
+## hand-off happens, because the frame's own backdrop is that colour, so the fail
+## screen underneath still starts from the value it expects; it just says what
+## happened on the way down instead of only hiding it.
+##
+## THE TUBE IS OFF ON THIS ONE. The fade is `modulate.a` on the frame, and
+## CRTOverlay's shader assigns COLOR outright, which discards the modulate the
+## engine hands it -- the glass would therefore snap to full strength the instant
+## the layer is shown and sit there through a fade that is meant to start from
+## nothing. A frame that fades honestly is worth more here than a tube.
+func _build_death_screen() -> void:
 	_death_layer = CanvasLayer.new()
-	_death_layer.name = "Curator Catch Veil"
-	_death_layer.layer = 13
+	_death_layer.name = "Curator Catch Screen"
+	_death_layer.layer = DEATH_LAYER
 	_death_layer.visible = false
 	add_child(_death_layer)
-	_death_veil = ColorRect.new()
-	_death_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_death_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# SURFACE is the darkest token in the palette and the colour the fail scrim
-	# is mixed from, so the fade lands on the value the next screen starts at.
-	# Only the RGB comes from the token; the alpha is what this animates.
-	_death_veil.color = Color(UITheme.SURFACE, 0.0)
-	_death_layer.add_child(_death_veil)
+	_death_screen = TerminalFrame.new()
+	_death_screen.name = "Signal Lost"
+	_death_screen.set_crt_enabled(false)
+	_death_screen.modulate.a = 0.0
+	_death_layer.add_child(_death_screen)
 
 
-## Motion readout drawn over the camera feed. Its own CanvasLayer at 12, above
-## SecurityCameraTablet's UI (10) and the effect readout (11) -- the whole point
-## is that it is legible while the tablet owns the screen.
+## Motion readout drawn over the camera feed. Its own CanvasLayer at
+## WATCH_ALERT_LAYER, whose header lists what it has to beat and what has to beat
+## it -- the whole point is that it is legible while the tablet owns the screen.
 func _build_watch_alert() -> void:
 	_watch_layer = CanvasLayer.new()
 	_watch_layer.name = "Curator Proximity Alert"
-	_watch_layer.layer = 12
+	_watch_layer.layer = WATCH_ALERT_LAYER
 	_watch_layer.visible = false
 	add_child(_watch_layer)
 
@@ -622,35 +723,112 @@ func _watch_border(color: Color) -> StyleBoxFlat:
 	return style
 
 
-func _update_effect_label() -> void:
-	if _effect_label == null:
+## The anomaly readout, on the shared block instead of on a label of its own.
+##
+## ONE SLOT, AND ONLY ONE. This node used to write slot 3 (the hint) AND slot 4
+## (the progress caption) every frame for the whole of every anomaly, while
+## GameManager wrote both of them every frame too. It sits after GameManager in
+## scenes/FirstMuseumMap.tscn, so it always won, and the measured effect was that
+## the interaction prompt and the stamina gauge were silently erased for the
+## duration of every incident -- "В руках: Нуль-фонарь (G - бросить)" replaced by
+## "НУЛЬ-ФОНАРЬ: Куратор замедлен рядом с вами", and the gauge by "ГРАВИТАЦИЯ:
+## 100%". Nobody chose that; node order in a scene neither file builds did.
+##
+## The block grew a slot so the shortage could be fixed without picking a loser,
+## and this node's whole readout now lives in it:
+##
+##   slot 4, the status line ... what the world is doing to the operator.
+##       A state, never a ratio: every HUD_EFFECT_* row carries its own number or
+##       none, so a bar would be inventing a scale. While a CCTV scan is pending
+##       the scan percentage stands here instead -- inside its own slot the
+##       anomaly prefers the line with a deadline, which is arbitration by one
+##       owner rather than a race between two.
+##
+## The carried tool's own line (HUD_TOOL_*) moved to GameManager, which owns
+## `_carried_id` and slot 5 and was already saying "Carrying: X" there. Nothing
+## was dropped; it is said once, by the node that knows it, in the slot that means
+## it.
+##
+## Keys and arguments, never text: the block resolves through Loc.fmt() and drops
+## the write when the resolved string has not changed, which is what makes a
+## per-frame caller free.
+func _update_readouts() -> void:
+	if _block == null:
 		return
-	_effect_label.visible = _active
-	var effect := ""
-	match _anomaly:
-		"gravity_surge": effect = Loc.fmt("HUD_EFFECT_GRAVITY", [float(_player.get("gravity")) / _base_gravity * 100.0])
-		"temporal_drift": effect = Loc.fmt("HUD_EFFECT_TEMPORAL", [float(_player.get("walk_speed")) / _base_walk * 100.0])
-		"radiation_bloom": effect = Loc.fmt("HUD_EFFECT_DOSE", [_exposure])
-		"void_rift": effect = tr("HUD_EFFECT_VOID")
-		"echo_chamber": effect = tr("HUD_EFFECT_ECHO")
-		"glass_bridge": effect = tr("HUD_EFFECT_GLASS")
-		"mirror_maze": effect = tr("HUD_EFFECT_MIRROR")
-		"yellow_halls": effect = tr("HUD_EFFECT_YELLOW")
-		"scrap_run": effect = tr("HUD_EFFECT_SCRAP")
-		"ascent": effect = tr("HUD_EFFECT_ASCENT")
-	match _carried_tool():
-		"spectral_lens":
-			effect += "\n" + Loc.fmt("HUD_TOOL_LENS", [int(_player.global_position.distance_to(_incident_origin))])
-		"thread_spool":
-			effect += "\n" + Loc.fmt("HUD_TOOL_THREAD", [int(_player.global_position.distance_to(_incident_origin))])
-		"phase_prism":
-			effect += "\n" + tr("HUD_TOOL_PRISM")
-		"null_lantern":
-			effect += "\n" + tr("HUD_TOOL_LANTERN")
-	var scan := ""
+	# Inside a pocket dimension the trial owns the status line: it is naming the
+	# dimension the operator is standing in, and a gravity percentage measured in
+	# the museum below is not a fact about anywhere they are. GameManager performs
+	# the hand-over in _begin_trial(); this is the guard that keeps us out of the
+	# slot until it comes back.
+	if not _active or _trial_running():
+		release_readouts()
+		return
+	if not _readouts_owned:
+		# claim() before the first write, so the lease is taken at the moment the
+		# incident starts rather than at the moment the first readout happens to
+		# differ. A refused claim leaves _readouts_owned false and this node silent,
+		# which is the right failure: one system's answer, not two alternating.
+		if not _block.claim(TaskBlock.Slot.STATUS, TaskBlock.OWNER_ANOMALY):
+			return
+		_readouts_owned = true
+	# The scan is preferred over the effect readout while one is pending: it is the
+	# method of the objective GameManager has just set and it is the only one of
+	# the two with a deadline.
 	if not _scan_complete and _required_camera >= 0:
-		scan = "\n" + Loc.fmt("HUD_SCAN_PROGRESS", [100.0 * _scan_progress / SCAN_TIME])
-	_effect_label.text = effect + scan
+		_block.set_status("HUD_SCAN_PROGRESS", [100.0 * _scan_progress / SCAN_TIME], TaskBlock.OWNER_ANOMALY)
+		return
+	# Every key spelled at its own call site with its own arguments, rather than
+	# collected into a variable and formatted once below: tools/check_localization.py
+	# can only see the arity of a call it can read, and a key whose specifiers no
+	# call site is seen to format is a fatal finding there -- correctly, since that
+	# is exactly how a raw "%s" reaches the screen.
+	match _anomaly:
+		"gravity_surge":
+			# The argument list stays on the key's own line for the same reason: the
+			# checker reads one line at a time.
+			var pull := float(_player.get("gravity")) / _base_gravity * 100.0
+			_block.set_status("HUD_EFFECT_GRAVITY", [pull], TaskBlock.OWNER_ANOMALY)
+		"temporal_drift":
+			var pace := float(_player.get("walk_speed")) / _base_walk * 100.0
+			_block.set_status("HUD_EFFECT_TEMPORAL", [pace], TaskBlock.OWNER_ANOMALY)
+		"radiation_bloom":
+			_block.set_status("HUD_EFFECT_DOSE", [_exposure], TaskBlock.OWNER_ANOMALY)
+		"void_rift": _block.set_status("HUD_EFFECT_VOID", [], TaskBlock.OWNER_ANOMALY)
+		"echo_chamber": _block.set_status("HUD_EFFECT_ECHO", [], TaskBlock.OWNER_ANOMALY)
+		"glass_bridge": _block.set_status("HUD_EFFECT_GLASS", [], TaskBlock.OWNER_ANOMALY)
+		"mirror_maze": _block.set_status("HUD_EFFECT_MIRROR", [], TaskBlock.OWNER_ANOMALY)
+		"yellow_halls": _block.set_status("HUD_EFFECT_YELLOW", [], TaskBlock.OWNER_ANOMALY)
+		"scrap_run": _block.set_status("HUD_EFFECT_SCRAP", [], TaskBlock.OWNER_ANOMALY)
+		"ascent": _block.set_status("HUD_EFFECT_ASCENT", [], TaskBlock.OWNER_ANOMALY)
+		_: _block.set_status("", [], TaskBlock.OWNER_ANOMALY)
+
+
+## Is a pocket dimension open? Read from GameManager rather than kept here: it is
+## the node that opens and closes one, and a second copy of the flag is a second
+## thing to forget to clear. Same lookup _update_watch() already uses.
+func _trial_running() -> bool:
+	return _game != null and bool(_game.get("_trial_active"))
+
+
+## Give slot 4 back. Called from _end_anomaly(), from the trial guard above, and
+## by GameManager._begin_trial() one line before it hands the slot to the trial --
+## that last caller is what makes the hand-over synchronous instead of a race
+## between two _process() orders.
+##
+## Released once, not every frame, and only if the slot was ours: the block is
+## shared, and clearing a line another owner put there would be a silent,
+## one-directional theft. release() refuses it anyway; this keeps the log clean.
+func release_readouts() -> void:
+	if not _readouts_owned:
+		return
+	_readouts_owned = false
+	if _block == null:
+		return
+	# Blank the line before dropping the lease: an empty string means "nothing to
+	# say", which is a thing an OWNER says, so the clear has to happen while we
+	# still hold it.
+	_block.set_status("", [], TaskBlock.OWNER_ANOMALY)
+	_block.release(TaskBlock.Slot.STATUS, TaskBlock.OWNER_ANOMALY)
 
 
 func _update_player_scale() -> void:
@@ -765,21 +943,41 @@ func _build_watcher() -> void:
 func _on_watcher_caught() -> void:
 	if _death_time >= 0.0:
 		return
-	if _death_veil == null or _game == null or _player == null:
+	_resolve_task_block()
+	if _death_screen == null or _game == null or _player == null:
 		# No HUD was ever built (headless suites, or _initialize() bailed out).
 		# Fail the run the blunt way rather than not at all.
 		if _game != null:
-			_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), UITheme.DANGER)
+			_announce_caught()
 			_game.call("_fail")
 		return
 	_begin_death()
+
+
+## Said once, through the block when there is one -- a BAD-toned message takes
+## the loud line for its dwell and hands it straight back, which is what the
+## block's flash channel is for -- and through GameManager's own banner when this
+## node never got a HUD at all.
+func _announce_caught() -> void:
+	if _block != null:
+		_block.flash("HUD_CURATOR_CAUGHT", [], TaskBlock.Tone.BAD)
+	elif _game != null:
+		_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), UITheme.DANGER)
 
 
 func _begin_death() -> void:
 	_death_time = 0.0
 	_death_handed_off = false
 	_death_layer.visible = true
-	_death_veil.color.a = 0.0
+	_death_screen.modulate.a = 0.0
+	# The night is the last true thing the terminal reports; the shift clock and
+	# the core drop to their dead readings by themselves once the signal is gone.
+	_death_screen.set_status(_night, -1.0, "TERM_CORE_CRITICAL", TerminalFrame.CORE_CRITICAL)
+	_death_screen.set_signal_lost(true, "TERM_SIGNAL_LOST")
+	# Re-read reduced_flashes now rather than trusting whatever was true when this
+	# was built, which was two frames into the scene and possibly before the
+	# settings node existed.
+	_death_screen.refresh()
 	# Order matters. close() hands control back through
 	# GameManager.player_controls_allowed(), which still answers "yes" -- the run
 	# has not failed yet -- so the tablet has to be lowered BEFORE control is
@@ -795,10 +993,10 @@ func _begin_death() -> void:
 	_player.velocity = Vector3.ZERO
 	_death_from_yaw = _player.rotation.y
 	_death_from_pitch = float(_player.get("_pitch"))
-	# Said now, not at the hand-off: _flash() keeps a message up for 3.0 s, so
-	# starting it here makes it legible across the turn and the hold instead of
-	# arriving under the fail scrim that covers it.
-	_game.call("_flash", tr("HUD_CURATOR_CAUGHT"), UITheme.DANGER)
+	# Said now, not at the hand-off: the message holds slot 1 for 2.4 s, so it is
+	# legible across the turn and the hold and is covered by the screen above only
+	# once that screen is opaque -- which is a second later than the fail scrim.
+	_announce_caught()
 	# One low hit on the seize. GameManager plays its own "fail" sting later.
 	_sfx("blackout", -3.0, 0.68)
 
@@ -812,11 +1010,11 @@ func _update_death(delta: float) -> void:
 	if _death_time < handoff_at:
 		if previous < fade_at and _death_time >= fade_at:
 			_sfx("power_down", -7.0, 0.9)
-		_death_veil.color.a = clampf((_death_time - fade_at) / DEATH_FADE, 0.0, 1.0)
+		_death_screen.modulate.a = clampf((_death_time - fade_at) / DEATH_FADE, 0.0, 1.0)
 		return
 	if not _death_handed_off:
 		_death_handed_off = true
-		_death_veil.color.a = 1.0
+		_death_screen.modulate.a = 1.0
 		# Behind an opaque veil, in this order: our own presentation comes down
 		# first, so the Curator is never seen to blink out, and then the run is
 		# handed to GameManager, which owns the fail overlay and the retry.
@@ -826,10 +1024,13 @@ func _update_death(delta: float) -> void:
 		return
 	# The night timer can fail the run mid-sequence; _fail() is then already done
 	# and the release just uncovers the screen it put up.
-	_death_veil.color.a = clampf(1.0 - (_death_time - handoff_at) / DEATH_RELEASE, 0.0, 1.0)
+	_death_screen.modulate.a = clampf(1.0 - (_death_time - handoff_at) / DEATH_RELEASE, 0.0, 1.0)
 	if _death_time - handoff_at >= DEATH_RELEASE:
 		_death_time = -1.0
 		_death_layer.visible = false
+		# A hidden CanvasLayer draws nothing, but a frame left in its signal-lost
+		# state keeps re-rolling the tear behind it; this is what stops its clock.
+		_death_screen.set_signal_lost(false)
 
 
 ## Ease the operator's own head onto the Curator's lens. `amount` runs 0 -> 1
