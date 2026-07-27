@@ -22,3 +22,9 @@ node_modules/
 # Was previously hidden only by the machine-local .git/info/exclude,
 # so a fresh clone would have started tracking it.
 /.claude/worktrees/
+
+# Secrets. The ElevenLabs key (and anything like it) lives here, never in the
+# repository and never pasted into a source file.
+.env
+.env.*
+!.env.example
