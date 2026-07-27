@@ -266,6 +266,11 @@ func _initialize() -> void:
 	_night = _load_night()
 	for n in range(2, _night + 1):
 		_unlock_for_night(n)
+	# A resumed night 3 must open on the alternate bed, same as a reached one
+	# (see _advance_night).
+	var am_boot := _audio()
+	if am_boot != null and am_boot.has_method("set_bed_variant"):
+		am_boot.set_bed_variant(_night)
 	_build_devices()
 	_build_terminal()
 	_build_protocol_screen()
@@ -600,6 +605,10 @@ func _fail() -> void:
 			am.set_anomaly_hum(false)
 		if am.has_method("play_sfx"):
 			am.play_sfx("fail")
+		if am.has_method("play_music_stinger"):
+			# The musical mark of the catch, over the SFX hit: the night layers
+			# duck under it rather than cutting out on the fail page.
+			am.play_music_stinger()
 	# The block stands down for every screen that takes the game away from the
 	# player; the fail page is one, and it carries its own retry prompt.
 	if _task != null:
@@ -651,6 +660,11 @@ func _advance_night() -> void:
 	_night += 1
 	_save_night(_night)
 	_unlock_for_night(_night)
+	# Night 3 changes key: the alternate bed takes over here (mid-session swap,
+	# no scene reload) so the last night does not sound like the first.
+	var am := _audio()
+	if am != null and am.has_method("set_bed_variant"):
+		am.set_bed_variant(_night)
 	_respawn_devices()
 	_anomalies_left = int(NIGHT_CONFIG[_night]["count"])
 	_state = STATE_COUNTDOWN

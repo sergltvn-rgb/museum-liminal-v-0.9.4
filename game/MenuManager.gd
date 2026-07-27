@@ -257,6 +257,12 @@ func _open_main_menu() -> void:
 	_refresh_start_button()
 	_raise()
 	_start_button.grab_focus()
+	# The one surface with its own track. Started on open rather than on boot:
+	# _open_main_menu is also the landing point of "quit to menu", so the theme
+	# returns with the page.
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_context"):
+		am.play_context("menu")
 
 
 func _open_pause_menu() -> void:
@@ -329,6 +335,11 @@ func _gameplay_mouse_mode() -> Input.MouseMode:
 ## the worst a corrupt flag can now do is show or hide eight one-line hints.
 func _start_game() -> void:
 	_in_main_menu = false
+	# The menu theme retires here; the museum opens silent and the night bed
+	# takes over only when the blackout fires (FirstMuseumMap._trigger_blackout).
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("stop_context"):
+		am.stop_context()
 	_resume()
 
 

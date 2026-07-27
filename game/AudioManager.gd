@@ -44,18 +44,20 @@ const BUS_SFX := "SFX"
 # ---------------------------------------------------------------- MUSIC ----
 # Two layers that always run together and are mixed by one number.
 #
-#   bed_museum_night  the building itself: flat, wide, no events. Always on
-#                     while a night runs.
-#   tension_curator   the dread layer. Same 22.00 s length, faded in on top of
-#                     the bed as set_tension() rises.
+#   music_bed_night  the building itself: flat, wide, no events. Always on
+#                    while a night runs. music_bed_night_alt takes over on
+#                    night 3 (see set_bed_variant).
+#   music_tension    the dread layer, faded in on top of the bed as
+#                    set_tension() rises.
 #
-# They live in res://audio/generated/ rather than next to the wavs, because they
-# were generated on a FREE ElevenLabs plan (no commercial use, attribution
-# required) and the folder keeps that visible in the tree. This is prototype
-# audio; nothing here has been cleared for release. Moving them was safe only
-# because _stream() below builds its paths by pattern (AUDIO_DIR + name +
-# ".wav") and no music ever goes through it -- the two paths here are literal
-# and complete, so the subfolder cannot silently break an existing sound.
+# They live in res://audio/generated/ rather than next to the wavs, because
+# that is where the generated music masters landed. Provenance and licence
+# status are recorded per-file in CREDITS.md: the music came from Google Flow
+# Music (Lyria 3, owner-generated, commercial rights an open question) and the
+# two remaining ElevenLabs files are NOT cleared for release. No music goes
+# through _stream() -- it builds paths by pattern (AUDIO_DIR + name + ".wav"),
+# while every path here is literal and complete, so the subfolder cannot
+# silently break an existing sound.
 const MUSIC_DIR := "res://audio/generated/"
 const MUSIC_BED_PATH := MUSIC_DIR + "music_bed_night.mp3"
 const MUSIC_TENSION_PATH := MUSIC_DIR + "music_tension.mp3"
@@ -119,6 +121,36 @@ const MUSIC_TENSION_FALL_TAU := 3.5
 ## the bed sliding in or out, never with a cut.
 const MUSIC_FADE_TAU := 1.2
 
+# ------------------------------------------------------ CONTEXT MUSIC ----
+# Single-track music for the surfaces the two night layers do not cover: the
+# main menu, the cutscenes and the Rift Trial. One track at a time, looping
+# through the imported stream: the Flow Music masters were rendered with an
+# equal-power crossfade wrapping each tail onto its head (see CREDITS.md), so
+# the seam is silent by construction and needs no two-player handover.
+#
+# Levels sit against the same reference as the night layers: the menu is one
+# track with no room tone under it, so it stands a little over the bed; the
+# prologue is the only voice under the captions; the trial keeps under its own
+# SFX; the stinger is an impact, not a layer.
+const MUSIC_MENU_PATH := MUSIC_DIR + "music_menu.mp3"
+const MUSIC_PROLOGUE_PATH := MUSIC_DIR + "music_prologue.mp3"
+const MUSIC_TRIAL_PATH := MUSIC_DIR + "music_trial.mp3"
+const MUSIC_TRIAL_ALT_PATH := MUSIC_DIR + "music_trial_alt.mp3"
+const MUSIC_BED_ALT_PATH := MUSIC_DIR + "music_bed_night_alt.mp3"
+const MUSIC_STINGER_PATH := MUSIC_DIR + "music_stinger_caught.mp3"
+
+const CONTEXT_MENU_DB := -14.0
+const CONTEXT_PROLOGUE_DB := -12.0
+const CONTEXT_TRIAL_DB := -15.0
+const MUSIC_STINGER_DB := -5.0
+
+## Fade time constant for context tracks. Faster than the night fade: a menu
+## that takes 1.2 s to answer a keypress reads as broken.
+const CONTEXT_FADE_TAU := 0.6
+## The night layers duck to this fraction while the catch stinger is out.
+const STINGER_DUCK := 0.3
+const STINGER_DUCK_TAU := 0.35
+
 var _streams: Dictionary = {}
 var _ambience: AudioStreamPlayer
 var _alarm: AudioStreamPlayer
@@ -140,6 +172,28 @@ var _music_on := false
 var _music_gain := 0.0
 var _tension_target := 0.0
 var _tension := 0.0
+## Kept for set_bed_variant(): the alt bed is a different length, and the
+## shorter of bed/tension always decides the shared loop period.
+var _tension_length := 0.0
+
+## Context music (menu / prologue / trial). Two players, one coming up while
+## the other retires -- a context switch crossfades instead of cutting.
+var _context_players: Array[AudioStreamPlayer] = []
+var _context_active := 0
+var _context_on := false
+var _context_gain := 0.0
+var _context_db := 0.0
+var _context_path := ""
+var _context_out_gain := 0.0
+var _context_out_db := 0.0
+## The prologue bed is a one-shot with its own 7.2 s fade-out; it must not
+## restart when it runs off the end the way the looping contexts do.
+var _context_oneshot := false
+var _trial_flip := false
+var _bed_alt := false
+var _stinger: AudioStreamPlayer
+## Night-layer duck while the catch stinger is out. 1.0 = no duck.
+var _duck := 1.0
 
 
 func _ready() -> void:
@@ -180,6 +234,11 @@ func _ready() -> void:
 		add_child(p3)
 		_pool_3d.append(p3)
 	_build_music()
+	_context_players = _make_music_players("Music Context", null)
+	_stinger = AudioStreamPlayer.new()
+	_stinger.name = "Music Stinger"
+	_stinger.bus = BUS_MUSIC
+	add_child(_stinger)
 	set_ambience("day")
 
 
@@ -233,6 +292,7 @@ func _build_music() -> void:
 		push_warning("AudioManager: music layers are %.2f s, too short to crossfade" % length)
 		return
 	_music_length = length
+	_tension_length = tension_length
 	_bed_players = _make_music_players("Music Bed", bed)
 	_tension_players = _make_music_players("Music Tension", tension)
 
@@ -303,7 +363,138 @@ func get_tension() -> float:
 	return _tension
 
 
+# --- Context music: menu / prologue / trial ---------------------------------
+
+## Start a context track. One at a time and mutually exclusive with the night
+## layers -- a surface that has its own track is never under the bed. "trial"
+## alternates between its two masters on each call, so a rerun does not open
+## on the same bar twice.
+func play_context(context: String) -> void:
+	var path := ""
+	var db := 0.0
+	var oneshot := false
+	match context:
+		"menu":
+			path = MUSIC_MENU_PATH
+			db = CONTEXT_MENU_DB
+		"prologue":
+			path = MUSIC_PROLOGUE_PATH
+			db = CONTEXT_PROLOGUE_DB
+			oneshot = true
+		"trial":
+			_trial_flip = not _trial_flip
+			path = MUSIC_TRIAL_ALT_PATH if _trial_flip else MUSIC_TRIAL_PATH
+			db = CONTEXT_TRIAL_DB
+		_:
+			push_warning("AudioManager: unknown music context '%s'" % context)
+			return
+	if _context_on and _context_path == path:
+		return
+	var stream := _context_stream(path, oneshot)
+	if stream == null:
+		return
+	# The incoming track takes the free player; the outgoing one retires on
+	# the gain it had reached, so the switch crossfades rather than cuts.
+	var next := 1 - _context_active
+	var retiring := _context_players[next]
+	if retiring.playing:
+		retiring.stop()
+	_context_out_gain = _context_gain if _context_on else 0.0
+	_context_out_db = _context_db
+	_context_active = next
+	_context_players[next].stream = stream
+	_context_players[next].volume_db = MUSIC_SILENCE_DB
+	_context_players[next].play()
+	_context_path = path
+	_context_db = db
+	_context_oneshot = oneshot
+	_context_gain = 0.0
+	_context_on = true
+	set_music_active(false)
+
+
+## Fade the context track out. The night layers are NOT switched back on here:
+## the night path owns that decision (set_ambience("night")), and the trial
+## path asks for it explicitly after _cleanup().
+func stop_context() -> void:
+	_context_on = false
+
+
+## The catch stinger: an impact over whatever is playing, with the night
+## layers ducked under it (see _process) rather than cut. One-shot by nature.
+func play_music_stinger() -> void:
+	var stream := _context_stream(MUSIC_STINGER_PATH, true)
+	if stream == null:
+		return
+	_stinger.stream = stream
+	_stinger.volume_db = MUSIC_STINGER_DB
+	_stinger.play()
+
+
+## Swap the bed master. Night 3 plays the alternate take: by the last night
+## the building should not sound the way it did on the first. Safe mid-night:
+## both players restart on the new take and the fade-in hides the seam.
+func set_bed_variant(night: int) -> void:
+	var want_alt := night >= 3
+	if want_alt == _bed_alt:
+		return
+	_bed_alt = want_alt
+	if _bed_players.is_empty():
+		return
+	var stream := _music_stream(MUSIC_BED_ALT_PATH if want_alt else MUSIC_BED_PATH)
+	if stream == null:
+		return
+	var bed_length := stream.get_length()
+	_music_length = minf(bed_length, _tension_length)
+	for p in _bed_players:
+		p.stream = stream
+		if p.playing:
+			p.play(0.0)
+
+
+## Load a context track. Looping contexts keep the imported stream as-is (its
+## loop=true flag wraps a seamless render); one-shots get a duplicate with the
+## flag off so the prologue's own fade-out is the real end of the take.
+func _context_stream(path: String, oneshot: bool) -> AudioStream:
+	if not ResourceLoader.exists(path):
+		push_warning("AudioManager: missing %s" % path)
+		return null
+	var stream := load(path) as AudioStream
+	if stream == null:
+		return null
+	if oneshot and stream is AudioStreamMP3:
+		stream = (stream as AudioStreamMP3).duplicate() as AudioStreamMP3
+		(stream as AudioStreamMP3).loop = false
+	return stream
+
+
+## Run the context pair for a frame: the active track towards its level, the
+## retiring one (if any) down to silence and a stop.
+func _advance_context(delta: float) -> void:
+	_context_gain = _approach(_context_gain, 1.0 if _context_on else 0.0,
+		CONTEXT_FADE_TAU, delta)
+	var current := _context_players[_context_active]
+	if _context_on and not current.playing and not _context_oneshot:
+		current.play()
+	if current.playing:
+		current.volume_db = _music_db(_context_db, _context_gain)
+	elif not _context_on and _context_gain <= 0.001:
+		_context_path = ""
+	var retiring := _context_players[1 - _context_active]
+	if retiring.playing:
+		_context_out_gain = _approach(_context_out_gain, 0.0, CONTEXT_FADE_TAU, delta)
+		retiring.volume_db = _music_db(_context_out_db, _context_out_gain)
+		if _context_out_gain <= 0.001:
+			retiring.stop()
+
+
 func _process(delta: float) -> void:
+	_advance_context(delta)
+	# The catch stinger ducks the night layers rather than cutting them: the
+	# building stays audible under the impact and swells back as the stinger
+	# decays, instead of a hole in the mix followed by a step.
+	var duck_target := STINGER_DUCK if _stinger.playing else 1.0
+	_duck = _approach(_duck, duck_target, STINGER_DUCK_TAU, delta)
 	if _music_length <= 0.0:
 		return
 	_music_gain = _approach(_music_gain, 1.0 if _music_on else 0.0, MUSIC_FADE_TAU, delta)
@@ -316,9 +507,10 @@ func _process(delta: float) -> void:
 		for p in _tension_players:
 			p.stop()
 		return
-	_bed_active = _advance_layer(_bed_players, _bed_active, MUSIC_BED_DB, _music_gain)
+	_bed_active = _advance_layer(_bed_players, _bed_active, MUSIC_BED_DB,
+		_music_gain * _duck)
 	_tension_active = _advance_layer(_tension_players, _tension_active, MUSIC_TENSION_DB,
-		_music_gain * _tension)
+		_music_gain * _tension * _duck)
 
 
 ## Framerate-independent first-order lag. Reaches 63 % of a step in `tau`

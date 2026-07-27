@@ -253,6 +253,10 @@ func begin(kind: String, player: CharacterBody3D) -> void:
 	# frame re-reads reduced_flashes and quality_preset instead of caching whatever
 	# was true when it was built, which may have been before the settings existed.
 	_frame.refresh()
+	# The pocket dimension has its own track; the night bed retires for the
+	# duration and returns in _cleanup().
+	var am:=get_tree().get_first_node_in_group("audio_manager")
+	if am!=null and am.has_method("play_context"): am.play_context("trial")
 	_show_tutorial()
 
 func abort() -> void:
@@ -1137,6 +1141,13 @@ func _return_player()->void:
 
 func _cleanup()->void:
 	_active=false; _layer.visible=false; _hide_tutorial()
+	# Out of the pocket dimension: its track retires and the night bed it
+	# replaced comes back up. Both calls land whether the exit was a clear,
+	# an abort or a fall.
+	var am:=get_tree().get_first_node_in_group("audio_manager")
+	if am!=null:
+		if am.has_method("stop_context"): am.stop_context()
+		if am.has_method("set_music_active"): am.set_music_active(true)
 	# A hidden CanvasLayer draws nothing, but the frame would keep ticking at
 	# GLITCH_HZ behind it; dropping the level to zero is what turns its _process
 	# back off. The layer is hidden first so the clean repaint is never seen.

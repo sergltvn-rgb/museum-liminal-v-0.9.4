@@ -232,6 +232,12 @@ func start(shots: Array) -> void:
 	_build_overlay()
 	_time = 0.0
 	_active = true
+	# The prologue bed: a one-shot with its own fade-out, started with the first
+	# shot rather than the first caption so it is already speaking under the
+	# opening black. Stopped in _finish() whether the scene runs out or skips.
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_context"):
+		am.play_context("prologue")
 	# Pose the first shot now. Waiting for the first _process() would leave the
 	# borrowed camera pointing wherever it was constructed for a frame — and on a
 	# paused boot that "frame" lasts until the player presses Start.
@@ -562,6 +568,13 @@ func _finish(skipped: bool) -> void:
 		_previous_camera.current = true
 	if _player != null and is_instance_valid(_player):
 		_player.set("controls_enabled", _player_controls_were)
+
+	# Hand the music back with the same timing as the visuals: out by the last
+	# frame, not fading over whatever the caller opens next. If that caller is
+	# another cutscene its own play_context() crossfades with this one anyway.
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("stop_context"):
+		am.stop_context()
 
 	# Restore before emitting, so a listener that starts the next cutscene from
 	# inside this signal borrows a viewport that is already back to normal.
