@@ -342,6 +342,71 @@ static func apply_panel(control: Control, raised: bool = true) -> void:
 # This recipe lives here and not in project.godot because Godot rewrites that
 # file whenever any setting changes and discards every ";" comment when it does.
 
+## --- Fonts ---------------------------------------------------------------
+##
+## The project shipped with NO font file at all, so every screen rendered in
+## Godot's stock sans -- which is why "выглядит как сток Godot" was a literal
+## description rather than an impression. Two OFL 1.1 faces now sit in fonts/,
+## with their licences beside them:
+##
+##   JetBrainsMono.ttf  instrument data: timers, readouts, camera IDs, coords.
+##                      Monospace, so a counting-down timer cannot jitter.
+##   Oswald.ttf         institutional voice: mastheads, signage, headings.
+##                      Condensed grotesque, the register of a building's own
+##                      wayfinding rather than of a game menu.
+##
+## GLYPH COVERAGE, verified in-engine against every distinct character the
+## shipped catalogue uses (153 of them, both locales): JetBrains Mono covers all
+## 153. Oswald misses exactly one, U+2192 RIGHTWARDS ARROW, which appears in
+## trial objectives ("ПОЛ → ЗАПАДНАЯ СТЕНА"). Hence the fallback below rather
+## than a narrower role for Oswald -- a missing glyph renders as a box, and the
+## fallback also protects every character some future string introduces.
+const MONO_FONT_PATH := "res://fonts/JetBrainsMono.ttf"
+const DISPLAY_FONT_PATH := "res://fonts/Oswald.ttf"
+
+static var _mono_font: FontFile = null
+static var _display_font: FontFile = null
+
+
+## Monospaced face for anything the operator reads as an instrument.
+static func mono_font() -> FontFile:
+	if _mono_font == null:
+		_mono_font = _load_font(MONO_FONT_PATH)
+	return _mono_font
+
+
+## Condensed face for mastheads and signage. Falls back to the mono face for
+## glyphs it lacks, so a missing character degrades to a readable one instead of
+## a tofu box.
+static func display_font() -> FontFile:
+	if _display_font == null:
+		_display_font = _load_font(DISPLAY_FONT_PATH)
+		if _display_font != null:
+			var chain: Array[Font] = []
+			var mono := mono_font()
+			if mono != null:
+				chain.append(mono)
+			_display_font.fallbacks = chain
+	return _display_font
+
+
+## load(), never load_dynamic_font(). The latter builds a FontFile with no
+## resource_path, so ResourceSaver has nowhere to point and embeds the entire
+## typeface inside whatever references it -- measured: it took
+## ui/museum_theme.tres from 10 KB to 437 KB and duplicated both faces into the
+## repository. Going through the import pipeline yields a resource with a path,
+## which serialises as a one-line ExtResource and is what an export build ships.
+static func _load_font(path: String) -> FontFile:
+	if not ResourceLoader.exists(path):
+		push_warning("UITheme: font missing at %s, falling back to the engine default" % path)
+		return null
+	var font := load(path) as FontFile
+	if font == null:
+		push_warning("UITheme: %s did not import as a FontFile" % path)
+		return null
+	return font
+
+
 ## Build the shared Theme so new controls inherit tokens without any code.
 ##
 ## Assigned once at the root of a UI tree (`root.theme = UITheme.build_theme()`)
@@ -350,6 +415,17 @@ static func apply_panel(control: Control, raised: bool = true) -> void:
 static func build_theme() -> Theme:
 	var theme := Theme.new()
 	theme.default_font_size = BODY
+
+	# Body copy defaults to the mono face: nearly everything the player reads in
+	# this game is output from a machine. Headings opt into display_font()
+	# explicitly through TerminalType, which owns the institutional voice.
+	var body_font := mono_font()
+	if body_font != null:
+		theme.default_font = body_font
+		for type_name in ["Label", "RichTextLabel", "Button", "CheckButton",
+				"OptionButton", "LineEdit", "TextEdit"]:
+			theme.set_font("font", type_name, body_font)
+		theme.set_font("normal_font", "RichTextLabel", body_font)
 
 	theme.set_font_size("font_size", "Label", BODY)
 	theme.set_color("font_color", "Label", ON_SURFACE)
