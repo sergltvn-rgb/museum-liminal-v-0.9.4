@@ -1118,6 +1118,76 @@ func _add_room_lights(parent: Node) -> void:
 			Vector3(1.8, 0.07, 0.4), f[2], 1.1)
 
 
+## Names that must never join _powered_lights. The sun and its shaft are dimmed
+## by hand, the atrium lamp is the light the blackout brings UP rather than down,
+## and the flashlight belongs to the player.
+const BLACKOUT_EXEMPT_LIGHTS := ["Sun", "Skylight Beam", "Atrium Emergency Light",
+		"Player Flashlight", "Cam Floodlight"]
+const EMERGENCY_LAMP_NAME := "Emergency Lamp"
+
+
+## Adopt the lighting when the layout came out of the saved scene.
+##
+## build_map() registers every fixture as it creates it, so the blackout has a
+## list to switch off. A layout serialized into FirstMuseumMap.tscn skips
+## build_map() entirely: the lamps are real nodes in the scene, but every handle
+## this script keeps on them is still empty or null. The blackout then fired and
+## switched off nothing -- measured: 0 registered lights, five still burning in
+## the office, which is exactly what the player saw walking in. This walks the
+## saved tree once and takes ownership of what is already there.
+func _adopt_serialized_lighting() -> void:
+	var generated := get_node_or_null("GeneratedMap")
+	if generated == null:
+		return
+	var env := generated.get_node_or_null("World Environment") as WorldEnvironment
+	if env != null:
+		_environment = env.environment
+	_sun = generated.get_node_or_null("Sun") as DirectionalLight3D
+	_sun_shaft = generated.get_node_or_null("Skylight Beam") as SpotLight3D
+	_emergency_light = generated.get_node_or_null("Atrium Emergency Light") as OmniLight3D
+	_office_light = generated.get_node_or_null("Office Fluorescent Hum") as OmniLight3D
+	_night_entrance_door = generated.get_node_or_null(
+			"Ночная дверь главного входа") as MeshInstance3D
+	_collect_serialized_lights(generated)
+
+
+## Sort every Light3D in the saved tree into mains or battery-backed. Duplicate
+## siblings arrive under engine names like @SpotLight3D@20663, so the sort is by
+## exemption rather than by a whitelist of expected names.
+func _collect_serialized_lights(node: Node) -> void:
+	var light := node as Light3D
+	if light != null:
+		var light_name := str(light.name)
+		if light_name.begins_with(EMERGENCY_LAMP_NAME):
+			light.visible = false
+			_emergency_fixtures.append(light)
+		elif not BLACKOUT_EXEMPT_LIGHTS.has(light_name):
+			_powered_lights.append(light)
+	for child in node.get_children():
+		_collect_serialized_lights(child)
+
+
+## Take the glow out of the office ceiling tube once the mains are down. The
+## material is duplicated first: lamp materials are cached and shared, so
+## editing in place would darken fittings in rooms that never lost power.
+func _dim_office_tube() -> void:
+	var generated := get_node_or_null("GeneratedMap")
+	if generated == null:
+		return
+	var tube := generated.get_node_or_null("Office Fluorescent Tube") as MeshInstance3D
+	if tube == null:
+		return
+	var mat := tube.material_override as StandardMaterial3D
+	if mat == null and tube.mesh != null and tube.mesh.get_surface_count() > 0:
+		mat = tube.mesh.surface_get_material(0) as StandardMaterial3D
+	if mat == null:
+		return
+	var dark := mat.duplicate() as StandardMaterial3D
+	dark.emission_enabled = false
+	dark.emission_energy_multiplier = 0.0
+	tube.material_override = dark
+
+
 func _check_blackout() -> void:
 	var player := get_tree().get_first_node_in_group("player") as Node3D
 	if player == null:
@@ -1157,6 +1227,11 @@ func _trigger_blackout() -> void:
 	for l in _powered_lights:
 		if is_instance_valid(l):
 			l.visible = false
+	# Switching a Light3D off leaves its housing glowing: the office tube is an
+	# emissive mesh in its own right, measured still at emission 1.40 with the
+	# lamp already dark. Way-out signage keeps its glow on purpose (see the note
+	# above _add_service_fittings); this is only the mains fitting.
+	_dim_office_tube()
 	# Make the transition unmistakably nighttime: the daylight sun is almost
 	# fully extinguished, while a restrained cold moonbeam remains at the atrium.
 	if is_instance_valid(_sun):
@@ -2777,6 +2852,11 @@ func _ready() -> void:
 		# A layout saved into the scene skips build_map(), but the Curator still
 		# needs a navigation mesh over whatever geometry that layout contains.
 		_ensure_navigation()
+		# ...and the blackout still needs to know which lamps are the mains.
+		# Editor-side this stays untouched: hiding the battery lamps there would
+		# be a scene edit rather than a runtime state.
+		if not Engine.is_editor_hint():
+			_adopt_serialized_lighting()
 	# In game (not in the editor) the map may open with the story prologue and
 	# the museum intro. _start_opening() decides for itself whether this entry
 	# deserves either -- see _prologue_should_play() / _intro_should_play(); both

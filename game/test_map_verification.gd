@@ -157,6 +157,9 @@ func _init() -> void:
 		# Last of the world checks on purpose: it opens a real incident to read
 		# what the screen then says, and that lights the alarm state up.
 		await _verify_anomaly_terminal(map_root, generated)
+		# Dead last: this one walks the player into the office and cuts the
+		# power, which is a world state no later check should have to expect.
+		await _verify_blackout(map_root, generated)
 
 	_verify_localization()
 
@@ -166,6 +169,75 @@ func _init() -> void:
 	else:
 		print("\n✅ ALL CHECKS PASSED")
 		_quit(0)
+
+
+## WALKING INTO THE OFFICE MUST ACTUALLY PUT THE LIGHTS OUT
+##
+## The failure this pins down shipped and was visible in the first screenshot of
+## the room: the player entered the Watcher Office, the blackout flag flipped,
+## the sound played -- and every ceiling lamp stayed on.
+##
+## The cause was not in _trigger_blackout(). It is that build_map() is what fills
+## _powered_lights, and the shipping scene carries a serialized layout, so
+## _ready() skips build_map() and the blackout then switched off an empty list:
+## measured 0 registered lamps against 5 still burning inside the office.
+##
+## So the check is written against the observable, not against the flag: after
+## the player stands in the office, nothing in the room may still be lit except
+## the battery lamp and the flashlight in the player's own hand.
+const OFFICE_RECT := Rect2(Vector2(-34.6, -6.6), Vector2(19.2, 13.2))
+const BLACKOUT_ALLOWED_LIT := ["Emergency Lamp", "Player Flashlight"]
+const OFFICE_TUBE_NAME := "Office Fluorescent Tube"
+
+func _verify_blackout(map_root: Node, generated: Node) -> void:
+	var registered: Array = map_root.get("_powered_lights")
+	if registered == null or registered.is_empty():
+		_fail("Blackout: no mains lamps registered, so cutting the power "
+			+ "would switch off nothing")
+		return
+	var player := get_first_node_in_group("player") as Node3D
+	if player == null:
+		_fail("Blackout: no player in the tree, the trigger can never fire")
+		return
+	paused = false
+	player.global_position = Vector3(-25.0, 1.0, -1.0)
+	for _i in range(8):
+		await process_frame
+	if not bool(map_root.get("_blackout_done")):
+		_fail("Blackout: the player stood in the middle of the office and the "
+			+ "power never went")
+		return
+	var still_lit: Array = []
+	_collect_lit_in_office(generated, still_lit)
+	if not still_lit.is_empty():
+		_fail("Blackout: %d light(s) still on in the office after the power "
+			% still_lit.size() + "went: %s" % [", ".join(still_lit)])
+		return
+	var tube := generated.get_node_or_null(OFFICE_TUBE_NAME) as MeshInstance3D
+	if tube != null:
+		var mat := tube.material_override as StandardMaterial3D
+		if mat != null and mat.emission_enabled \
+				and mat.emission_energy_multiplier > 0.01:
+			_fail("Blackout: the office tube housing still glows at %.2f"
+				% mat.emission_energy_multiplier)
+			return
+	_ok("Blackout: %d mains lamps registered, office dark on entry "
+		% registered.size() + "(only the battery lamp and the flashlight left)")
+
+
+## Everything lit inside the office rectangle that is not allowed to be.
+func _collect_lit_in_office(node: Node, into: Array) -> void:
+	var n3 := node as Node3D
+	if n3 != null and n3.is_inside_tree():
+		var p := n3.global_position
+		if OFFICE_RECT.has_point(Vector2(p.x, p.z)):
+			var light := node as Light3D
+			if light != null and light.is_visible_in_tree() \
+					and light.light_energy > 0.01 \
+					and not BLACKOUT_ALLOWED_LIT.has(str(light.name)):
+				into.append(str(light.name))
+	for child in node.get_children():
+		_collect_lit_in_office(child, into)
 
 
 ## THE TERMINAL MUST BE EQUIPMENT, AND IT MUST ANSWER THE QUESTION
