@@ -71,6 +71,24 @@ const ENHANCEMENTS_NODE := "GameplayEnhancements"
 ## these two to the shoulder triggers as well as to , and .
 const CAMERA_CYCLE_ACTIONS := ["cam_prev", "cam_next"]
 
+## The anomaly terminal, stage A: the office device that tells the operator what
+## to fetch. Found by node name because GameManager builds it under GeneratedMap.
+const TERMINAL_ROOT_NAME := "Anomaly Terminal"
+const TERMINAL_SCREEN_NAME := "Anomaly Terminal Screen"
+const TERMINAL_READOUT_NAME := "Anomaly Terminal Readout"
+const TERMINAL_ORDER_NAME := "Anomaly Terminal Order"
+## Top face of the alarm console the head is mounted on: pedestal 0.55 +- 0.55,
+## console box 1.18 +- 0.11. The device's lowest part must MEET this surface --
+## it used to float 0.86 m above it, which is why it read as a coloured
+## rectangle parked in mid-air instead of as equipment.
+const TERMINAL_CONSOLE_TOP_Y := 1.29
+## How far the lowest part may sit above the console before it is floating again.
+## Negative overlap (seating into the console) is fine and expected.
+const TERMINAL_MOUNT_TOLERANCE := 0.02
+## Slack allowed between the text stack and the lit face it must stay inside.
+## Measured worst case is 0.712 m of text on a 0.740 m face.
+const TERMINAL_TEXT_MARGIN := 0.0
+
 ## How close a placed model's node has to sit to an exhibit's anchor to BE that
 ## exhibit. MapModels.place() drops the model on the anchor outright, so this is
 ## an equality test with room for float round-tripping only.
@@ -136,6 +154,9 @@ func _init() -> void:
 		# been flushed into the space.
 		await physics_frame
 		_verify_exhibit_sightlines(generated, mounts)
+		# Last of the world checks on purpose: it opens a real incident to read
+		# what the screen then says, and that lights the alarm state up.
+		await _verify_anomaly_terminal(map_root, generated)
 
 	_verify_localization()
 
@@ -145,6 +166,122 @@ func _init() -> void:
 	else:
 		print("\n✅ ALL CHECKS PASSED")
 		_quit(0)
+
+
+## THE TERMINAL MUST BE EQUIPMENT, AND IT MUST ANSWER THE QUESTION
+##
+## Two failures this pins down, both of which shipped:
+##
+## 1. Geometry. The readout was a single 1.3 x 0.8 box at y 2.15 with a Label3D
+##    floating beside it -- 0.86 m of empty air above the console it reports
+##    for, with no stand, bezel or bracket. It read as a coloured rectangle
+##    standing nowhere.
+## 2. Legibility and content. The alarm text measured up to 0.91 m tall and
+##    2.06 m wide on a 1.3 x 0.8 face, i.e. it ran off its own screen for every
+##    anomaly in the catalogue. And only 6 of the 10 anomaly readouts name the
+##    tool at all, so for mirror_maze, yellow_halls, scrap_run and ascent the
+##    room never told the player what to fetch once the 3-second flash was gone.
+##
+## So: the parts must meet the console, the text must fit the glass for EVERY
+## anomaly, and an open incident must leave the tool named on the device.
+func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
+	var term := generated.get_node_or_null(TERMINAL_ROOT_NAME) as Node3D
+	if term == null:
+		_fail("Anomaly terminal: no '%s' node — the readout is not a mounted device"
+			% TERMINAL_ROOT_NAME)
+		return
+	var screen := term.get_node_or_null(TERMINAL_SCREEN_NAME) as MeshInstance3D
+	var readout := term.get_node_or_null(TERMINAL_READOUT_NAME) as Label3D
+	var order := term.get_node_or_null(TERMINAL_ORDER_NAME) as Label3D
+	if screen == null or readout == null or order == null:
+		_fail("Anomaly terminal: screen/readout/order parts missing (%s/%s/%s)"
+			% [screen != null, readout != null, order != null])
+		return
+
+	# 1. Does it stand on anything?
+	var lowest := INF
+	var parts := 0
+	for child in term.get_children():
+		var mi := child as MeshInstance3D
+		if mi == null or not (mi.mesh is BoxMesh):
+			continue
+		parts += 1
+		lowest = minf(lowest, mi.global_position.y - (mi.mesh as BoxMesh).size.y * 0.5)
+	var gap: float = lowest - TERMINAL_CONSOLE_TOP_Y
+	if parts < 3:
+		_fail("Anomaly terminal: only %d box parts — a bare slab again, expected a mount (posts + bezel + face)"
+			% parts)
+	elif gap > TERMINAL_MOUNT_TOLERANCE:
+		_fail("Anomaly terminal: lowest part sits %.3f m above the console top (y %.3f) — it is floating"
+			% [gap, TERMINAL_CONSOLE_TOP_Y])
+	else:
+		_ok("Anomaly terminal: %d parts, lowest meets the console top (gap %.3f m)"
+			% [parts, gap])
+
+	# 2. Does the text stay on the glass, for every anomaly, in this locale?
+	var face: Vector3 = (screen.mesh as BoxMesh).size
+	var gm: Node = map_root.get_node_or_null("GameManager")
+	var consts: Dictionary = {}
+	if gm != null and gm.get_script() != null:
+		consts = (gm.get_script() as GDScript).get_script_constant_map()
+	var anomalies: Dictionary = consts.get("ANOMALIES", {})
+	var equipment: Dictionary = consts.get("EQUIPMENT", {})
+	var saved_readout: String = readout.text
+	var saved_order: String = order.text
+	var worst_h := 0.0
+	var worst_w := 0.0
+	var worst_id := ""
+	var unnamed := 0
+	for id in anomalies:
+		var info: Dictionary = anomalies[id]
+		var device: String = tr(str(equipment[str(info["equipment"])]["name"]))
+		readout.text = Loc.fmt("HUD_TERMINAL_BREACH",
+			[tr(str(info["title"])), tr(str(info["readout"]))])
+		order.text = "%s\n%s" % [tr("HUD_PROTO_TAKE"), device]
+		await process_frame
+		var stack: float = readout.get_aabb().size.y + order.get_aabb().size.y
+		var wide: float = maxf(readout.get_aabb().size.x, order.get_aabb().size.x)
+		if stack > worst_h:
+			worst_h = stack
+			worst_id = str(id)
+		worst_w = maxf(worst_w, wide)
+		if tr(str(info["readout"])).to_upper().find(device.to_upper()) < 0:
+			unnamed += 1
+	readout.text = saved_readout
+	order.text = saved_order
+	if anomalies.is_empty():
+		_fail("Anomaly terminal: could not read ANOMALIES off GameManager — text fit unverified")
+	elif worst_h > face.y - TERMINAL_TEXT_MARGIN or worst_w > face.x - TERMINAL_TEXT_MARGIN:
+		_fail("Anomaly terminal: text spills off the %.2f x %.2f face — worst %.3f m tall (%s), %.3f m wide"
+			% [face.x, face.y, worst_h, worst_id, worst_w])
+	else:
+		_ok("Anomaly terminal: all %d anomaly readouts fit the glass (worst %.3f x %.3f on %.2f x %.2f)"
+			% [anomalies.size(), worst_w, worst_h, face.x, face.y])
+	print("    (%d of %d anomaly readouts do not name the tool themselves — the order line is what covers them)"
+		% [unnamed, anomalies.size()])
+
+	# 3. Open a real incident: the device must name the tool without being pressed.
+	if gm == null or not gm.has_method("_start_accident"):
+		_fail("Anomaly terminal: no GameManager._start_accident() — cannot verify the order line")
+		return
+	gm.call("_start_accident")
+	for _i in range(3):
+		await process_frame
+	var shown: String = order.text
+	var names_a_tool := false
+	for key in equipment:
+		var name_text: String = tr(str(equipment[key]["name"]))
+		if not name_text.is_empty() and shown.find(name_text) >= 0:
+			names_a_tool = true
+			break
+	if shown.strip_edges().is_empty():
+		_fail("Anomaly terminal: incident open and the order line is blank — the tool is only named by the flash again")
+	elif not names_a_tool:
+		_fail("Anomaly terminal: order line reads '%s' but names no equipment"
+			% shown.replace("\n", " / "))
+	else:
+		_ok("Anomaly terminal: an open incident leaves the tool named on the screen ('%s')"
+			% shown.replace("\n", " / "))
 
 
 func _verify(map_root: Node) -> void:

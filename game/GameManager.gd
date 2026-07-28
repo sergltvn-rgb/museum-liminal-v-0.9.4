@@ -220,6 +220,9 @@ var _belt_bar: InventoryBar = null
 
 var _terminal_screen: MeshInstance3D = null
 var _terminal_label: Label3D = null
+## The line that answers "what do I take?" without being pressed. See
+## _build_terminal().
+var _terminal_take: Label3D = null
 
 # The whole night HUD: one block, four slots. Replaces the objective band, the
 # timer box, the hint line, the flash banner and PlayerController's stamina
@@ -511,6 +514,11 @@ func _start_accident() -> void:
 	# Terminal readout (step 5).
 	if _terminal_label != null:
 		_terminal_label.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), tr(str(info["readout"]))])
+	# The tool, named on the device itself and left standing there. Same wording
+	# the protocol panel uses, so the room and the panel cannot disagree.
+	if _terminal_take != null:
+		_terminal_take.text = "%s\n%s" % [tr("HUD_PROTO_TAKE"),
+			tr(str(EQUIPMENT[str(info["equipment"])]["name"]))]
 	_set_screen_color(color)
 	_set_objective(Loc.fmt("OBJ_INCIDENT", [_incident_name(), _anomalies_left]))
 	_flash(tr("HUD_CONTAINMENT_BREACHED"), UITheme.DANGER)
@@ -550,6 +558,9 @@ func _resolve() -> void:
 				l.light_energy = l.light_energy * 0.45
 	if _terminal_label != null:
 		_terminal_label.text = tr("HUD_TERMINAL_RESTORED")
+	if _terminal_take != null:
+		# Nothing to fetch any more; the order must not outlive the incident.
+		_terminal_take.text = ""
 	_set_screen_color(Color(0.2, 0.8, 0.5))
 	var am := _audio()
 	if am != null:
@@ -1426,27 +1437,112 @@ func _spawn_device(id: String) -> void:
 	_device_homes[id] = body.global_transform
 
 
+## THE TERMINAL THE OPERATOR ACTUALLY READS
+##
+## What stood here was one BoxMesh 1.3 x 0.8 x 0.08 floating at y 2.15 with a
+## Label3D in the same air. Measured against the prop it belongs to: the alarm
+## console's own top surface is at y 1.29 (pedestal 0.55 +- 0.55, console box
+## 1.18 +- 0.11), so the screen hung 0.86 m ABOVE the thing it reports for, with
+## nothing between them. It read as a coloured rectangle parked in the room
+## rather than as a device standing on the console -- which is exactly the
+## complaint.
+##
+## It is now a mounted head: two posts off the console top, a bezel, and the lit
+## face INSET into that bezel, all under one root at TERMINAL_POS so the thing
+## the player presses E at and the thing the player looks at are one object.
+##
+## And it answers the question without being pressed. The tool to fetch used to
+## exist only in a flash message that lasts a few seconds and in the protocol
+## panel that times out; miss both and the room never tells you again. Slot 2 of
+## the face is now a standing line that names the tool for as long as the
+## incident is open.
 func _build_terminal() -> void:
-	# Screen above the existing "Alarm Terminal" box in the office.
+	var root := Node3D.new()
+	root.name = "Anomaly Terminal"
+	root.position = TERMINAL_POS
+	_map_root.add_child(root)
+
+	# Two posts bridging console top (y 1.29 world = -0.11 local) to the bezel's
+	# bottom edge (y 1.41 world = 0.01 local). Short on purpose: this is a head
+	# bolted to a console, not a monitor on a pole.
+	for post_index in range(2):
+		var post_x := -0.34 + float(post_index) * 0.68
+		var post := MeshInstance3D.new()
+		# Numbered, or Godot renames the second one to @MeshInstance3D@NNN and the
+		# part stops being addressable by name in tests.
+		post.name = "Anomaly Terminal Post %d" % post_index
+		var post_mesh := BoxMesh.new()
+		post_mesh.size = Vector3(0.06, 0.14, 0.06)
+		post.mesh = post_mesh
+		post.position = Vector3(post_x, -0.05, 0.0)
+		post.material_override = _terminal_shell_material()
+		post.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(post)
+
+	var bezel := MeshInstance3D.new()
+	bezel.name = "Anomaly Terminal Bezel"
+	var bezel_mesh := BoxMesh.new()
+	# 1.32 x 0.88 because the text has to FIT. Measured on the old 1.3 x 0.8 slab:
+	# the alarm readout ran 0.91 m tall and up to 2.06 m wide, i.e. it spilled off
+	# its own screen on every anomaly in the catalogue. The face below is sized
+	# from that measurement, and both labels wrap instead of running off the edge.
+	bezel_mesh.size = Vector3(1.32, 0.88, 0.09)
+	bezel.mesh = bezel_mesh
+	bezel.position = Vector3(0, 0.40, 0)
+	bezel.material_override = _terminal_shell_material()
+	root.add_child(bezel)
+
+	# The lit face, inset 0.05 into the bezel's front (-z, the desk side).
 	_terminal_screen = MeshInstance3D.new()
 	_terminal_screen.name = "Anomaly Terminal Screen"
 	var mesh := BoxMesh.new()
-	mesh.size = Vector3(1.3, 0.8, 0.08)
+	mesh.size = Vector3(1.18, 0.74, 0.02)
 	_terminal_screen.mesh = mesh
-	_terminal_screen.position = TERMINAL_POS + Vector3(0, 0.75, 0)
-	_map_root.add_child(_terminal_screen)
+	_terminal_screen.position = Vector3(0, 0.40, -0.05)
+	_terminal_screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(_terminal_screen)
 	_set_screen_color(Color(0.1, 0.3, 0.25))
+
+	# Slot 1: system state. Faces the desk side, flat against the glass.
 	_terminal_label = Label3D.new()
 	_terminal_label.name = "Anomaly Terminal Readout"
 	_terminal_label.text = tr("HUD_TERMINAL_IDLE")
-	# Faces the room centre (the desk side, -z).
-	_terminal_label.position = TERMINAL_POS + Vector3(0, 0.75, -0.12)
+	_terminal_label.position = Vector3(0, 0.52, -0.07)
 	_terminal_label.rotation_degrees = Vector3(0, 180, 0)
 	_terminal_label.font_size = 40
-	_terminal_label.pixel_size = 0.003
+	# 0.0015 / width 730 px: measured worst case (gravity_surge, 5 alarm lines
+	# over 2 order lines) then stacks 0.71 m inside a 0.74 m face.
+	_terminal_label.pixel_size = 0.0015
+	_terminal_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_terminal_label.width = 730.0
 	_terminal_label.modulate = Color(0.65, 0.95, 0.8)
 	_terminal_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_map_root.add_child(_terminal_label)
+	_terminal_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	root.add_child(_terminal_label)
+
+	# Slot 2: the answer. Quieter than the alarm line above it and warmer, because
+	# it is an instruction rather than a state. Empty until an incident opens.
+	_terminal_take = Label3D.new()
+	_terminal_take.name = "Anomaly Terminal Order"
+	_terminal_take.text = ""
+	_terminal_take.position = Vector3(0, 0.18, -0.07)
+	_terminal_take.rotation_degrees = Vector3(0, 180, 0)
+	_terminal_take.font_size = 34
+	_terminal_take.pixel_size = 0.0017
+	_terminal_take.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_terminal_take.width = 645.0
+	_terminal_take.modulate = Color(0.98, 0.86, 0.52)
+	_terminal_take.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_terminal_take.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	root.add_child(_terminal_take)
+
+
+func _terminal_shell_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.085, 0.095, 0.105)
+	mat.metallic = 0.55
+	mat.roughness = 0.42
+	return mat
 
 
 # --- Тестовая консоль (F9) --------------------------------------------------
