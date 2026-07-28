@@ -1384,6 +1384,31 @@ func _add_office_details(parent: Node) -> void:
 	# Given "", each builder still builds the physical cabinet and the physical
 	# roster board and simply hangs no Label3D on them, which is a complete
 	# object either way.
+	# THE PAPERWORK NEEDS A WALL TO BE ON.
+	#
+	# build_key_cabinet() and build_document_wall() both document their local
+	# frame as "z = 0 the wall face", and the workstation mounts them at local
+	# z 0.02 -- world z -2.38. The nearest real wall is the office's north face at
+	# z -6.65, i.e. 4.27 m behind them, so the rails, the roster and fifteen sheets
+	# hung in mid-air beside the monitors, which is exactly how they read in game.
+	#
+	# The fix is the missing object, not a move: a partition behind the desk, its
+	# front face at z -2.40, 2 cm behind the paper. It is built as TWO panels with
+	# a 1.40 m gap on x -25 rather than one 4.4 m slab, because the Archive door is
+	# at (-25, -7) directly behind this line and a solid partition would make every
+	# trip to it a detour around the room.
+	for panel in [
+		{"name": "Office Partition West", "x": -26.35, "w": 1.30},
+		{"name": "Office Partition East", "x": -23.45, "w": 1.70},
+	]:
+		var px: float = panel["x"]
+		var pw: float = panel["w"]
+		_box(parent, panel["name"], Vector3(px, 1.25, -2.46),
+			Vector3(pw, 2.50, 0.12), Color(0.145, 0.155, 0.165), 0.0, 0.15)
+		_box(parent, "%s Cap" % panel["name"], Vector3(px, 2.53, -2.46),
+			Vector3(pw + 0.08, 0.06, 0.18), Color(0.28, 0.30, 0.32), 0.0, 0.6,
+			false)
+
 	OfficeProps.build_watcher_office(parent as Node3D, Vector3(-25, 0, -2.4),
 		0.0, "", "")
 
