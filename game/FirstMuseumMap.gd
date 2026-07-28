@@ -1288,7 +1288,10 @@ func _add_atrium_landmarks(parent: Node) -> void:
 	# but they were furniture parked in the middle of the main routes, and the
 	# diagonals put them between the axes where a bench belongs.
 	for angle:float in [45.0,135.0,225.0,315.0]:
-		var r:=deg_to_rad(angle); var bench:=_box(parent,"Скамья ротонды",Vector3(cos(r)*8.4,.35,sin(r)*8.4),Vector3(2.5,.55,.68),Color(.19,.16,.13)); bench.rotation_degrees.y=-angle
+		# y = half the 0.55 height, so the bench rests ON the floor. At 0.35 it
+		# hovered 7.5 cm over the atrium, measured bottom y 0.075 with nothing
+		# underneath it.
+		var r:=deg_to_rad(angle); var bench:=_box(parent,"Скамья ротонды",Vector3(cos(r)*8.4,.275,sin(r)*8.4),Vector3(2.5,.55,.68),Color(.19,.16,.13)); bench.rotation_degrees.y=-angle
 	_add_label(parent,tr("EXHIBIT_CONTAINMENT_CORE"),Vector3(0,3.0,4.8),Color(.34,.72,.62))
 
 
@@ -2548,7 +2551,12 @@ func _add_street_extras(parent: Node) -> void:
 		_torus(parent, "Bike Rack Hoop %d" % i,
 			Vector3(10.0 + float(i) * 0.8, 0.4, 51.2), 0.32, 0.42,
 			Color(0.42, 0.45, 0.48))
-	for bin_pos: Vector3 in [Vector3(-4.8, 0.38, 52.0), Vector3(8.0, 0.38, 52.0)]:
+	# z 53.2, not 52.0. The planting beds above are 13.4 x 14.4 centred on
+	# (+-10.5, 45), so they run to z 52.2 -- both bins used to stand with their
+	# bases inside the 12 cm stone border, which measured as a bin sunk 0.11 m
+	# into the ground. 53.2 is a metre clear of the beds and 1.35 m short of the
+	# kerb at 54.55.
+	for bin_pos: Vector3 in [Vector3(-4.8, 0.38, 53.2), Vector3(8.0, 0.38, 53.2)]:
 		_cylinder(parent, "Street Bin", bin_pos, 0.28, 0.76, Color(0.16, 0.25, 0.18))
 	_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0), 0.14, 0.6,
 		Color(0.62, 0.14, 0.12))
