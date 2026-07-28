@@ -599,12 +599,19 @@ static func build_directory_board(parent: Node3D, origin: Vector3,
 ## `dais_y` is the top of the rotunda plate the core stands on (0.16 here);
 ## pass 0.0 if the plate is gone.
 ##
-## Placement was chosen against the room's real contents: the reception desk at
-## (-8.4, 11.6) clears the rotunda kerb (r 5.8), the column at (-11.5, 11.5) by
-## 3.1 m and the planter at (-10.8, 10.8) by 2.5 m; the directory board at
-## (6.4, 11.6) clears the bench at (0, 8.4) by 7.1 m and the column at
-## (11.5, 11.5) by 5.3 m. Both sit well clear of the 1.8 m entrance doorway
-## channel at x in [-0.9, 0.9].
+## Both pieces used to hug the entrance wall at z 11.6, square to it and 6.4 to
+## 8.4 m out to the sides -- far enough into the corners that a visitor walking
+## the doorway channel (x in [-0.9, 0.9], heading -z) passed them edge-on and
+## never read either one. They now stand nearer the door and angled into it:
+## the board 3.4 m to the RIGHT of the doorway and 2.2 m deeper into the room
+## at (3.4, 9.4), yawed -22 so its face turns back toward the door; reception
+## opposite it at (-5.6, 12.1), yawed +20 for the same reason.
+##
+## Clearances re-checked against the room's real contents: reception clears the
+## rotunda kerb (r 5.8) by 7.5 m, the column at (-11.5, 11.5) by 3.9 m and the
+## planter at (-10.8, 10.8) by 3.6 m; the board clears the kerb by 4.2 m and
+## the bench at (0, 8.4) by 1.4 m. Rotated, reception reaches x -3.57 and the
+## board x 2.38, so the 1.8 m doorway channel stays open.
 static func build_atrium(parent: Node3D, origin: Vector3, dais_y := 0.16,
 		ceiling_y := 3.39) -> Node3D:
 	var root := _root(parent, "Atrium Props", origin)
@@ -613,8 +620,8 @@ static func build_atrium(parent: Node3D, origin: Vector3, dais_y := 0.16,
 	build_floor_signage(root, dais)
 	build_rope_barrier(root, dais)
 	build_cable_runs(root, Vector3.ZERO, [], ceiling_y)
-	build_reception_desk(root, Vector3(-8.4, 0, 11.6), 0.0, ceiling_y)
-	build_directory_board(root, Vector3(6.4, 0, 11.6), 0.0)
+	build_reception_desk(root, Vector3(-5.6, 0, 12.1), 20.0, ceiling_y)
+	build_directory_board(root, Vector3(3.4, 0, 9.4), -22.0)
 	return root
 
 

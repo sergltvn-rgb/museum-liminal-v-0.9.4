@@ -1812,8 +1812,10 @@ func _add_model_archive(parent: Node) -> void:
 	# Server Rack 0 spans x -34.17..-33.13, z -5.62..-3.98, so the two clear.
 	MuseumModels.place(parent, "wooden_bookcases_with_books",
 		Vector3(-34.48, 0.0, -5.16), 1.0, 90.0)
-	# Bedside cabinet measured 0.61 x 0.53 x 0.27 on its own origin. Left alone.
-	MuseumModels.place(parent, "тумбочка", Vector3(-21.0, 0.0, 1.5), 0.7, 0.0)
+	# The bedside cabinet (0.61 x 0.53 x 0.27) stood in the open at (-21, 1.5),
+	# mid-floor in the watch office: domestic furniture in a security post, with
+	# nothing on it and nothing beside it. Removed rather than re-sited -- the
+	# room already has the locker, two server racks and the bookcase.
 	# The vent grille was hanging in mid-air 3.1 m from any wall, at x -18.25 in
 	# a room whose east wall face is x -15.35. Its thin axis is X (measured
 	# 0.081 deep) so it belongs on a north-south wall; its mesh runs from -0.25
@@ -1852,16 +1854,26 @@ func _add_model_archive(parent: Node) -> void:
 	# 0.55 also made it 2.00 x 2.00 m -- a square carving the size of a garage
 	# door, standing on the bare floor with no plinth under it. That is what
 	# read as a monument dumped in the foyer. The model is square head-on, so
-	# the only way to make it sane is to make it small: 0.25 gives
-	# 0.91 x 0.91 x 0.30, a bust-sized carving, and it gets the plinth a museum
-	# piece stands on. Plinth top is 1.05 and the model is CENTRED on its origin
-	# (measured -0.99..+1.01 at 0.55, i.e. +-0.455 at 0.25), so origin y 1.505
-	# sits it on the plinth. Whole piece is 1.96 m, plinth back 0.45 m off the
-	# west wall face at x -10.65, still clear of the posters at z 21 and z 25.
-	_box(parent, "Foyer Bust Plinth", Vector3(-10.2, 0.525, 18.0),
-		Vector3(0.9, 1.05, 0.9), Color(0.22, 0.21, 0.20), 0.0, 0.1)
+	# 0.25 was an over-correction: 0.91 x 0.91 on a 1.05 m plinth reads as a
+	# token, not an exhibit, and at pitch -90 the carving stood on its head.
+	# pitch +90 turns it the other way up. The model has no head/shoulder taper
+	# to measure -- a vertex-band profile is a constant 0.848 m wide over its
+	# whole height, i.e. it is a relief panel (two 1 mm plates plus one 0.41 m
+	# protrusion in the middle band), so the sign is settled by looking at it,
+	# not by measuring it.
+	#
+	# 0.35 gives a 0.85 x 0.85 m carved face, portrait scale. The MESH AABB is
+	# not the carving: it reads y 0.544..1.822 around the origin while the real
+	# vertices only run -0.434..+0.420 from it, so sitting the AABB on the plinth
+	# left the stone floating 0.21 m in the air. Origin = plinth top + 0.434.
+	# Plinth 0.90 high, carving 0.90..1.75, whole piece 1.75 m -- the carved face
+	# lands at 1.3 m, eye height for a standing viewer. Plinth is 1.45 m along
+	# the wall so the carving does not overhang it, back face at x -10.575, i.e.
+	# 0.075 off the west wall face at -10.65, clear of the posters at z 21/25.
+	_box(parent, "Foyer Bust Plinth", Vector3(-10.2, 0.45, 18.0),
+		Vector3(0.75, 0.90, 1.45), Color(0.22, 0.21, 0.20), 0.0, 0.1)
 	MuseumModels.place(parent, "elderly_woman_bust_on_pedestal",
-		Vector3(-10.2, 1.505, 18.0), 0.25, 90.0, -90.0)
+		Vector3(-10.2, 1.334, 18.0), 0.35, 90.0, 90.0)
 
 	# --- Central Atrium / Time Wing B ---------------------------------------
 	# Measured 0.51 x 0.65 x 2.32 standing on its own origin: a real 2.3 m bench.
@@ -2470,18 +2482,21 @@ func _add_outdoor(parent: Node) -> void:
 	for side: float in [-1.0, 1.0]:
 		var bx: float = side * 8.0
 		var tag: String = "West" if side < 0.0 else "East"
+		# Grown from 2.6 x 0.62 (a two-seater plank) to 3.4 x 0.72: a four-seat
+		# park bench, which is the scale the 64 m forecourt asks for. Seat top
+		# stays at 0.52 (sitting height); the back is taller, 0.55..1.13.
 		_box(parent, "Forecourt Bench %s Seat" % tag, Vector3(bx, 0.45, 43.5),
-			Vector3(2.6, 0.12, 0.62), Color(0.28, 0.22, 0.16))
-		_box(parent, "Forecourt Bench %s Back" % tag, Vector3(bx, 0.80, 43.82),
-			Vector3(2.6, 0.50, 0.08), Color(0.25, 0.19, 0.14))
+			Vector3(3.4, 0.14, 0.72), Color(0.28, 0.22, 0.16))
+		_box(parent, "Forecourt Bench %s Back" % tag, Vector3(bx, 0.84, 43.86),
+			Vector3(3.4, 0.58, 0.09), Color(0.25, 0.19, 0.14))
 		for end_side: float in [-1.0, 1.0]:
-			var ex: float = bx + end_side * 1.15
+			var ex: float = bx + end_side * 1.55
 			var end_tag: String = "L" if end_side < 0.0 else "R"
 			_box(parent, "Forecourt Bench %s Leg %s" % [tag, end_tag],
-				Vector3(ex, 0.195, 43.5), Vector3(0.10, 0.39, 0.56),
+				Vector3(ex, 0.19, 43.5), Vector3(0.12, 0.38, 0.66),
 				Color(0.20, 0.16, 0.12))
 			_box(parent, "Forecourt Bench %s Post %s" % [tag, end_tag],
-				Vector3(ex, 0.78, 43.82), Vector3(0.09, 0.54, 0.08),
+				Vector3(ex, 0.82, 43.86), Vector3(0.10, 0.62, 0.09),
 				Color(0.20, 0.16, 0.12))
 
 	_box(parent, "Museum Sign", Vector3(0, 3.5, 35.2), Vector3(7.8, 1.0, 0.3),
@@ -2587,8 +2602,13 @@ func _add_street_extras(parent: Node) -> void:
 	# bases inside the 12 cm stone border, which measured as a bin sunk 0.11 m
 	# into the ground. 53.2 is a metre clear of the beds and 1.35 m short of the
 	# kerb at 54.55.
-	for bin_pos: Vector3 in [Vector3(-4.8, 0.38, 53.2), Vector3(8.0, 0.38, 53.2)]:
-		_cylinder(parent, "Street Bin", bin_pos, 0.28, 0.76, Color(0.16, 0.25, 0.18))
+	# r 0.28 x 0.76 was a waste basket, not street furniture. r 0.36 x 1.00 with
+	# a rim puts the opening at 1.0 m, i.e. hand height, and still leaves 0.64 m
+	# to the beds at z 52.2 and 0.99 m to the kerb at 54.55.
+	for bin_pos: Vector3 in [Vector3(-4.8, 0.50, 53.2), Vector3(8.0, 0.50, 53.2)]:
+		_cylinder(parent, "Street Bin", bin_pos, 0.36, 1.00, Color(0.16, 0.25, 0.18))
+		_cylinder(parent, "Street Bin Rim", bin_pos + Vector3(0, 0.52, 0), 0.39,
+			0.06, Color(0.12, 0.19, 0.14))
 	_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0), 0.14, 0.6,
 		Color(0.62, 0.14, 0.12))
 	_sphere(parent, "Fire Hydrant Cap", Vector3(11.5, 0.66, 54.0), 0.15,
