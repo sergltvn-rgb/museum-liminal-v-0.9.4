@@ -28,3 +28,14 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Python bytecode cache from tools/ (check_localization.py and friends).
+__pycache__/
+*.pyc
+
+# Machine-local MCP bridge: the launcher, its batch file and the wrapper it
+# spawns. All three hardcode this machine's Godot path (C:\Users\litvi\...),
+# so they are useless to anyone else and noisy in every diff.
+start-mcp.cjs
+start-mcp.cmd
+bypass-wrapper.cjs
