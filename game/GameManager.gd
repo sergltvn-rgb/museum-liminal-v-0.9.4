@@ -52,7 +52,10 @@ const NIGHT_CONFIG := {
 }
 
 const DOME_POS := Vector3(0, 1.2, 0)
-const TERMINAL_POS := Vector3(-29, 1.4, 3.1)
+## Alarm console, moved out of the middle of the office and onto the operator's
+## own workstation line: 3.2 m west of the monitor bank, level with the desk.
+## Must match the Alarm Terminal boxes in FirstMuseumMap.gd.
+const TERMINAL_POS := Vector3(-28.2, 1.4, -2.38)
 
 const STATE_DAY := 0
 const STATE_COUNTDOWN := 1
@@ -1460,7 +1463,22 @@ func _build_terminal() -> void:
 	var root := Node3D.new()
 	root.name = "Anomaly Terminal"
 	root.position = TERMINAL_POS
+	# The workstation faces +z: the desk, the chair and the monitor bank's screens
+	# are all on that side. The head is built facing local -z, so the whole root is
+	# turned to meet the operator instead of the back wall.
+	root.rotation_degrees = Vector3(0, 180, 0)
 	_map_root.add_child(root)
+
+	# A foot plate on the console top, so the head grows out of the desk furniture
+	# rather than balancing on two pins.
+	var base := MeshInstance3D.new()
+	base.name = "Anomaly Terminal Base"
+	var base_mesh := BoxMesh.new()
+	base_mesh.size = Vector3(0.92, 0.04, 0.34)
+	base.mesh = base_mesh
+	base.position = Vector3(0, -0.115, 0.0)
+	base.material_override = _terminal_shell_material()
+	root.add_child(base)
 
 	# Two posts bridging console top (y 1.29 world = -0.11 local) to the bezel's
 	# bottom edge (y 1.41 world = 0.01 local). Short on purpose: this is a head
@@ -1491,6 +1509,59 @@ func _build_terminal() -> void:
 	bezel.position = Vector3(0, 0.40, 0)
 	bezel.material_override = _terminal_shell_material()
 	root.add_child(bezel)
+
+	# Casing behind the bezel. Without it the device is a 9 cm slab seen edge-on --
+	# the reason it read as a coloured rectangle rather than as a monitor.
+	var shell := MeshInstance3D.new()
+	shell.name = "Anomaly Terminal Casing"
+	var shell_mesh := BoxMesh.new()
+	shell_mesh.size = Vector3(1.16, 0.74, 0.20)
+	shell.mesh = shell_mesh
+	shell.position = Vector3(0, 0.40, 0.14)
+	shell.material_override = _terminal_shell_material()
+	root.add_child(shell)
+
+	# Hood over the glass: control-room screens get a visor against ceiling glare,
+	# and it gives the silhouette a top edge to read against the dark office.
+	var hood := MeshInstance3D.new()
+	hood.name = "Anomaly Terminal Hood"
+	var hood_mesh := BoxMesh.new()
+	hood_mesh.size = Vector3(1.36, 0.05, 0.26)
+	hood.mesh = hood_mesh
+	hood.position = Vector3(0, 0.86, -0.10)
+	hood.material_override = _terminal_shell_material()
+	root.add_child(hood)
+
+	# Power lamp on the bezel's bottom rail. Small, constant, and the one part of
+	# the device that is lit while the screen is idle.
+	var lamp := MeshInstance3D.new()
+	lamp.name = "Anomaly Terminal Power Lamp"
+	var lamp_mesh := BoxMesh.new()
+	lamp_mesh.size = Vector3(0.05, 0.02, 0.02)
+	lamp.mesh = lamp_mesh
+	lamp.position = Vector3(0.58, 0.01, -0.05)
+	var lamp_mat := StandardMaterial3D.new()
+	lamp_mat.albedo_color = Color(0.2, 0.9, 0.55)
+	lamp_mat.emission_enabled = true
+	lamp_mat.emission = Color(0.25, 1.0, 0.6)
+	lamp_mat.emission_energy_multiplier = 2.2
+	lamp.material_override = lamp_mat
+	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(lamp)
+
+	# Cable dropping off the casing into the console body.
+	var cable := MeshInstance3D.new()
+	cable.name = "Anomaly Terminal Cable"
+	var cable_mesh := BoxMesh.new()
+	cable_mesh.size = Vector3(0.035, 0.16, 0.035)
+	cable.mesh = cable_mesh
+	cable.position = Vector3(-0.42, -0.06, 0.16)
+	var cable_mat := StandardMaterial3D.new()
+	cable_mat.albedo_color = Color(0.04, 0.04, 0.045)
+	cable_mat.roughness = 0.9
+	cable.material_override = cable_mat
+	cable.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(cable)
 
 	# The lit face, inset 0.05 into the bezel's front (-z, the desk side).
 	_terminal_screen = MeshInstance3D.new()

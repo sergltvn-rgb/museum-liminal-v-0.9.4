@@ -1330,12 +1330,17 @@ func _add_office_details(parent: Node) -> void:
 	monitor_wall.name = "MonitorWall"
 	parent.add_child(monitor_wall)
 
-	# Alarm terminal remains at the coordinates used by GameManager.
-	_box(parent, "Alarm Terminal Pedestal", Vector3(-29, 0.55, 3.1),
+	# Alarm console. It used to stand at (-29, .., 3.1): 3.55 m off the south wall
+	# and 6.9 m from the desk, i.e. an island in the middle of a 13 x 13 m room,
+	# facing nothing. Measured free floor put it here instead, 3.2 m west of the
+	# monitor bank on the same line as the desk, so it reads as the left end of the
+	# operator's workstation and is a glance away from the feeds. GameManager's
+	# TERMINAL_POS and the head it builds follow these coordinates.
+	_box(parent, "Alarm Terminal Pedestal", Vector3(-28.2, 0.55, -2.38),
 		Vector3(1.65, 1.1, 0.95), Color(0.075, 0.055, 0.052), 0.0, 0.4)
-	_box(parent, "Alarm Terminal", Vector3(-29, 1.18, 3.1),
+	_box(parent, "Alarm Terminal", Vector3(-28.2, 1.18, -2.38),
 		Vector3(1.45, 0.22, 0.72), Color(0.18, 0.025, 0.02), 0.65, 0.2)
-	_box(parent, "Alarm Emergency Button", Vector3(-28.45, 1.34, 3.1),
+	_box(parent, "Alarm Emergency Button", Vector3(-27.65, 1.34, -2.38),
 		Vector3(0.16, 0.10, 0.16), Color(0.95, 0.05, 0.03), 1.5, 0.0, false)
 
 	# Server and power wall.
