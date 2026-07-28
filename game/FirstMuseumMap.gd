@@ -1312,6 +1312,24 @@ func _add_office_details(parent: Node) -> void:
 	OfficeProps.build_watcher_office(parent as Node3D, Vector3(-25, 0, -2.4),
 		0.0, "", "")
 
+	# 10.3. The bank the library just built is six housings with dark glass in
+	# them; game/MonitorWall.gd is what puts pictures on five of them. It is a
+	# separate node rather than more code in OfficeProps because the pictures come
+	# from SecurityCameraTablet's feeds -- the SAME textures the handheld shows,
+	# borrowed through feed_texture()/release_feed() -- and a static prop builder
+	# has no business holding a live rendering budget. It finds the bank by group
+	# and the tablet off the scene root, so this line is the whole wiring.
+	#
+	# The script is INSTANTIATED, not attached to a bare Node3D: set_script() on
+	# an existing node leaves the node's per-frame callback flags as they were
+	# built, so _ready() ran and _process() never did -- the wall joined its group
+	# and then sat there with no bank, no tablet and no pictures. Measured, not
+	# assumed: a probe printed _built=false with all three references null.
+	var wall_script := load("res://game/MonitorWall.gd") as GDScript
+	var monitor_wall := wall_script.new() as Node3D
+	monitor_wall.name = "MonitorWall"
+	parent.add_child(monitor_wall)
+
 	# Alarm terminal remains at the coordinates used by GameManager.
 	_box(parent, "Alarm Terminal Pedestal", Vector3(-29, 0.55, 3.1),
 		Vector3(1.65, 1.1, 0.95), Color(0.075, 0.055, 0.052), 0.0, 0.4)

@@ -59,6 +59,18 @@ const ROOM_RECT_EPSILON := 0.01
 ## colliders. Hits further out than this are things standing in the way.
 const EXHIBIT_SELF_CLEARANCE := 1.7
 
+## Owner of the office wall's panel -> feed layout (stage 10.3).
+const MONITOR_WALL_SCRIPT := "res://game/MonitorWall.gd"
+## Groups the wall and the bank it dresses join, which is the only way either is
+## found: both are built procedurally, so neither has a stable node path.
+const MONITOR_WALL_GROUP := "monitor_wall"
+const MONITOR_BANK_GROUP := "monitor_bank"
+## Consumer of the wall's watched_feed() contract -- the night-two source scan.
+const ENHANCEMENTS_NODE := "GameplayEnhancements"
+## Cycling feeds must stay reachable without a keyboard. InputBootstrap binds
+## these two to the shoulder triggers as well as to , and .
+const CAMERA_CYCLE_ACTIONS := ["cam_prev", "cam_next"]
+
 ## How close a placed model's node has to sit to an exhibit's anchor to BE that
 ## exhibit. MapModels.place() drops the model on the anchor outright, so this is
 ## an equality test with room for float round-tripping only.
@@ -112,6 +124,13 @@ func _init() -> void:
 		var mounts := _camera_mounts(generated)
 		_verify_camera_geometry(mounts)
 		_verify_minimap_rooms(generated)
+		# 10.6. MonitorWall assembles itself in _process and not in _ready --
+		# the player, the bank and the tablet are all created in the same frame
+		# it is -- so it is asserted after one more idle frame, not inside
+		# _verify().
+		await process_frame
+		await _verify_monitor_wall(map_root, generated)
+		_verify_camera_cycle_actions()
 		# The sightline sweep queries the physics world, which is only readable
 		# once a physics step has run and the freshly added static bodies have
 		# been flushed into the space.
@@ -282,6 +301,262 @@ func _verify(map_root: Node) -> void:
 				_fail("Atrium/Gravity shared wall does not meet at x=15 (%.3f vs %.3f)" % [seam_a, seam_b])
 			else:
 				_ok("Atrium/Gravity shared wall coincides at x=15")
+
+
+# ---------------------------------------------------------------------------
+# 10.6. The office wall, and the two things about it that a screenshot proves
+# and a test suite otherwise cannot.
+#
+# The bank has been six framed panels since the office was rebuilt; since 10.3
+# five of them show pictures. Three separate contracts hold that up, and each of
+# them has already been broken once by an ordinary refactor elsewhere:
+#
+#   1. The dead panel stays dead. Its darkness and its three-degree tilt are the
+#      prop's whole point, and the layout deliberately gives it the one wing the
+#      player cannot get into on night one.
+#   2. The layout is by wing, not by index. "The first six feeds" would put two
+#      Atrium cameras and the office's own camera on the wall and no wing at all.
+#   3. ONE texture per feed. The wall and the handheld are two consumers of the
+#      same SubViewport; the failure mode is a second set of viewports appearing
+#      quietly and doubling the render cost while looking completely correct.
+func _verify_monitor_wall(map_root: Node, generated: Node) -> void:
+	var wall: Node = null
+	for node in get_nodes_in_group(MONITOR_WALL_GROUP):
+		if generated.is_ancestor_of(node) or node == generated:
+			wall = node
+			break
+	if wall == null:
+		_fail("Monitor wall: no node in group '%s' — the office bank has no live feeds"
+			% MONITOR_WALL_GROUP)
+		return
+
+	var bank: Node3D = null
+	for node in get_nodes_in_group(MONITOR_BANK_GROUP):
+		var candidate := node as Node3D
+		if candidate != null and generated.is_ancestor_of(candidate):
+			bank = candidate
+			break
+	if bank == null:
+		_fail("Monitor wall: no monitor bank in group '%s'" % MONITOR_BANK_GROUP)
+		return
+
+	var panels := int(bank.get_meta("panels", 0))
+	var dead_panel := int(bank.get_meta("dead_panel", -1))
+	if panels != 6:
+		_fail("Monitor wall: the bank carries %d panels, not the six the office is built around" % panels)
+	if dead_panel < 0 or dead_panel >= panels:
+		_fail("Monitor wall: no dead panel — the bank publishes dead_panel %d of %d"
+			% [dead_panel, panels])
+
+	var layout: Variant = _script_constant(MONITOR_WALL_SCRIPT, "PANEL_FEEDS")
+	if typeof(layout) != TYPE_ARRAY:
+		return
+	var feeds: Variant = _script_constant(CAMERA_TABLET_SCRIPT, "CAMS")
+	if typeof(feeds) != TYPE_ARRAY:
+		return
+	var cams: Array = feeds
+	var panel_feeds: Array = layout
+	if panel_feeds.size() != panels:
+		_fail("Monitor wall: PANEL_FEEDS names %d panels but the bank builds %d"
+			% [panel_feeds.size(), panels])
+
+	# Every panel addresses a real post, and no post is on the wall twice: two
+	# panels showing one feed would look like a working bank while wasting a
+	# sixth of it.
+	var seen := {}
+	for panel in range(panel_feeds.size()):
+		var feed_index := int(panel_feeds[panel])
+		if feed_index < 0 or feed_index >= cams.size():
+			_fail("Monitor wall: panel %d asks for feed %d, and CAMS declares %d"
+				% [panel, feed_index, cams.size()])
+			continue
+		if seen.has(feed_index):
+			_fail("Monitor wall: panels %d and %d both show feed %d"
+				% [seen[feed_index], panel, feed_index])
+			continue
+		seen[feed_index] = panel
+
+	# Contract 1: the live panels are every panel but the dead one, and the dead
+	# one's post is on nobody's screen.
+	var live: Array = wall.call("live_feeds") if wall.has_method("live_feeds") else []
+	if live.size() != panels - 1:
+		_fail("Monitor wall: %d panels hold feeds, expected %d (six panels, one dead)"
+			% [live.size(), panels - 1])
+	if dead_panel >= 0 and dead_panel < panel_feeds.size():
+		var dead_feed := int(panel_feeds[dead_panel])
+		if live.has(dead_feed):
+			_fail("Monitor wall: the dead panel's feed %d is being drawn — the broken monitor lit up"
+				% dead_feed)
+		if bank.get_node_or_null("Monitor Feed %d" % dead_panel) != null:
+			_fail("Monitor wall: panel %d is the dead one but carries a picture quad" % dead_panel)
+		# It is dark, and it still says which camera the operator has lost.
+		if bank.get_node_or_null("Monitor Caption %d" % dead_panel) == null:
+			_fail("Monitor wall: the dead panel %d carries no caption — the room does not say which post is gone"
+				% dead_panel)
+
+	# Every live panel has a quad, and every quad is on the CCTV-hidden layer so
+	# CAM 04 -- which is aimed at this very wall -- cannot film a monitor showing
+	# itself showing a monitor.
+	var hidden_layer := int(_script_constant(MONITOR_WALL_SCRIPT, "CCTV_HIDDEN_LAYER"))
+	var hidden_mask := 1 << (hidden_layer - 1)
+	var quads := 0
+	for panel in range(panel_feeds.size()):
+		if panel == dead_panel:
+			continue
+		var quad := bank.get_node_or_null("Monitor Feed %d" % panel) as MeshInstance3D
+		if quad == null:
+			_fail("Monitor wall: live panel %d has no picture quad" % panel)
+			continue
+		if quad.layers != hidden_mask:
+			_fail("Monitor wall: panel %d's picture is on layers %d, not the CCTV-hidden layer %d — the office feed will film itself"
+				% [panel, quad.layers, hidden_layer])
+			continue
+		quads += 1
+	if quads == panels - 1:
+		_ok("Monitor wall: %d live panels, one dead, all pictures hidden from the CCTV layer" % quads)
+
+	# Contract 2: the layout is by wing. "First six feeds" is the failure this
+	# rules out, so the assertion is about which ROOMS are on the wall, read off
+	# the catalogue keys CAMS already carries.
+	var wings := {}
+	for feed_index in live:
+		var row: Dictionary = cams[int(feed_index)]
+		var label := str(row.get("label", ""))
+		if label.begins_with("CAM_WING_"):
+			wings[label] = true
+	if wings.size() < 3:
+		_fail("Monitor wall: only %d exhibit wings are on the bank — the layout has fallen back to feed order"
+			% wings.size())
+	else:
+		_ok("Monitor wall: layout spans %d exhibit wings plus the approach" % wings.size())
+
+	# Contract 3: one texture per feed, shared. Taking the same feed twice must
+	# hand back the SAME texture, and the tablet must still own exactly one
+	# viewport per post -- a wall that quietly built its own would pass every
+	# check above while costing twice the frame.
+	var tablet: Node = map_root.get_node_or_null("SecurityCameraTablet")
+	if tablet == null or not tablet.has_method("feed_texture"):
+		_fail("Monitor wall: SecurityCameraTablet exposes no feed_texture() to share")
+		return
+	var viewports := 0
+	for child in tablet.get_children():
+		if child is SubViewport:
+			viewports += 1
+	if viewports != cams.size():
+		_fail("Monitor wall: the tablet owns %d feed viewports for %d posts — the wall is rendering its own copies"
+			% [viewports, cams.size()])
+	else:
+		_ok("Monitor wall: %d feed viewports for %d posts — wall and handheld share one render each"
+			% [viewports, cams.size()])
+	var shared := 0
+	for feed_index in live:
+		var first: Texture2D = tablet.call("feed_texture", int(feed_index))
+		var second: Texture2D = tablet.call("feed_texture", int(feed_index))
+		if first == null:
+			_fail("Monitor wall: feed %d hands back no texture" % int(feed_index))
+		elif first != second:
+			_fail("Monitor wall: feed %d hands a different texture to each consumer" % int(feed_index))
+		else:
+			shared += 1
+		# Taken only to compare; a test must not leave five feeds rendering.
+		tablet.call("release_feed", int(feed_index))
+	if shared == live.size() and shared > 0:
+		_ok("Monitor wall: all %d wall feeds are the same textures the handheld shows" % shared)
+
+	# The scan may be satisfied from the wall as well as from the handheld, and
+	# only from inside the office: the wall answers -1 while it holds no feeds,
+	# and the player spawns at the entrance, twenty-five metres away.
+	if not wall.has_method("watched_feed"):
+		_fail("Monitor wall: no watched_feed() — the source scan cannot be confirmed from the bank")
+	elif int(wall.call("watched_feed")) != -1:
+		_fail("Monitor wall: watched_feed() answers a post while the player is not in the office")
+	else:
+		_ok("Monitor wall: watched_feed() is silent outside the office")
+	var enhancements: Node = map_root.get_node_or_null(ENHANCEMENTS_NODE)
+	if enhancements == null:
+		_fail("Monitor wall: %s is missing, so nothing reads the bank" % ENHANCEMENTS_NODE)
+	elif not enhancements.has_method("_wall_shows_required"):
+		_fail("Monitor wall: %s no longer consults the bank — the scan is handheld-only again"
+			% ENHANCEMENTS_NODE)
+	else:
+		_ok("Monitor wall: the source scan accepts the bank as well as the handheld")
+
+	# ...and the branch is only real if watched_feed() can ever answer. Stand at
+	# each panel in turn and aim at it: five must name their own post and the dead
+	# one must stay silent. Without this the wall could hold five pictures, report
+	# -1 forever, and no other check would notice the feature was decorative.
+	var player := get_first_node_in_group("player") as Node3D
+	var player_camera := player.get_node_or_null("Player Camera") as Camera3D if player != null else null
+	if player == null or player_camera == null:
+		_fail("Monitor wall: no player camera to aim at the bank")
+		return
+	# The map is generated paused, and the wall only tracks the operator's gaze on
+	# unpaused frames. Both the pause flag and the player's pose are put back.
+	var was_paused := paused
+	var player_pose := player.global_transform
+	var camera_pose := player_camera.transform
+	paused = false
+	var answered := 0
+	for panel in range(panel_feeds.size()):
+		var screen := bank.get_node_or_null("Monitor Screen %d" % panel) as Node3D
+		if screen == null:
+			continue
+		# 1.5 m out along the bank's own facing, eyes at panel height.
+		player.global_position = screen.global_position \
+			+ bank.global_basis.z * 1.5 - Vector3(0.0, 0.9, 0.0)
+		await process_frame
+		player_camera.look_at(screen.global_position, Vector3.UP)
+		for _i in range(4):
+			await process_frame
+		var watched := int(wall.call("watched_feed"))
+		if panel == dead_panel:
+			if watched != -1:
+				_fail("Monitor wall: looking at the dead panel %d reports post %d"
+					% [panel, watched])
+			else:
+				answered += 1
+		elif watched != int(panel_feeds[panel]):
+			_fail("Monitor wall: looking at panel %d reports post %d, expected %d"
+				% [panel, watched, int(panel_feeds[panel])])
+		else:
+			answered += 1
+	# Put the operator back at the entrance and let the wall drop its feeds before
+	# the tree is paused again, so the sweep leaves nothing rendering.
+	player.global_transform = player_pose
+	player_camera.transform = camera_pose
+	for _i in range(3):
+		await process_frame
+	paused = was_paused
+	if answered == panel_feeds.size():
+		_ok("Monitor wall: each of the %d panels names its own post when looked at, the dead one stays silent"
+			% answered)
+
+
+# Cycling feeds must remain reachable on a controller. Both actions carry a key
+# AND a shoulder trigger; a refactor that rebinds them to keys only takes the
+# CCTV pages away from a gamepad player entirely, which no other check notices.
+func _verify_camera_cycle_actions() -> void:
+	var bound := 0
+	for action_variant in CAMERA_CYCLE_ACTIONS:
+		var action := str(action_variant)
+		if not InputMap.has_action(action):
+			_fail("Camera cycling: input action '%s' does not exist" % action)
+			continue
+		var has_pad := false
+		var has_key := false
+		for event in InputMap.action_get_events(action):
+			if event is InputEventJoypadMotion or event is InputEventJoypadButton:
+				has_pad = true
+			elif event is InputEventKey:
+				has_key = true
+		if not has_pad:
+			_fail("Camera cycling: '%s' has no gamepad binding" % action)
+		elif not has_key:
+			_fail("Camera cycling: '%s' has no keyboard binding" % action)
+		else:
+			bound += 1
+	if bound == CAMERA_CYCLE_ACTIONS.size():
+		_ok("Camera cycling: %d actions bound on both keyboard and gamepad" % bound)
 
 
 func _count_nodes(node: Node, counts: Dictionary) -> void:

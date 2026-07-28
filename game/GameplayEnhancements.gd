@@ -196,6 +196,8 @@ var _exposure := 0.0
 var _scan_progress := 0.0
 var _scan_complete := false
 var _required_camera := -1
+## The office monitor bank (game/MonitorWall.gd), resolved by group on demand.
+var _monitor_wall: Node = null
 var _base_gravity := 18.0
 var _base_walk := 4.5
 var _base_run := 7.5
@@ -427,12 +429,18 @@ func _update_void() -> void:
 	_flashlight.visible = user_enabled and fmod(_phase, 3.7) > 0.22
 
 
+## Confirming the source. Satisfied from EITHER of the two places the same feed
+## can be watched since 10.3: the raised handheld, or the office wall, where the
+## monitor showing that post is the same texture the handheld would show. Making
+## the wall count is not a concession -- walking to the office and finding the
+## post on the bank is the more deliberate act of the two, and the dead panel
+## means one required camera can never be confirmed that way.
 func _update_scan(delta: float) -> void:
 	if _scan_complete or _required_camera < 0 or _tablet == null:
 		return
 	var open := bool(_tablet.get("_open"))
 	var active_camera := int(_tablet.get("_active"))
-	if open and active_camera == _required_camera:
+	if (open and active_camera == _required_camera) or _wall_shows_required():
 		_scan_progress += delta
 		if _scan_progress >= SCAN_TIME:
 			_scan_complete = true
@@ -440,6 +448,21 @@ func _update_scan(delta: float) -> void:
 			_game.clear_objective("cctv")
 	else:
 		_scan_progress = maxf(0.0, _scan_progress - delta * 0.5)
+
+
+## Whether the office wall is currently showing the required post to a player who
+## is actually looking at that panel. The wall answers -1 whenever it is not
+## holding feeds at all, so this cannot be satisfied from outside the office.
+func _wall_shows_required() -> bool:
+	if _monitor_wall == null or not is_instance_valid(_monitor_wall):
+		# The wall is built with the map, which finishes after this node's
+		# _initialize(), so it is resolved lazily rather than cached at startup.
+		_monitor_wall = get_tree().get_first_node_in_group("monitor_wall")
+		if _monitor_wall == null:
+			return false
+	if not _monitor_wall.has_method("watched_feed"):
+		return false
+	return int(_monitor_wall.call("watched_feed")) == _required_camera
 
 
 func can_resolve() -> bool:

@@ -442,6 +442,22 @@ static func build_monitor_bank(parent: Node3D, origin: Vector3, columns := 3,
 	var dead_index: int = 2 if panels > 3 else -1
 	var glare_index: int = panels - 2
 
+	# Published so game/MonitorWall.gd can hang live feeds on this installation
+	# without duplicating the layout arithmetic above -- it needs to know how many
+	# panels there are and which one it must NOT light. Panel indices are
+	# row-major from the bottom row, which is the order the loop below builds.
+	#
+	# A panel that gets a feed is covered by an unshaded quad 0.004 m in front of
+	# its screen, so the glare panel's blown-out look survives only while nothing
+	# is driving it. That is the right way round: a monitor with a picture is a
+	# monitor with a picture.
+	root.add_to_group("monitor_bank")
+	root.set_meta("panels", panels)
+	root.set_meta("columns", columns)
+	root.set_meta("rows", rows)
+	root.set_meta("dead_panel", dead_index)
+	root.set_meta("glare_panel", glare_index)
+
 	for row in range(rows):
 		for col in range(columns):
 			var idx := row * columns + col
