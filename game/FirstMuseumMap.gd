@@ -217,15 +217,12 @@ func _primitive(parent: Node, node_name: String, prim_position: Vector3,
 # They are not deleted -- they are real world-building on foot -- they are moved
 # onto their own visual layer. The player camera, the intro camera and the editor
 # preview camera all keep Godot's default all-layers cull_mask and still see
-# them; _hide_signage_from_cctv() drops this one bit from the tablet's feed
-# cameras. Layer 20 is the last of the twenty and nothing else in the project
-# touches `layers` or `cull_mask` at all.
+# them; SecurityCameraTablet drops this one bit from the cull_mask of every feed
+# camera it builds, in _make_cameras(), mirroring this number as its own
+# CCTV_HIDDEN_LAYER. Layer 20 is the last of the twenty and nothing else in the
+# project touches `layers` or `cull_mask` at all.
 const CCTV_HIDDEN_LAYER := 20
 const CCTV_HIDDEN_MASK := 1 << (CCTV_HIDDEN_LAYER - 1)
-## Identifies the feed cameras in _hide_signage_from_cctv(). Compared as a path
-## rather than preloaded: the map must not take a hard dependency on the tablet,
-## and the headless suites instantiate this scene without one.
-const CCTV_TABLET_SCRIPT := "res://game/SecurityCameraTablet.gd"
 
 
 func _add_label(parent: Node, text: String, label_position: Vector3,
@@ -2764,11 +2761,6 @@ func _ready() -> void:
 	# every return to the menu and after the win screen.
 	if not Engine.is_editor_hint():
 		call_deferred("_start_opening")
-		# Deferred so it runs after the whole tree is ready. The tablet builds its
-		# Camera3D nodes in its own _ready(), which Godot runs before this one
-		# (children first), but relying on that ordering for a one-shot fixup is
-		# not worth the coupling.
-		call_deferred("_hide_signage_from_cctv")
 		_install_navigation_aid()
 
 
@@ -2826,31 +2818,12 @@ func _install_navigation_aid() -> void:
 	_nav_aid.set_features(true, true, true)
 
 
-## Drop CCTV_HIDDEN_MASK from the cull_mask of every feed camera the security
-## tablet builds, so the monitors show a museum instead of a fan of billboarded
-## room names, mount tags and wing-door notices turning to face the lens.
-##
-## HAND-OFF: this belongs in SecurityCameraTablet._make_cameras(), one line next
-## to `cam.fov = 75.0`. It lives here only because that file is owned elsewhere
-## this round; the map is the side that knows which layer the signage is on.
-## Nothing breaks if the tablet takes it over -- clearing an already-clear bit is
-## a no-op -- so the move can happen whenever, and this function then deletes.
-func _hide_signage_from_cctv() -> void:
-	# The tablet is a plain Node beside the map in FirstMuseumMap.tscn; look at
-	# this node's children and its siblings rather than walking ten thousand
-	# generated meshes looking for eleven cameras.
-	var hosts: Array[Node] = get_children()
-	var host_parent := get_parent()
-	if host_parent != null:
-		hosts.append_array(host_parent.get_children())
-	for host in hosts:
-		var script := host.get_script() as Script
-		if script == null or script.resource_path != CCTV_TABLET_SCRIPT:
-			continue
-		for child in host.get_children():
-			var feed := child as Camera3D
-			if feed != null:
-				feed.cull_mask &= ~CCTV_HIDDEN_MASK
+# The signage fixup that used to live here is gone: SecurityCameraTablet now
+# clears CCTV_HIDDEN_MASK itself, in the same breath as it sets each feed's fov.
+# The hand-off note asked for that move, and it had become urgent rather than
+# tidy -- the feed cameras hang inside SubViewports since stage 10.1, so a
+# fixup that walked this node's Camera3D children would have found none and
+# said nothing about it.
 
 
 func _process(delta: float) -> void:

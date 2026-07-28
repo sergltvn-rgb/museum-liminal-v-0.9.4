@@ -87,7 +87,7 @@ extends Node
 ## apart in the title -- and inside FEED_DEAD_RANGE it goes out altogether.
 ##
 ## The player is hunting the monster THROUGH the thing the monster disturbs. Two
-## rules keep that a hunt rather than a wallhack:
+## rules keep that a hunt rather than unfair:
 ##
 ##   * It is the ACTIVE feed only. Nothing on the mini-map marks a contaminated
 ##     camera; the operator has to be looking at that feed to learn anything, and
@@ -160,6 +160,35 @@ const TILT_SPEED := 40.0
 ## Vertical opening of every feed. Shared with the mini-map view cone so the
 ## wedge on the map and the picture on screen cannot drift apart.
 const CAM_FOV := 75.0
+
+# --- FEED RENDERING ---------------------------------------------------------
+#
+# A feed is a Camera3D inside its own SubViewport, not a camera that takes the
+# player's viewport over. That is what lets ONE picture reach TWO consumers --
+# this tablet and, from 10.3, the monitors on the office wall -- and it is what
+# stops "watching CCTV" from meaning "the operator is blind".
+#
+# Cost is the whole design here, not an afterthought: the museum already spends
+# ~5000 draw calls a frame, so a feed renders ONLY while somebody asks for it
+# (see feed_texture), at 256x192, and no more than FEED_BUDGET_PER_FRAME of them
+# are stepped in any one frame. The rest hold their last drawn frame -- which on
+# a security monitor reads as a security monitor, not as a compromise.
+
+## Feed resolution. Low because it is cheap AND because this is what CCTV looks
+## like; the pixels are visible on purpose.
+const FEED_SIZE := Vector2i(256, 192)
+## Redraws per second per wanted feed. Deliberately not 60: a picture that
+## updates nine times a second reads as a recording, not as a window.
+const FEED_REFRESH_HZ := 9.0
+## Ceiling on feeds stepped in one frame, whatever the clock says they owe. Two
+## viewports of 256x192 is the spike this file is willing to put in a frame.
+const FEED_BUDGET_PER_FRAME := 2
+## Mirrors FirstMuseumMap.CCTV_HIDDEN_LAYER. Billboarded room names, mount tags
+## and door notices live on that layer; a feed that renders them shows a fan of
+## text turning to face the lens instead of a museum. Taken over from the map's
+## _hide_signage_from_cctv(), which asked for exactly this move in its own
+## hand-off note -- the camera is built here, so the cull mask belongs here.
+const CCTV_HIDDEN_LAYER := 20
 
 # --- MINI-MAP GEOMETRY ------------------------------------------------------
 ## Inset between the map panel's edge and the mapped floor plan.
@@ -332,6 +361,20 @@ const ROOMS: Array = [
 
 var _player: CharacterBody3D = null
 var _cams: Array[Camera3D] = []
+## One SubViewport per feed, index-aligned with _cams and CAMS.
+var _feed_views: Array[SubViewport] = []
+## Whether each feed is currently drawn at all. Index-aligned with _feed_views.
+var _feed_wanted: Array[bool] = []
+## Seconds owed before each feed is stepped again; negative means overdue.
+var _feed_due: Array[float] = []
+## Consumers holding a feed through feed_texture(): index -> true. Separate from
+## the tablet's own active feed, so lowering the tablet cannot switch off a
+## monitor on the wall and a monitor cannot keep the tablet's feed alive.
+var _feed_holders := {}
+## Where the round-robin resumes, so a feed cannot be starved by an earlier one.
+var _feed_cursor := 0
+## The window's picture. Its texture is whichever feed is on screen.
+var _picture: TextureRect
 var _lights: Array[SpotLight3D] = []
 var _base_rot: Array[Vector3] = []
 var _buttons: Array[Button] = []
@@ -383,9 +426,29 @@ func _ready() -> void:
 
 func _make_cameras() -> void:
 	for c in CAMS:
+		# One SubViewport per post. `world_3d` is taken from the tablet's own
+		# viewport because a SubViewport left alone builds a private, EMPTY
+		# World3D -- the feed would come back black and nothing would say why.
+		# It has to be assigned after add_child: before that there is no
+		# viewport above this node to read the world off.
+		var view := SubViewport.new()
+		view.name = "Feed %s" % String(c["id"]).replace(" ", "")
+		view.size = FEED_SIZE
+		view.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+		# Nothing is drawn until somebody asks for it; see _step_feeds().
+		view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		# No antialiasing on a security feed -- it costs, and it would smooth
+		# away the one thing the low resolution is here to provide.
+		view.msaa_3d = Viewport.MSAA_DISABLED
+		add_child(view)
+		view.world_3d = get_viewport().world_3d
+		_feed_views.append(view)
+		_feed_wanted.append(false)
+		_feed_due.append(0.0)
+
 		var cam := Camera3D.new()
 		cam.name = String(c["id"]).replace(" ", "")
-		add_child(cam)
+		view.add_child(cam)
 		cam.global_position = c["pos"]
 		cam.look_at(c["target"], Vector3.UP)
 		# Push the lens just past the physical camera prop, otherwise the
@@ -394,7 +457,11 @@ func _make_cameras() -> void:
 		cam.global_position += -cam.global_transform.basis.z * 0.55
 		cam.near = 0.15
 		cam.fov = CAM_FOV
-		cam.current = false
+		# Current WITHIN its own SubViewport, which is now the whole of its
+		# reach: it can no longer take the player's screen. That is precisely
+		# why raising the tablet stopped blinding the operator.
+		cam.current = true
+		cam.cull_mask &= ~(1 << (CCTV_HIDDEN_LAYER - 1))
 		_cams.append(cam)
 		_base_rot.append(cam.rotation_degrees)
 		# IR floodlight aligned with the lens, toggled with F.
@@ -409,6 +476,70 @@ func _make_cameras() -> void:
 		light.visible = false
 		cam.add_child(light)
 		_lights.append(light)
+
+
+## The texture a consumer should show, plus a standing request to keep that feed
+## drawn. This is how the office monitors get a picture in 10.3 without either
+## side knowing the other's node layout. Callers must release() what they take.
+func feed_texture(index: int) -> Texture2D:
+	if index < 0 or index >= _feed_views.size():
+		return null
+	_feed_holders[index] = true
+	_refresh_feed_wants()
+	return _feed_views[index].get_texture()
+
+
+## Give a feed back. A monitor that goes dark, or a wall that is torn down, must
+## stop the cost as well as the picture.
+func release_feed(index: int) -> void:
+	if _feed_holders.erase(index):
+		_refresh_feed_wants()
+
+
+## Recompute which feeds are drawn: whatever consumers hold, plus the one a
+## raised tablet is showing. A feed nobody looks at is switched OFF rather than
+## slowed down -- on this map "cheaper" is not the same as "free".
+func _refresh_feed_wants() -> void:
+	for i in range(_feed_views.size()):
+		var wanted: bool = _feed_holders.has(i) or (_open and i == _active)
+		if _feed_wanted[i] == wanted:
+			continue
+		_feed_wanted[i] = wanted
+		if wanted:
+			# Draw on the very next frame instead of making a cut wait out a
+			# ninth of a second on a black window.
+			_feed_due[i] = 0.0
+			_feed_views[i].render_target_update_mode = SubViewport.UPDATE_ONCE
+		else:
+			_feed_views[i].render_target_update_mode = SubViewport.UPDATE_DISABLED
+
+
+## Round-robin pacer. Every wanted feed owes a redraw FEED_REFRESH_HZ times a
+## second; at most FEED_BUDGET_PER_FRAME are granted in any frame, and the cursor
+## resumes where it left off so the same early feed cannot eat the budget every
+## frame while a later one holds a frozen picture forever.
+func _step_feeds(delta: float) -> void:
+	var count := _feed_views.size()
+	if count == 0:
+		return
+	var period := 1.0 / FEED_REFRESH_HZ
+	var granted := 0
+	for offset in range(count):
+		var i := (_feed_cursor + offset) % count
+		if not _feed_wanted[i]:
+			continue
+		# Debited before the budget check, so a feed that misses its turn is
+		# further overdue next frame rather than quietly slipping a beat.
+		_feed_due[i] -= delta
+		if _feed_due[i] > 0.0:
+			continue
+		if granted >= FEED_BUDGET_PER_FRAME:
+			continue
+		granted += 1
+		_feed_due[i] = period
+		_feed_views[i].render_target_update_mode = SubViewport.UPDATE_ONCE
+	if granted > 0:
+		_feed_cursor = (_feed_cursor + granted) % count
 
 
 # --- CONSTRUCTION -----------------------------------------------------------
@@ -443,6 +574,22 @@ func _build_ui() -> void:
 	_feed.name = "Picture"
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame.body.add_child(_feed)
+
+	# The picture itself, BEFORE the overlays, so the static burst, the dropout
+	# and the burn-in strip all still paint over it. This Control used to be a
+	# transparent hole with a hijacked 3D camera behind it; now the feed arrives
+	# as a texture and the room behind the tablet keeps rendering.
+	_picture = TextureRect.new()
+	_picture.name = "Feed Texture"
+	_picture.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# KEEP_ASPECT_COVERED, not STRETCH: a 4:3 feed in a wider window would
+	# otherwise be letterboxed inside a bezel that is already a matte, and the
+	# operator would read the black bars as part of the picture.
+	_picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	# Nearest, so 256x192 blown up stays honest pixels instead of a blur.
+	_picture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_feed.add_child(_picture)
 
 	_build_feed_overlays()
 	_build_map()
@@ -1184,7 +1331,8 @@ func _toggle() -> void:
 		# repaint from whatever the frame reports once it has.
 		_window = Rect2()
 		# force: the feed being restored is by definition the active one, and
-		# raising the tablet has to make its camera current again.
+		# raising the tablet has to put its picture back on the window and
+		# start paying for its redraws again.
 		_switch_to(_active, true)
 	else:
 		_update_floodlight()
@@ -1201,9 +1349,10 @@ func _toggle() -> void:
 		_dropout.color.a = 0.0
 		_lost_plate.visible = false
 		_player.controls_enabled = _controls_allowed()
-		var player_cam := _player.get_node_or_null("Player Camera") as Camera3D
-		if player_cam:
-			player_cam.current = true
+		# There is no camera to give back any more: the feeds render into their
+		# own SubViewports, so the player's camera was never taken away. All
+		# lowering the tablet has to do is stop paying for the feed it showed.
+		_refresh_feed_wants()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -1276,7 +1425,12 @@ func _switch_to(index: int, force: bool = false) -> void:
 	_pan = 0.0
 	_tilt = 0.0
 	_cams[index].rotation_degrees = _base_rot[index]
-	_cams[index].current = true
+	# Hand the window the new feed's texture, then re-price the feeds: the one
+	# being left stops being paid for in the same breath, or a shift spent
+	# cycling would end with eleven viewports all drawing.
+	if _picture != null:
+		_picture.texture = _feed_views[index].get_texture()
+	_refresh_feed_wants()
 	_cam_label.text = String(CAMS[index]["id"])
 	# The room name is the frame's title, so it rots with the rest of the page
 	# when the feed is being interfered with.
@@ -1330,6 +1484,10 @@ func _update_floodlight() -> void:
 
 
 func _process(delta: float) -> void:
+	# Ahead of the early return: from 10.3 the office monitors hold feeds while
+	# the tablet is DOWN, and a pacer that only ran on a raised tablet would
+	# leave a wall of six screens frozen on whatever they last drew.
+	_step_feeds(delta)
 	if not _open:
 		return
 	_time += delta
