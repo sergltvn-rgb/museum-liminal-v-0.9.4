@@ -1803,11 +1803,16 @@ func _add_model_archive(parent: Node) -> void:
 	# was a 0.49 m torch; 0.25 makes it 0.22 m, which is a torch.
 	MuseumModels.place(parent, "tactical_flashlight",
 		Vector3(-24.35, 0.767, -1.78), 0.25, 25.0)
-	# Bookcase and bedside cabinet were both measured correct: 0.77 x 1.56 x 1.58
-	# and 0.61 x 0.53 x 0.27, both standing on their own origin on the floor.
-	# Left exactly where they were.
+	# The bookcase is an L-shaped Victorian pair -- a tall unit plus a corner
+	# unit -- and at 0.8 it stood 1.56 m tall in OPEN FLOOR, 3.5 m from the west
+	# wall, which reads as dollhouse furniture parked in a walkway. 1.0 makes
+	# the tall unit 1.95 m with 0.25 m book shelves, and the L is tucked into
+	# the corner it is shaped for: tall unit's back against the west wall face
+	# (x -34.65), corner unit's back against the north wall face (z -6.65).
+	# Server Rack 0 spans x -34.17..-33.13, z -5.62..-3.98, so the two clear.
 	MuseumModels.place(parent, "wooden_bookcases_with_books",
-		Vector3(-31.0, 0.0, -4.2), 0.8, 90.0)
+		Vector3(-34.48, 0.0, -5.16), 1.0, 90.0)
+	# Bedside cabinet measured 0.61 x 0.53 x 0.27 on its own origin. Left alone.
 	MuseumModels.place(parent, "тумбочка", Vector3(-21.0, 0.0, 1.5), 0.7, 0.0)
 	# The vent grille was hanging in mid-air 3.1 m from any wall, at x -18.25 in
 	# a room whose east wall face is x -15.35. Its thin axis is X (measured
@@ -1844,8 +1849,19 @@ func _add_model_archive(parent: Node) -> void:
 	# the wall, standing 1.05 m in from the west wall FACE at x -10.65 (the
 	# -10.825 this used to quote is the slab's centre line, which is 0.175 m
 	# inside the wall) and clear of the two exhibition posters at z 21 and z 25.
+	# 0.55 also made it 2.00 x 2.00 m -- a square carving the size of a garage
+	# door, standing on the bare floor with no plinth under it. That is what
+	# read as a monument dumped in the foyer. The model is square head-on, so
+	# the only way to make it sane is to make it small: 0.25 gives
+	# 0.91 x 0.91 x 0.30, a bust-sized carving, and it gets the plinth a museum
+	# piece stands on. Plinth top is 1.05 and the model is CENTRED on its origin
+	# (measured -0.99..+1.01 at 0.55, i.e. +-0.455 at 0.25), so origin y 1.505
+	# sits it on the plinth. Whole piece is 1.96 m, plinth back 0.45 m off the
+	# west wall face at x -10.65, still clear of the posters at z 21 and z 25.
+	_box(parent, "Foyer Bust Plinth", Vector3(-10.2, 0.525, 18.0),
+		Vector3(0.9, 1.05, 0.9), Color(0.22, 0.21, 0.20), 0.0, 0.1)
 	MuseumModels.place(parent, "elderly_woman_bust_on_pedestal",
-		Vector3(-9.6, 0.99, 18.0), 0.55, 90.0, -90.0)
+		Vector3(-10.2, 1.505, 18.0), 0.25, 90.0, -90.0)
 
 	# --- Central Atrium / Time Wing B ---------------------------------------
 	# Measured 0.51 x 0.65 x 2.32 standing on its own origin: a real 2.3 m bench.
@@ -2446,12 +2462,27 @@ func _add_outdoor(parent: Node) -> void:
 				Vector3(0.42, 0.28, 0.42), Color(0.92, 0.86, 0.68), 0.55)
 
 	# Facing benches form a deliberate pause point halfway to the entrance.
+	# The seat and the back used to be two planks hanging in mid-air: the seat
+	# floated at y 0.39..0.51 and the back at 0.55..1.05 with nothing under
+	# either of them. Legs at both ends and two posts carrying the back make it
+	# a bench. Both benches also shared one node name, so Godot renamed the
+	# second pair to @MeshInstance3D@NNN; they are told apart by side now.
 	for side: float in [-1.0, 1.0]:
 		var bx: float = side * 8.0
-		_box(parent, "Forecourt Bench Seat", Vector3(bx, 0.45, 43.5),
+		var tag: String = "West" if side < 0.0 else "East"
+		_box(parent, "Forecourt Bench %s Seat" % tag, Vector3(bx, 0.45, 43.5),
 			Vector3(2.6, 0.12, 0.62), Color(0.28, 0.22, 0.16))
-		_box(parent, "Forecourt Bench Back", Vector3(bx, 0.80, 43.82),
+		_box(parent, "Forecourt Bench %s Back" % tag, Vector3(bx, 0.80, 43.82),
 			Vector3(2.6, 0.50, 0.08), Color(0.25, 0.19, 0.14))
+		for end_side: float in [-1.0, 1.0]:
+			var ex: float = bx + end_side * 1.15
+			var end_tag: String = "L" if end_side < 0.0 else "R"
+			_box(parent, "Forecourt Bench %s Leg %s" % [tag, end_tag],
+				Vector3(ex, 0.195, 43.5), Vector3(0.10, 0.39, 0.56),
+				Color(0.20, 0.16, 0.12))
+			_box(parent, "Forecourt Bench %s Post %s" % [tag, end_tag],
+				Vector3(ex, 0.78, 43.82), Vector3(0.09, 0.54, 0.08),
+				Color(0.20, 0.16, 0.12))
 
 	_box(parent, "Museum Sign", Vector3(0, 3.5, 35.2), Vector3(7.8, 1.0, 0.3),
 		Color(0.16, 0.18, 0.22))
