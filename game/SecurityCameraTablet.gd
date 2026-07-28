@@ -417,11 +417,155 @@ var _status_minute := -1
 var _status_core := ""
 var _status_level := -1
 
+# --- The tablet as an object in the hands (stage 10.2) ---------------------
+# Until now the tablet had no body: the feed simply appeared, and the device the
+# whole room is built around existed nowhere in the room. The shell below is the
+# same object the cradle on the desk holds -- same 0.22 x 0.15 case -- parented
+# to the player's camera, and the overlay is no longer allowed on screen until it
+# has been raised far enough to read.
+#
+# The shell's local frame is the camera's: -Z away from the eye, so the screen
+# faces the player and the back of the case is what the museum sees.
+
+const SHELL_SIZE := Vector3(0.220, 0.150, 0.014)
+const RAISE_SECONDS := 0.30
+## Down at the hip, tipped away and out of the sightline; and up in front of the
+## face, tipped back the way a hand holds a screen it is reading.
+const SHELL_POS_STOWED := Vector3(0.26, -0.46, -0.32)
+const SHELL_POS_RAISED := Vector3(0.075, -0.125, -0.315)
+const SHELL_ROT_STOWED := Vector3(-74.0, -18.0, 10.0)
+const SHELL_ROT_RAISED := Vector3(-12.0, -3.0, 0.0)
+## The overlay IS this shell's screen, so it goes on only once the case is most
+## of the way up, and off the instant it starts down. A fully readable page on a
+## case still swinging at the hip is the artefact this threshold exists to stop.
+const SHELL_SCREEN_ON := 0.62
+
+var _shell: Node3D = null
+var _shell_glow: StandardMaterial3D = null
+## 0.0 stowed, 1.0 raised. Driven every frame, closed as well as open: the half
+## that plays while `_open` is already false is the half that puts it away.
+var _raise := 0.0
+## The cradle's tablet, hidden for as long as the operator is holding this one.
+## Two copies of one device on screen at once is the contradiction it resolves.
+var _docked: Node3D = null
+
 
 func _ready() -> void:
 	_player = get_tree().get_first_node_in_group("player") as CharacterBody3D
 	_make_cameras()
 	_build_ui()
+	_build_shell()
+
+
+## Procedural shell: case, screen, lens and charge lamp, plus grip ridges on the
+## back where the room can see them. Boxes with their own materials, like every
+## other prop in this museum -- no imported mesh.
+##
+## Every part sits on the CCTV layer, which each feed camera culls (see
+## _make_cameras): a wall camera looking at the operator has to show the
+## operator, not a slab floating through their chest.
+func _build_shell() -> void:
+	var cam := _player_camera()
+	if cam == null:
+		# No player in the scene -- the standalone map, or a probe. The tablet
+		# still works as a screen; it just has no hands to sit in.
+		return
+	_shell = Node3D.new()
+	_shell.name = "Carried Tablet"
+	cam.add_child(_shell)
+	_shell.position = SHELL_POS_STOWED
+	_shell.rotation_degrees = SHELL_ROT_STOWED
+	_shell.visible = false
+
+	var front := SHELL_SIZE.z * 0.5 + 0.001
+	_shell_mesh("Case", Vector3.ZERO, SHELL_SIZE, Color(0.074, 0.080, 0.088), 0.0)
+	var screen := _shell_mesh("Screen", Vector3(0.0, 0.004, front),
+		Vector3(SHELL_SIZE.x - 0.024, SHELL_SIZE.y - 0.024, 0.002),
+		Color(0.055, 0.085, 0.090), 0.0)
+	_shell_glow = screen.material_override as StandardMaterial3D
+	_shell_mesh("Lens", Vector3(0.0, SHELL_SIZE.y * 0.5 - 0.008, front),
+		Vector3(0.008, 0.008, 0.002), Color(0.020, 0.024, 0.030), 0.0)
+	_shell_mesh("Charge Lamp",
+		Vector3(SHELL_SIZE.x * 0.5 - 0.020, -SHELL_SIZE.y * 0.5 + 0.010, front),
+		Vector3(0.010, 0.004, 0.002), Color(0.900, 0.560, 0.120), 1.4)
+	for side in [-1.0, 1.0]:
+		_shell_mesh("Grip", Vector3(side * (SHELL_SIZE.x * 0.5 - 0.016), 0.0,
+			-SHELL_SIZE.z * 0.5 - 0.003),
+			Vector3(0.014, SHELL_SIZE.y - 0.040, 0.006),
+			Color(0.035, 0.040, 0.046), 0.0)
+
+
+func _shell_mesh(part_name: String, part_position: Vector3, size: Vector3,
+		color: Color, emission_energy: float) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.55
+	mat.metallic = 0.2
+	if emission_energy > 0.0:
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = emission_energy
+	var node := MeshInstance3D.new()
+	node.name = part_name
+	node.mesh = mesh
+	node.material_override = mat
+	node.position = part_position
+	# Culled by every feed camera; see _make_cameras().
+	node.layers = 1 << (CCTV_HIDDEN_LAYER - 1)
+	_shell.add_child(node)
+	return node
+
+
+func _player_camera() -> Camera3D:
+	if _player == null:
+		_player = get_tree().get_first_node_in_group("player") as CharacterBody3D
+	if _player == null:
+		return null
+	return _player.get_node_or_null("Player Camera") as Camera3D
+
+
+## The raise and the lower, and the only owner of `_layer.visible`.
+##
+## Called from _process ahead of its early return, for the same reason the feed
+## pacer is: a lowering animation that only ran while the tablet was open would
+## never play at all.
+func _step_raise(delta: float) -> void:
+	# The player is NOT in the tree when this node runs _ready -- the map spawns
+	# them -- so the shell built there lands on a null camera and the tablet keeps
+	# no body for the whole run. Retried once a frame until the camera exists,
+	# which costs one group lookup on a scene that genuinely has no player.
+	if _shell == null:
+		_build_shell()
+	var target := 1.0 if _open else 0.0
+	if not is_equal_approx(_raise, target):
+		_raise = move_toward(_raise, target, delta / maxf(0.01, RAISE_SECONDS))
+	if _shell != null and is_instance_valid(_shell):
+		# Smoothstep, not linear: the hand accelerates out of the hip and settles
+		# at the top instead of arriving at full speed and stopping dead.
+		var t := smoothstep(0.0, 1.0, _raise)
+		_shell.visible = _raise > 0.002
+		_shell.position = SHELL_POS_STOWED.lerp(SHELL_POS_RAISED, t)
+		_shell.rotation_degrees = SHELL_ROT_STOWED.lerp(SHELL_ROT_RAISED, t)
+		if _shell_glow != null:
+			# The case's own screen brightens with the page, so the glow on the
+			# bezel and the picture the player reads agree with each other.
+			_shell_glow.emission_enabled = t > 0.05
+			_shell_glow.emission_energy_multiplier = t * 0.9
+	if _layer != null:
+		_layer.visible = _open and _raise >= SHELL_SCREEN_ON
+	_sync_docked()
+
+
+## Empty the cradle for as long as the tablet is out of it. Looked up by group so
+## the office props stay a static builder that knows nothing about this node.
+func _sync_docked() -> void:
+	if _docked == null or not is_instance_valid(_docked):
+		_docked = get_tree().get_first_node_in_group("docked_tablet") as Node3D
+		if _docked == null:
+			return
+	_docked.visible = _raise <= 0.002
 
 
 func _make_cameras() -> void:
@@ -1314,8 +1458,17 @@ func _toggle() -> void:
 		_sfx("fail")
 		return
 	_open = not _open
-	_layer.visible = _open
+	# `_layer.visible` is _step_raise's to set: the page appears when the shell is
+	# most of the way up, not on the frame the key was pressed.
 	_sfx("tablet_open" if _open else "tablet_click")
+	# Stage 10 ruled that a device and the tablet cannot be held at once. Rather
+	# than refuse the tablet -- which would lock CCTV away for as long as the
+	# operator carries a tool -- the belt re-derives what is in the hands: the
+	# carried body hides while the tablet is up and comes back when it goes down.
+	# It never leaves its slot, so nothing is dropped and nothing is lost.
+	var hands := _game_manager()
+	if hands != null and hands.has_method("_sync_belt"):
+		hands.call("_sync_belt")
 	if _open:
 		_player.controls_enabled = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1488,6 +1641,9 @@ func _process(delta: float) -> void:
 	# the tablet is DOWN, and a pacer that only ran on a raised tablet would
 	# leave a wall of six screens frozen on whatever they last drew.
 	_step_feeds(delta)
+	# Same placement, same reason: the second half of the raise animation plays
+	# with `_open` already false, and it is the half that stows the tablet.
+	_step_raise(delta)
 	if not _open:
 		return
 	_time += delta

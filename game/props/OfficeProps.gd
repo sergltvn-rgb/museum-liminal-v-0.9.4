@@ -591,6 +591,35 @@ static func _build_tablet_dock(parent: Node3D, dock_origin: Vector3) -> void:
 		_box(dock, "Dock Contact", Vector3(side * 0.045, 0.031, -0.04),
 			Vector3(0.022, 0.006, 0.012), COL_LED_AMBER, 1.2)
 
+	# The cradle is no longer empty. An empty dock read as a missing prop rather
+	# than as a tablet in use, and the tablet the operator raises came from
+	# nowhere. This is that same device -- same 0.22 x 0.15 case as
+	# SecurityCameraTablet.SHELL_SIZE -- at rest, leaning on the spine at the
+	# spine's own 20 degrees.
+	#
+	# Geometry keeps the 0.17 this function's header promises -- MEASURED over the
+	# real mesh corners, not derived. The first attempt centred the slab at 0.0985
+	# on the arithmetic of a 0.075 half-height leaning 20 degrees and a probe read
+	# 0.1714: a 14 mm case has a corner, and tipping it lifts that corner another
+	# 2.4 mm above the centre plane. 0.096 measures 0.1689, and the bottom edge
+	# sinks into the base plate where nothing can see it.
+	#
+	# SecurityCameraTablet hides this node by group for as long as the player is
+	# holding the tablet, so the office never shows two of them at once.
+	var slab := _root(dock, "Docked Tablet", Vector3(0, 0.096, -0.058), 0.0)
+	slab.rotation_degrees = Vector3(-20, 0, 0)
+	slab.add_to_group("docked_tablet")
+	_box(slab, "Tablet Case", Vector3.ZERO, Vector3(0.22, 0.15, 0.014),
+		COL_SHELL, 0.0, 0.35)
+	# Asleep in the cradle: a dark pane with the room in it, not a second live
+	# feed. The charge lamp is the only lit part of a docked tablet.
+	_box(slab, "Tablet Screen", Vector3(0, 0.004, 0.009),
+		Vector3(0.196, 0.126, 0.002), COL_SCREEN_DEAD, 0.0, 0.1)
+	_box(slab, "Tablet Lens", Vector3(0, 0.067, 0.009),
+		Vector3(0.008, 0.008, 0.002), COL_DARK)
+	_box(slab, "Tablet Charge Lamp", Vector3(0.090, -0.065, 0.009),
+		Vector3(0.010, 0.004, 0.002), COL_LED_AMBER, 1.2)
+
 
 # ===========================================================================
 # The chair

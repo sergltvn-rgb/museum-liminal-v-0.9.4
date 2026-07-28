@@ -1202,8 +1202,12 @@ func _sync_belt() -> void:
 			_belt[index] = ""
 			continue
 		# Only the active slot is in the hands; the rest are on the belt, which in
-		# a first-person camera means not drawn.
-		body.visible = index == _belt_slot
+		# a first-person camera means not drawn. The raised CCTV tablet empties the
+		# hands too: stage 10 ruled that a device and the tablet cannot be held at
+		# once, and hiding the body is that rule WITHOUT taking the device off the
+		# belt -- lowering the tablet brings the same device back to the same slot.
+		# SecurityCameraTablet._toggle() calls this function on both edges.
+		body.visible = index == _belt_slot and not _camera_tablet_open()
 	_carried_id = _belt[_belt_slot]
 	if _belt_bar != null and is_instance_valid(_belt_bar):
 		_belt_bar.set_belt(_belt_names(), _belt_slot)
