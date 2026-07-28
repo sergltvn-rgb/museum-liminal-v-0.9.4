@@ -575,10 +575,15 @@ static func build_directory_board(parent: Node3D, origin: Vector3,
 		var row_y: float = 2.10 - 0.30 * float(i)
 		_box(root, "Directory Tab %d" % i, Vector3(-0.78, row_y, 0.055),
 			Vector3(0.16, 0.16, 0.03), WING_TINTS[i], 0.25)
-		# Left-aligned text fills a 1.32 m box centred on the node, so the node
-		# sits half a box right of where the first glyph should land (-0.58).
-		var text := _label(root, _tr(WING_KEYS[i]), Vector3(0.08, row_y, 0.058),
-			SIGN_TEXT, 30, 0.0040, 1.32)
+		# The first glyph of a LEFT-aligned Label3D lands on the node, not half a
+		# box to the left of it -- the comment that used to be here claimed the
+		# opposite and the rows were placed on that claim. Measured: the row text
+		# began 5 cm right of the panel centre and "Крыло D — Масса" is 1.00 m
+		# wide, so it ran to 1.08 on a panel that ends at 0.97, i.e. off the right
+		# edge and into thin air. Starting at -0.62 clears the 0.16 colour tab at
+		# -0.78 and leaves the longest row ending at 0.38, well inside the panel.
+		var text := _label(root, _tr(WING_KEYS[i]), Vector3(-0.62, row_y, 0.058),
+			SIGN_TEXT, 30, 0.0040, 1.50)
 		text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		_box(root, "Directory Rule %d" % i, Vector3(0, row_y - 0.145, 0.055),
 			Vector3(1.72, 0.012, 0.02), Color(0.20, 0.21, 0.22))
@@ -620,7 +625,7 @@ static func build_atrium(parent: Node3D, origin: Vector3, dais_y := 0.16,
 	build_floor_signage(root, dais)
 	build_rope_barrier(root, dais)
 	build_cable_runs(root, Vector3.ZERO, [], ceiling_y)
-	build_reception_desk(root, Vector3(-5.6, 0, 12.1), 20.0, ceiling_y)
+	build_reception_desk(root, Vector3(-4.4, 0, 10.6), 24.0, ceiling_y)
 	build_directory_board(root, Vector3(3.4, 0, 9.4), -22.0)
 	return root
 

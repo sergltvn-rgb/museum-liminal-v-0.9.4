@@ -1287,11 +1287,34 @@ func _add_atrium_landmarks(parent: Node) -> void:
 	# straight through one. The room is 30 m wide so they never blocked the bake,
 	# but they were furniture parked in the middle of the main routes, and the
 	# diagonals put them between the axes where a bench belongs.
+	# Each of these was one 2.5 x 0.55 x 0.68 slab with rotation_degrees.y set to
+	# -angle. That yaw puts the LONG axis on the radius, so all four pointed at
+	# the core end-on: from anywhere in the room they read as blocks of stone
+	# aimed at nothing, and they seated two. Yaw -(angle + 90) turns the long
+	# axis onto the tangent, and the back goes on the outward side, so the seat
+	# faces the core -- which is the one thing in this room worth sitting to look
+	# at. Same 3.4 x 0.72 four-seater as the forecourt benches, built from the
+	# same parts, with the angle in every node name: two nodes sharing a name
+	# under one parent get the second one renamed to @MeshInstance3D@NNN by
+	# Godot, and this loop used to produce four "Скамья ротонды" in a row.
 	for angle:float in [45.0,135.0,225.0,315.0]:
-		# y = half the 0.55 height, so the bench rests ON the floor. At 0.35 it
-		# hovered 7.5 cm over the atrium, measured bottom y 0.075 with nothing
-		# underneath it.
-		var r:=deg_to_rad(angle); var bench:=_box(parent,"Скамья ротонды",Vector3(cos(r)*8.4,.275,sin(r)*8.4),Vector3(2.5,.55,.68),Color(.19,.16,.13)); bench.rotation_degrees.y=-angle
+		var r:=deg_to_rad(angle)
+		var radial:=Vector3(cos(r),0,sin(r))
+		var tangent:=Vector3(-sin(r),0,cos(r))
+		var base:=radial*8.4
+		var yaw:=-(angle+90.0)
+		var tag:="%d" % int(angle)
+		var seat:=_box(parent,"Скамья ротонды %s" % tag,base+Vector3(0,.45,0),Vector3(3.4,.14,.72),Color(.19,.16,.13))
+		seat.rotation_degrees.y=yaw
+		var back:=_box(parent,"Спинка скамьи ротонды %s" % tag,base+radial*.30+Vector3(0,.84,0),Vector3(3.4,.58,.09),Color(.19,.16,.13))
+		back.rotation_degrees.y=yaw
+		for side:float in [-1.0,1.0]:
+			var end_tag:String = "%s%s" % [tag, "A" if side<0.0 else "B"]
+			var e:=base+tangent*(side*1.55)
+			var leg:=_box(parent,"Ножка скамьи ротонды %s" % end_tag,e+Vector3(0,.19,0),Vector3(.12,.38,.66),Color(.16,.14,.12))
+			leg.rotation_degrees.y=yaw
+			var post:=_box(parent,"Стойка скамьи ротонды %s" % end_tag,e+radial*.30+Vector3(0,.82,0),Vector3(.10,.62,.09),Color(.16,.14,.12))
+			post.rotation_degrees.y=yaw
 	_add_label(parent,tr("EXHIBIT_CONTAINMENT_CORE"),Vector3(0,3.0,4.8),Color(.34,.72,.62))
 
 

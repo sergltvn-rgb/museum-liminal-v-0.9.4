@@ -14,6 +14,11 @@ extends CharacterBody3D
 @export var air_acceleration := 8.0
 @export var air_control := 0.42
 @export var step_height := 0.38
+## How far ahead the step probe looks. One frame of walking is 7.5 cm at 60 Hz,
+## which is not enough to see a kerb before the body is already jammed into it.
+@export var step_probe_distance := 0.30
+## Slack above the ledge, so the body lands ON the step and not INSIDE it.
+@export var step_clearance := 0.02
 @export var coyote_time := 0.12
 @export var jump_buffer_time := 0.14
 @export var short_jump_multiplier := 0.48
@@ -48,6 +53,13 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera.current = true
 	stamina = max_stamina
+	# Going DOWN a step was the other half of the defect. Without a snap length
+	# the body leaves the floor at the lip of every step, spends a few frames in
+	# the air (so is_on_floor() is false, so the step logic and the footsteps and
+	# the coyote timer all switch off) and lands with a thud. Snapping over the
+	# same height the player can climb makes a flight of steps walkable in both
+	# directions.
+	floor_snap_length = maxf(step_height, 0.1)
 
 
 ## SettingsManager pushes the saved sensitivity onto whatever is in the "player"
@@ -133,14 +145,51 @@ func _physics_process(delta: float) -> void:
 	var was_falling := velocity.dot(gravity_direction.normalized())>3.0
 	move_and_slide(); _update_safe_transform(delta); _update_footsteps(delta,wants_run,was_falling)
 
-func _try_step_up(direction:Vector3,speed:float,delta:float)->void:
-	if direction.length_squared()<.01 or step_height<=0.0:return
-	var forward_motion:=direction.normalized()*speed*delta
-	if not test_move(global_transform,forward_motion):return
-	var up_motion:=Vector3.UP*step_height
-	if test_move(global_transform,up_motion):return
-	if test_move(global_transform.translated(up_motion),forward_motion):return
-	global_position+=up_motion
+## Walking over a kerb, measured rather than assumed.
+##
+## The old version probed exactly one frame of motion (speed * delta -- 7.5 cm
+## at walking pace and 60 Hz, less on a fast machine), and on any hit at all it
+## teleported the body up by the WHOLE step_height and left it there. A 4 cm
+## floor seam threw the camera up 38 cm and gravity dropped it back the same
+## frame, which is the hop the player kept hitting. It also never checked that
+## anything was underneath the raised body, so it would climb the face of a
+## wall whenever there was clearance above it and then fall back down.
+##
+## This version measures the ledge:
+##   1. probe at least `step_probe_distance` ahead, so a kerb is seen before the
+##      body is already pressed into it;
+##   2. give up if there is no headroom for the lift;
+##   3. give up if the obstacle is still in the way once lifted -- that is a
+##      wall, not a step;
+##   4. drop the lifted body back down and take the REAL rise from how far it
+##      fell before touching the ledge;
+##   5. give up if the ledge is too steep to stand on, using the body's own
+##      floor_max_angle rather than a second opinion about what a floor is.
+##
+## The lift is applied to the position directly, as before: velocity is left
+## alone so the step costs no speed and adds no upward momentum.
+func _try_step_up(direction: Vector3, speed: float, delta: float) -> void:
+	if direction.length_squared() < 0.01 or step_height <= 0.0:
+		return
+	var forward: Vector3 = direction.normalized() * maxf(speed * delta, step_probe_distance)
+	if not test_move(global_transform, forward):
+		return
+	var lift: Vector3 = Vector3.UP * (step_height + step_clearance)
+	if test_move(global_transform, lift):
+		return
+	var lifted: Transform3D = global_transform.translated(lift)
+	if test_move(lifted, forward):
+		return
+	var landing: Transform3D = lifted.translated(forward)
+	var hit := KinematicCollision3D.new()
+	if not test_move(landing, -lift, hit):
+		return
+	if hit.get_normal().dot(Vector3.UP) < cos(floor_max_angle):
+		return
+	var rise: float = lift.y - hit.get_travel().length()
+	if rise <= 0.001:
+		return
+	global_position += Vector3.UP * minf(rise + step_clearance, lift.y)
 
 func _update_safe_transform(delta:float)->void:
 	_safe_position_timer+=delta
