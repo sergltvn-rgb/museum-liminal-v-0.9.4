@@ -173,6 +173,13 @@ const BINDING_ROWS := [
 	{"label": "SET_BIND_INTERACT", "actions": ["interact"]},
 	{"label": "SET_BIND_TABLET", "actions": ["tablet"]},
 	{"label": "SET_BIND_DROP", "actions": ["drop_item"]},
+	# Two rows for six actions, because that is how the player counts them: the
+	# number row is one control, cycling is another. Legends are read out of
+	# InputMap, so the wheel and R3 / BACK appear here without being transcribed
+	# -- and a player who never notices the belt bar still finds it on this page.
+	{"label": "SET_BIND_BELT",
+		"actions": ["slot_1", "slot_2", "slot_3", "slot_4"]},
+	{"label": "SET_BIND_BELT_CYCLE", "actions": ["slot_next", "slot_prev"]},
 	{"label": "SET_BIND_PAUSE", "actions": ["pause"]},
 ]
 

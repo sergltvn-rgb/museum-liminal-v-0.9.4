@@ -186,7 +186,37 @@ var _puzzle: Node = null
 
 var _devices: Dictionary = {}
 var _device_homes: Dictionary = {}
+## The id in the operator's HANDS, or "". DERIVED -- _sync_belt() is the only
+## writer. Six readers already trust this name and none of them had to change
+## when the belt arrived: GameplayEnhancements._carried_tool() (the chalk),
+## the orientation's "lantern" step, _update_hint(), _sync_status_slot(),
+## _resolve() and _retry(). That is the whole reason the belt is expressed as
+## "four slots, one of which is this variable" rather than as a new owner.
 var _carried_id := ""
+
+# --- THE BELT ---------------------------------------------------------------
+#
+# The operator used to carry exactly one device. A pickup with full hands did
+# nothing at all -- no refusal, no sound -- and the walk back to Equipment
+# Storage (x -35..-15) after guessing wrong cost more of the night than the
+# incident did. Four slots, because four is what one hand of number keys covers
+# and what the storage row is laid out in.
+#
+# The rules are deliberately thin, and all four are about the same distinction:
+#   * only the ACTIVE slot is in the hands. The other three are on the belt,
+#     hidden, and cannot be applied to an incident -- _interact() reads
+#     _carried_id, which is the active slot and nothing else;
+#   * a pickup fills the active slot when it is empty, otherwise the first free
+#     one, and it always becomes the active slot, because a device that landed
+#     on a hidden slot reads as a device that vanished;
+#   * a pickup with no free slot REFUSES OUT LOUD (HUD_BELT_FULL);
+#   * "drop" drops the active slot only -- the one the player can see.
+# _resolve() spends the active slot, _retry() empties the whole belt back onto
+# the pedestals.
+const BELT_SLOTS := 4
+var _belt: Array[String] = ["", "", "", ""]
+var _belt_slot := 0
+var _belt_bar: InventoryBar = null
 
 var _terminal_screen: MeshInstance3D = null
 var _terminal_label: Label3D = null
@@ -430,6 +460,22 @@ func _input(event: InputEvent) -> void:
 		_drop_device()
 	elif event.is_action_pressed("interact"):
 		_interact()
+	elif event.is_action_pressed("slot_next"):
+		_cycle_slot(1)
+	elif event.is_action_pressed("slot_prev"):
+		_cycle_slot(-1)
+	elif event is InputEventKey:
+		# The number row, in one loop rather than four branches. Actions are named
+		# slot_1..slot_4 in InputBootstrap; a slot with nothing in it is still
+		# selectable, because "empty hands" is a state the player chooses.
+		#
+		# Gated on the event TYPE so the loop is not four is_action_pressed() calls
+		# per mouse-motion event -- this handler sees every one of them, because
+		# _teach_watch() above needs them.
+		for index in range(BELT_SLOTS):
+			if event.is_action_pressed("slot_%d" % (index + 1)):
+				_select_slot(index)
+				break
 
 
 # --- Night flow -----------------------------------------------------------
@@ -484,7 +530,10 @@ func _resolve() -> void:
 	if body != null:
 		body.queue_free()
 	_devices.erase(_carried_id)
-	_carried_id = ""
+	# The spent device leaves the belt with it; _sync_belt() re-derives
+	# _carried_id from the slot that is active afterwards, which is this one.
+	_belt[_belt_slot] = ""
+	_sync_belt()
 	# Calm the core, restore the dome.
 	_tint_core(Color(0.45, 0.95, 0.75), 0.7)
 	if is_instance_valid(_anomaly_light):
@@ -637,16 +686,24 @@ func _retry() -> void:
 	_lower_terminal(_fail_frame)
 	if _task != null:
 		_task.set_suspended(false)
-	# Return the carried device to its pedestal.
-	if _carried_id != "":
-		var body: StaticBody3D = _devices.get(_carried_id)
-		if body != null:
+	# Return the WHOLE belt to the pedestals, not just the slot in hand: a retry
+	# that left three devices parented to the camera would start the night with
+	# them missing from storage and invisible on the operator.
+	for index in range(BELT_SLOTS):
+		var held := _belt[index]
+		if held == "":
+			continue
+		var body: StaticBody3D = _devices.get(held)
+		if body != null and is_instance_valid(body):
 			body.get_parent().remove_child(body)
 			_map_root.add_child(body)
+			body.visible = true
 			body.scale = Vector3.ONE
-			body.global_transform = _device_homes[_carried_id]
+			body.global_transform = _device_homes[held]
 			_set_collision(body, true)
-		_carried_id = ""
+		_belt[index] = ""
+	_belt_slot = 0
+	_sync_belt()
 	# Devices spent earlier in the night come back; a fresh anomaly rolls.
 	_respawn_devices()
 	_anomalies_left = int(NIGHT_CONFIG[_night]["count"])
@@ -882,10 +939,13 @@ func _cutscene_on_screen() -> bool:
 ## that screen, and suspending here would leave the player frozen in front of
 ## nothing.
 func _sync_hud_visibility() -> void:
-	if _task == null:
-		return
-	_task.set_suspended(_cutscene_on_screen() or _state == STATE_FAILED \
-		or _state == STATE_WIN or (_admin_layer != null and _admin_layer.visible))
+	var away := _cutscene_on_screen() or _state == STATE_FAILED \
+		or _state == STATE_WIN or (_admin_layer != null and _admin_layer.visible)
+	if _task != null:
+		_task.set_suspended(away)
+	# The belt is part of the same HUD and stands down on the same condition.
+	if _belt_bar != null and is_instance_valid(_belt_bar):
+		_belt_bar.set_suspended(away)
 
 
 func _load_night() -> int:
@@ -969,12 +1029,15 @@ func _interact() -> void:
 		else:
 			_flash(tr("HUD_WRONG_TOOL"), UITheme.DANGER)
 		return
-	# Pick up a device.
-	if _carried_id == "":
-		var target := _raycast_body()
-		if target != null and target.is_in_group("equipment"):
+	# Pick up a device. Full hands are no longer a silent refusal: the belt takes
+	# four, and only a belt with no free slot says no -- and it says so.
+	var target := _raycast_body()
+	if target != null and target.is_in_group("equipment"):
+		if _free_belt_slot() < 0:
+			_flash(tr("HUD_BELT_FULL"), UITheme.WARNING)
+		else:
 			_pick_up(str(target.get_meta("equipment_id")))
-			return
+		return
 	# Read the terminal.
 	if _near(TERMINAL_POS, INTERACT_DISTANCE) and _anomaly_id != "" and _state == STATE_ANOMALY:
 		var info: Dictionary = ANOMALIES[_anomaly_id]
@@ -1033,13 +1096,21 @@ func _pick_up(id: String) -> void:
 	var body: StaticBody3D = _devices.get(id)
 	if body == null or _camera == null:
 		return
-	_carried_id = id
+	var slot := _free_belt_slot()
+	if slot < 0:
+		_flash(tr("HUD_BELT_FULL"), UITheme.WARNING)
+		return
+	_belt[slot] = id
+	# Taking something always puts it in the hands, whichever slot received it.
+	_belt_slot = slot
 	body.get_parent().remove_child(body)
 	_camera.add_child(body)
 	body.position = Vector3(0.42, -0.35, -0.75)
 	body.rotation = Vector3.ZERO
 	body.scale = Vector3(0.8, 0.8, 0.8)
 	_set_collision(body, false)
+	# Re-derives _carried_id, hides the three belt slots and repaints the row.
+	_sync_belt()
 	_flash(Loc.fmt("HUD_TOOL_TAKEN", [tr(str(EQUIPMENT[id]["name"]))]), UITheme.ON_SURFACE)
 	if id == "memory_reel" and not _memory_reel_used and _state == STATE_ANOMALY:
 		# Катушка памяти: одноразовый бонус времени за ночную смену.
@@ -1053,11 +1124,15 @@ func _drop_device() -> void:
 	if _carried_id == "" or _player == null:
 		return
 	var body: StaticBody3D = _devices.get(_carried_id)
-	_carried_id = ""
+	# The ACTIVE slot only. Whatever else is on the belt stays on the belt: this
+	# is the key the player presses to put down the thing they can see.
+	_belt[_belt_slot] = ""
+	_sync_belt()
 	if body == null:
 		return
 	body.get_parent().remove_child(body)
 	_map_root.add_child(body)
+	body.visible = true
 	body.scale = Vector3.ONE
 	body.rotation = Vector3.ZERO
 	var forward := -_player.global_transform.basis.z
@@ -1089,6 +1164,87 @@ func _set_collision(body: StaticBody3D, enabled: bool) -> void:
 	for child in body.get_children():
 		if child is CollisionShape3D:
 			child.disabled = not enabled
+
+
+# --- The belt ---------------------------------------------------------------
+#
+# Five short functions, and the only one anything outside this block calls is
+# _sync_belt(). See the BELT comment at the top of the file for the rules.
+
+
+## Re-derive everything the rest of the file reads from the belt array.
+##
+## Called after every change and NEVER per frame: it walks four slots, toggles
+## visibility and repaints the row. It is also the single writer of
+## _carried_id, which is what lets six older readers keep working untouched.
+##
+## Slots holding a freed body (a device spent at an incident, a scene rebuild)
+## are cleared here rather than by whoever freed it, so no path can leave a
+## dangling id behind.
+func _sync_belt() -> void:
+	_belt_slot = clampi(_belt_slot, 0, BELT_SLOTS - 1)
+	for index in range(BELT_SLOTS):
+		var id := _belt[index]
+		if id == "":
+			continue
+		# Read as Variant first. Assigning an ALREADY-FREED instance to a typed
+		# StaticBody3D variable throws on the assignment itself, before
+		# is_instance_valid() ever runs -- which is precisely the case this block
+		# exists to survive (a device spent at the dome, a scene rebuild). The
+		# typed form read as correct and was not: the slot kept its dead id.
+		# _respawn_devices() reads the same dictionary the same careful way.
+		var held: Variant = _devices.get(id)
+		if held == null or not is_instance_valid(held):
+			_belt[index] = ""
+			continue
+		var body := held as StaticBody3D
+		if body == null:
+			_belt[index] = ""
+			continue
+		# Only the active slot is in the hands; the rest are on the belt, which in
+		# a first-person camera means not drawn.
+		body.visible = index == _belt_slot
+	_carried_id = _belt[_belt_slot]
+	if _belt_bar != null and is_instance_valid(_belt_bar):
+		_belt_bar.set_belt(_belt_names(), _belt_slot)
+
+
+## Translated device name per slot, empty string for an empty slot. The bar is
+## given finished text: it has no business knowing the equipment table.
+func _belt_names() -> Array:
+	var names: Array = []
+	for index in range(BELT_SLOTS):
+		var id := _belt[index]
+		if id != "" and EQUIPMENT.has(id):
+			names.append(tr(str(EQUIPMENT[id]["name"])))
+		else:
+			names.append("")
+	return names
+
+
+## Where the next pickup goes: the active slot when it is free, otherwise the
+## first free one, otherwise -1 for "the belt is full".
+func _free_belt_slot() -> int:
+	if _belt[_belt_slot] == "":
+		return _belt_slot
+	for index in range(BELT_SLOTS):
+		if _belt[index] == "":
+			return index
+	return -1
+
+
+func _select_slot(index: int) -> void:
+	if index < 0 or index >= BELT_SLOTS or index == _belt_slot:
+		return
+	_belt_slot = index
+	_sync_belt()
+	# The same quiet click the tablet answers a chip with: switching hands is a
+	# confirmation, not an event.
+	_sfx("tablet_click", -8.0)
+
+
+func _cycle_slot(step: int) -> void:
+	_select_slot(wrapi(_belt_slot + step, 0, BELT_SLOTS))
 
 
 # --- World construction (step 3 + 5) ---------------------------------------
@@ -1146,9 +1302,12 @@ func _spawn_device(id: String) -> void:
 				color, 1.1)
 			dial.rotation_degrees = Vector3(90, 0, 0)
 		"containment_rod":
-			_mesh_cylinder(body, Vector3(0, 0, 0), 0.045, 0.62,
+			# Clipped back to the collider it is carried in. The bead used to top
+			# out at 0.44 against a box half-height of 0.30, so the rod poked
+			# through its own pedestal and, held, through the bottom of frame.
+			_mesh_cylinder(body, Vector3(0, -0.04, 0), 0.045, 0.48,
 				Color(0.35, 0.37, 0.4))
-			_mesh_sphere(body, Vector3(0, 0.36, 0), 0.08, color, 1.4)
+			_mesh_sphere(body, Vector3(0, 0.22, 0), 0.08, color, 1.4)
 			_mesh_box(body, Vector3(0, -0.24, 0), Vector3(0.16, 0.1, 0.16),
 				Color(0.14, 0.14, 0.15))
 		"field_emitter":
@@ -1156,11 +1315,101 @@ func _spawn_device(id: String) -> void:
 				Color(0.15, 0.17, 0.2))
 			_mesh_cone(body, Vector3(0, 0.02, 0), 0.19, 0.05, 0.3,
 				Color(0.3, 0.34, 0.4))
-			_mesh_sphere(body, Vector3(0, 0.26, 0), 0.07, color, 1.5)
+			# Dropped from 0.26: the bead reached 0.33 against a collider that
+			# stops at 0.30, and at 0.22 it seats into the cone's tip instead of
+			# hovering a centimetre above it.
+			_mesh_sphere(body, Vector3(0, 0.22, 0), 0.07, color, 1.5)
+		"spectral_lens":
+			# A hand glass: ring on a stick. Read at a glance from the side, which
+			# is how it is read on a workbench.
+			_mesh_cylinder(body, Vector3(0, -0.18, 0), 0.035, 0.22,
+				Color(0.16, 0.15, 0.13))
+			_mesh_torus(body, Vector3(0, 0.08, 0), 0.13, 0.17,
+				Color(0.3, 0.32, 0.35))
+			var lens_glass := _mesh_cylinder(body, Vector3(0, 0.08, 0), 0.13,
+				0.012, color, 1.2)
+			lens_glass.rotation_degrees = Vector3(90, 0, 0)
+		"phase_prism":
+			# Two cones base to base: a cut crystal, the one silhouette here that
+			# comes to a point at both ends.
+			_mesh_box(body, Vector3(0, -0.24, 0), Vector3(0.24, 0.05, 0.24),
+				Color(0.14, 0.13, 0.16))
+			_mesh_cone(body, Vector3(0, -0.09, 0), 0.03, 0.17, 0.2, color, 0.9)
+			_mesh_cone(body, Vector3(0, 0.12, 0), 0.17, 0.02, 0.22, color, 0.9)
+		"resonance_tuner":
+			# A tuning fork. Two prongs, and nothing else in the rack has two of
+			# anything standing up.
+			_mesh_cylinder(body, Vector3(0, -0.21, 0), 0.045, 0.18,
+				Color(0.18, 0.16, 0.14))
+			_mesh_box(body, Vector3(0, -0.08, 0), Vector3(0.17, 0.08, 0.07),
+				Color(0.32, 0.33, 0.36))
+			_mesh_box(body, Vector3(-0.06, 0.11, 0), Vector3(0.04, 0.3, 0.05),
+				color, 0.6)
+			_mesh_box(body, Vector3(0.06, 0.11, 0), Vector3(0.04, 0.3, 0.05),
+				color, 0.6)
+		"mass_clamp":
+			# A C-clamp: the open mouth faces +x, so the tool reads as a jaw
+			# rather than as another box with a light on it.
+			_mesh_box(body, Vector3(-0.1, 0, 0), Vector3(0.07, 0.34, 0.16),
+				Color(0.2, 0.2, 0.22))
+			_mesh_box(body, Vector3(0.01, 0.14, 0), Vector3(0.2, 0.07, 0.16),
+				color)
+			_mesh_box(body, Vector3(0.01, -0.14, 0), Vector3(0.2, 0.07, 0.16),
+				color)
+			_mesh_cylinder(body, Vector3(0.08, -0.02, 0), 0.028, 0.2,
+				Color(0.36, 0.37, 0.4))
+			var clamp_bar := _mesh_cylinder(body, Vector3(0.08, -0.12, 0), 0.016,
+				0.18, Color(0.36, 0.37, 0.4))
+			clamp_bar.rotation_degrees = Vector3(0, 0, 90)
+		"thermal_chalk":
+			# A stick of chalk in a holder -- the smallest thing on the bench, and
+			# deliberately so: it is the one tool that is consumed by being drawn
+			# with.
+			_mesh_cylinder(body, Vector3(0, -0.13, 0), 0.05, 0.16,
+				Color(0.15, 0.14, 0.14))
+			_mesh_torus(body, Vector3(0, -0.04, 0), 0.05, 0.07, color, 0.5, false)
+			_mesh_cone(body, Vector3(0, 0.11, 0), 0.045, 0.03, 0.3, color, 0.7)
+		"memory_reel":
+			# A film reel, stood on edge and facing the aisle: the only disc in
+			# the room whose face is turned to the player.
+			var reel_back := _mesh_cylinder(body, Vector3(0, 0, -0.07), 0.22,
+				0.02, Color(0.18, 0.19, 0.22))
+			reel_back.rotation_degrees = Vector3(90, 0, 0)
+			var reel_front := _mesh_cylinder(body, Vector3(0, 0, 0.07), 0.22,
+				0.02, Color(0.18, 0.19, 0.22))
+			reel_front.rotation_degrees = Vector3(90, 0, 0)
+			var reel_hub := _mesh_cylinder(body, Vector3(0, 0, 0), 0.09, 0.13,
+				color, 0.8)
+			reel_hub.rotation_degrees = Vector3(90, 0, 0)
+		"null_lantern":
+			# A caged lamp. The orientation's sixth step sends the player to fetch
+			# this one by name, so it is the one device that has to be findable
+			# across a dark storage room -- hence the exposed core at 1.6.
+			_mesh_cylinder(body, Vector3(0, -0.22, 0), 0.11, 0.05,
+				Color(0.15, 0.14, 0.18))
+			_mesh_cylinder(body, Vector3(0, 0.2, 0), 0.1, 0.05,
+				Color(0.15, 0.14, 0.18))
+			for post_x: float in [-0.085, 0.085]:
+				for post_z: float in [-0.085, 0.085]:
+					_mesh_box(body, Vector3(post_x, -0.01, post_z),
+						Vector3(0.02, 0.38, 0.02), Color(0.28, 0.28, 0.33))
+			_mesh_sphere(body, Vector3(0, -0.02, 0), 0.085, color, 1.6)
+			# The bail tops out at 0.30 -- inside the reach of the 0.6 m collision
+			# box, and no taller than the containment rod, which is the tallest
+			# thing the pedestals and the held-item pose were ever sized for.
+			_mesh_torus(body, Vector3(0, 0.24, 0), 0.03, 0.06,
+				Color(0.28, 0.28, 0.33))
 		_:
-			_mesh_box(body,Vector3(0,-.08,0),Vector3(.34,.18,.30),Color(.13,.15,.17))
-			_mesh_torus(body,Vector3(0,.10,0),.11,.19,color,.8,false)
-			_mesh_sphere(body,Vector3(0,.10,0),.06,color,1.4)
+			# Still here on purpose: a device id added to EQUIPMENT without a
+			# branch of its own gets a body rather than nothing. thread_spool is
+			# the last id that still lands here, and its wound barrel is what this
+			# fallback was quietly drawing all along.
+			_mesh_cylinder(body, Vector3(0, -0.16, 0), 0.17, 0.03,
+				Color(0.13, 0.15, 0.17))
+			_mesh_cylinder(body, Vector3(0, 0.16, 0), 0.17, 0.03,
+				Color(0.13, 0.15, 0.17))
+			_mesh_cylinder(body, Vector3(0, 0, 0), 0.13, 0.3, color, 0.5)
+			_mesh_torus(body, Vector3(0, 0.03, 0), 0.13, 0.155, color, 0.8, false)
 	var label := Label3D.new()
 	label.text = tr(str(info["name"]))
 	label.position = Vector3(0, 0.55, 0)
@@ -1567,6 +1816,15 @@ func _build_hud() -> void:
 	# and RiftTrialManager adopt THIS instance rather than building their own; on
 	# the headless paths where they do build one, they park it at the same 199.
 	_task.layer = HUD_TASK_LAYER
+	# The belt: one rung under the block (150 against 199) and one above the
+	# compass, i.e. inside the live-shift band, because it is furniture the shift
+	# draws rather than a screen the player raises. This node is its only writer
+	# -- see _sync_belt() -- and _sync_hud_visibility() stands it down alongside
+	# the block, so the two can never disagree about who owns the screen.
+	_belt_bar = InventoryBar.new()
+	_belt_bar.name = "Inventory Belt"
+	add_child(_belt_bar)
+	_sync_belt()
 	_overlay_layer = CanvasLayer.new()
 	_overlay_layer.name = "Terminal Overlays"
 	_overlay_layer.layer = OVERLAY_LAYER
@@ -1766,18 +2024,21 @@ func _update_hint() -> void:
 		_task.set_hint("", [], TaskBlock.OWNER_NIGHT)
 		return
 	if _state != STATE_FAILED and _state != STATE_WIN and _state != STATE_NIGHT_DONE:
-		if _carried_id != "":
+		# The ray is cast whatever is in the hands now, because with a belt a
+		# device the operator is LOOKING AT is an action that is available -- it
+		# was not before, so the prompt used to be suppressed while carrying.
+		# One ray per frame, the same one _interact() would cast on the next press.
+		var target := _raycast_body()
+		if target != null and target.is_in_group("equipment") and _free_belt_slot() >= 0:
+			hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
+		elif _carried_id != "":
 			var carried_name := tr(str(EQUIPMENT[_carried_id]["name"]))
 			if _state == STATE_ANOMALY and _near(_incident_position(), APPLY_DISTANCE):
 				hint = Loc.fmt("HUD_HINT_APPLY", [carried_name])
 			else:
 				hint = Loc.fmt("HUD_HINT_CARRYING", [carried_name])
-		else:
-			var target := _raycast_body()
-			if target != null and target.is_in_group("equipment"):
-				hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
-			elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
-				hint = tr("HUD_HINT_TERMINAL")
+		elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
+			hint = tr("HUD_HINT_TERMINAL")
 	# The orientation's key legend falls in behind the interaction prompts rather
 	# than fighting them: a real "press E to take the null lantern" is always
 	# more useful than the line telling the player what E is for.

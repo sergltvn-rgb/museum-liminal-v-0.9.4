@@ -13,7 +13,10 @@ extends Node
 ##   LB radar_scan             RB flashlight
 ##   LT cam_prev               RT cam_next
 ##   L3 sprint                 START pause
-##   Free: BACK/SELECT, R3, D-pad.
+##   R3 slot_next              BACK/SELECT slot_prev
+##   Free: D-pad, and it stays free -- see the paragraph below.
+## Belt slots 1-4 are the number row; the two belt-cycling actions took the last
+## two free pad buttons rather than the D-pad, which is reserved.
 ## The engine keeps its own ui_* actions on A (ui_accept), B (ui_cancel),
 ## Y (ui_select), the D-pad and the left stick; those are UI-only and are left
 ## alone on purpose. The D-pad is deliberately left free of game actions: it is
@@ -73,6 +76,18 @@ func _ready() -> void:
 	# Keyboard uses the physical "<" / ">" keys, which nothing else claims.
 	_add_action("cam_prev", [_key(KEY_COMMA), _joy_axis(JOY_AXIS_TRIGGER_LEFT, 1.0)])
 	_add_action("cam_next", [_key(KEY_PERIOD), _joy_axis(JOY_AXIS_TRIGGER_RIGHT, 1.0)])
+	# The operator's belt (four slots). Direct selection is the number row, which
+	# nothing else in this map claims and which every player already reaches for.
+	# Cycling is the mouse wheel and, on a pad, R3 / BACK -- the last two free
+	# buttons in the audit above. The D-pad is deliberately NOT used: it is the
+	# focus-navigation contract in this file's header, and the CCTV mini-map's
+	# camera chips are unreachable on a pad without it.
+	_add_action("slot_1", [_key(KEY_1)])
+	_add_action("slot_2", [_key(KEY_2)])
+	_add_action("slot_3", [_key(KEY_3)])
+	_add_action("slot_4", [_key(KEY_4)])
+	_add_action("slot_next", [_mouse(MOUSE_BUTTON_WHEEL_DOWN), _joy_button(JOY_BUTTON_RIGHT_STICK)])
+	_add_action("slot_prev", [_mouse(MOUSE_BUTTON_WHEEL_UP), _joy_button(JOY_BUTTON_BACK)])
 
 
 func _add_action(action: StringName, events: Array) -> void:

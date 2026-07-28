@@ -218,6 +218,8 @@ SET_AMBIENCE_VOLUME,Ambience volume,Громкость окружения
 SET_AMBIENCE_VOLUME_DESC,Room tone and the hum of anomalies,Фон залов и гул аномалий
 SET_AUDIO_DESC,Tune the museum's atmosphere and volume,Настройте атмосферу и громкость музея
 SET_AUTOSAVE_HINT,Changes are saved\nautomatically,Изменения сохраняются\nавтоматически
+SET_BIND_BELT,Belt slot,Слот пояса
+SET_BIND_BELT_CYCLE,Cycle belt,Перебор пояса
 SET_BIND_DROP,Drop device,Бросить прибор
 SET_BIND_INTERACT,Interact,Взаимодействие
 SET_BIND_MOVE,Movement,Движение
@@ -436,3 +438,5 @@ TUT_STEP_MOVE,Move (W A S D),Движение (W A S D)
 TUT_STEP_SPRINT,Sprint (Shift),Спринт (Shift)
 TUT_TARGET_CONSOLE,ORIENTATION CONSOLE,КОНСОЛЬ ОРИЕНТАЦИИ
 TUT_TARGET_EXIT,EXIT TO SHIFT,ВЫХОД НА СМЕНУ
+HUD_BELT_EMPTY,EMPTY,ПУСТО
+HUD_BELT_FULL,Belt full — G drops the device in hand,Пояс полон — G сбрасывает прибор из рук
