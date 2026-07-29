@@ -12,6 +12,25 @@ const SCALE_MAX := 1.65
 ## snaps onto _target instead of crawling toward it forever.
 const SCALE_EPSILON := 0.0005
 
+## Crouching lives HERE and nowhere else. This node rewrites the capsule, the
+## collision offset and the camera height every frame while a size change is in
+## flight, so a second owner (PlayerController editing the same capsule) would
+## lose the argument on any frame an anomaly happened to be resizing the player.
+## The crouch is therefore a separate MULTIPLIER folded into _apply_scale():
+## anomaly scale and crouch compose instead of overwriting each other.
+##
+## Measured against the office, which is where hiding matters: 1.8 m * 0.58 is a
+## 1.04 m capsule and a 0.96 m eye height, so a crouched operator is below the
+## 1.29 m top of the terminal pedestal and below the 1.16 m reception counter,
+## but NOT below the 0.72 m desk top. Getting under the desk needs a hide volume,
+## not a shorter capsule -- see plan 12.7 item 5.
+const CROUCH_FACTOR := 0.58
+## Crouch is a deliberate, fast action, not the slow anomaly drift (3.2).
+const CROUCH_LERP := 9.0
+## Radius is deliberately NOT multiplied by the crouch: crouching makes the
+## player shorter, not narrower, and shrinking the shell would silently change
+## which gaps fit and how far the step ray reaches past the shell.
+
 var _player: CharacterBody3D
 var _collision: CollisionShape3D
 var _camera: Camera3D
@@ -24,6 +43,11 @@ var _base_light_y := 1.55
 var _current := 1.0
 var _target := 1.0
 var _return_in := -1.0
+var _crouch := 1.0
+var _crouch_target := 1.0
+# Same latch idea as _settled, but for the crouch multiplier, so a standing
+# player at rest costs nothing per frame.
+var _crouch_settled := true
 # Latch: true once _current has landed exactly on _target AND the final
 # _apply_scale() for that value has run. Starts false so the very first frame
 # still writes the capsule, the collision offset and the camera FOV.
@@ -56,6 +80,13 @@ func _process(delta: float) -> void:
 	# shape, so only do it while the size is actually moving. lerpf() approaches
 	# asymptotically and never compares equal to _target, hence the epsilon; the
 	# _settled latch guarantees the exact target value is still applied once.
+	if not _crouch_settled:
+		if absf(_crouch_target - _crouch) <= SCALE_EPSILON:
+			_crouch = _crouch_target
+			_crouch_settled = true
+		else:
+			_crouch = lerpf(_crouch, _crouch_target, clampf(delta * CROUCH_LERP, 0.0, 1.0))
+		_apply_scale(_current)
 	if not _settled:
 		if absf(_target - _current) <= SCALE_EPSILON:
 			_current = _target
@@ -91,14 +122,45 @@ func get_scale_factor() -> float:
 	return _current
 
 
+## Asked for by PlayerController every frame the crouch key changes state. Idem-
+## potent: repeating the same request does not restart the lerp.
+func set_crouch(active: bool) -> void:
+	var wanted := CROUCH_FACTOR if active else 1.0
+	if wanted == _crouch_target:
+		return
+	_crouch_target = wanted
+	_crouch_settled = false
+
+
+func is_crouching() -> bool:
+	return _crouch_target < 1.0
+
+
+## The crouch multiplier as applied right now, mid-lerp included. The step logic
+## and the stand-up headroom check both need the live value, not the target.
+func get_crouch_factor() -> float:
+	return _crouch
+
+
+## Capsule height the body would have standing at the current anomaly scale.
+## Used to size the stand-up headroom test, so it stays correct during a size
+## trial instead of assuming 1.8.
+func standing_height() -> float:
+	return _base_height * _current
+
+
 func _apply_scale(factor: float) -> void:
+	# A CapsuleShape3D cannot be shorter than its own diameter; Godot clamps it
+	# silently, which would desync the collision offset below from the real shape.
+	# Clamp here instead, and derive the offset from the height we actually wrote.
+	var height := maxf(_base_height * factor * _crouch, _base_radius * factor * 2.0)
 	if _capsule != null:
 		_capsule.radius = _base_radius * factor
-		_capsule.height = _base_height * factor
+		_capsule.height = height
 	if _collision != null:
-		_collision.position.y = _base_height * factor * 0.5
+		_collision.position.y = height * 0.5
 	if _camera != null:
-		_camera.position.y = _base_camera_y * factor
+		_camera.position.y = _base_camera_y * factor * _crouch
 		_camera.fov = lerpf(78.0, 66.0, inverse_lerp(SCALE_MIN, SCALE_MAX, factor))
 	if _flashlight != null:
 		# The flashlight is camera-mounted; keep its small local offset stable.

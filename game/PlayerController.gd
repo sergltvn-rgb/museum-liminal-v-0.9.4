@@ -21,6 +21,9 @@ extends CharacterBody3D
 @export var step_probe_distance := 0.30
 ## Slack above the ledge, so the body lands ON the step and not INSIDE it.
 @export var step_clearance := 0.02
+## Crouched pace. Slower than a walk on purpose: the crouch is the stealth
+## trade -- a smaller silhouette and quieter steps in exchange for speed.
+@export var crouch_speed := 2.1
 @export var coyote_time := 0.12
 @export var jump_buffer_time := 0.14
 @export var short_jump_multiplier := 0.48
@@ -51,6 +54,11 @@ var _safe_position_timer := 0.0
 # the shape (not as a radius) because PlayerScaleController rewrites the radius
 # while a size trial is running, and a copied number would go stale.
 var _step_capsule: CapsuleShape3D = null
+# True while the body is held down, whether the player is still holding the key
+# or the ceiling is refusing to let go. Read by _update_footsteps() and by the
+# speed pick; the capsule and camera themselves belong to PlayerScaleController.
+var crouching := false
+var _scale_controller: Node = null
 
 
 func _ready() -> void:
@@ -69,6 +77,12 @@ func _ready() -> void:
 	var collision := get_node_or_null("Player Collision") as CollisionShape3D
 	if collision != null:
 		_step_capsule = collision.shape as CapsuleShape3D
+	# Sibling under the same body. Looked up by group rather than by node name so
+	# both assembly sites (FirstMuseumMap and TutorialPrologue) keep working.
+	for child in get_children():
+		if child.is_in_group("player_scale_controller"):
+			_scale_controller = child
+			break
 
 
 ## SettingsManager pushes the saved sensitivity onto whatever is in the "player"
@@ -129,7 +143,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide(); return
 	_jump_buffer_left = jump_buffer_time if Input.is_action_just_pressed("jump") else maxf(0.0,_jump_buffer_left-delta)
 	var input_dir := Input.get_vector("move_left","move_right","move_forward","move_back")
-	var wants_run := Input.is_action_pressed("sprint") and input_dir.length()>0.08 and not _exhausted
+	_update_crouch()
+	# Sprinting out of a crouch is not a thing: standing up first is the cost.
+	var wants_run := Input.is_action_pressed("sprint") and input_dir.length()>0.08 and not _exhausted and not crouching
 	if wants_run:
 		stamina=maxf(0.0,stamina-stamina_drain_per_second*delta); _recovery_delay=.7
 		if stamina<=0.0: _exhausted=true; wants_run=false
@@ -137,7 +153,7 @@ func _physics_process(delta: float) -> void:
 		_recovery_delay=maxf(0.0,_recovery_delay-delta)
 		if _recovery_delay<=0.0: stamina=minf(max_stamina,stamina+stamina_recovery_per_second*delta)
 		if _exhausted and stamina>=max_stamina*.25: _exhausted=false
-	var speed := run_speed if wants_run else walk_speed
+	var speed := run_speed if wants_run else (crouch_speed if crouching else walk_speed)
 	var forward := (-camera.global_transform.basis.z).slide(local_up).normalized()
 	var right := camera.global_transform.basis.x.slide(local_up).normalized()
 	var direction := (right*input_dir.x+forward*-input_dir.y).normalized()
@@ -241,6 +257,42 @@ func _try_step_up(direction: Vector3, speed: float, delta: float) -> void:
 		return
 	global_position += lift
 
+## Crouch, held rather than toggled, and refused release under a low ceiling.
+##
+## The capsule, the collision offset and the camera height are NOT touched here.
+## PlayerScaleController owns all three and rewrites them every frame a size
+## change is in flight, so editing them from this file would have produced a
+## fight for the shape on any frame an anomaly was resizing the player. This
+## function only decides the intent and reads back the geometry it needs.
+##
+## Standing up is blocked while there is no headroom for the full height: without
+## that check, releasing the key under a shelf grows the capsule into the shelf
+## and move_and_slide() ejects the body sideways or through the floor. The test
+## asks for the height that is actually missing, at the current anomaly scale,
+## rather than a hardcoded 1.8.
+func _update_crouch() -> void:
+	if _scale_controller == null:
+		crouching = false
+		return
+	var wants := Input.is_action_pressed("crouch")
+	if not wants and crouching and not _has_standing_headroom():
+		wants = true
+	crouching = wants
+	_scale_controller.call("set_crouch", wants)
+
+
+func _has_standing_headroom() -> bool:
+	if _step_capsule == null or _scale_controller == null:
+		return true
+	var standing: float = float(_scale_controller.call("standing_height"))
+	# The capsule's foot stays put and its crown rises, so the missing height is
+	# exactly how far up the body has to be able to move.
+	var missing: float = standing - _step_capsule.height
+	if missing <= 0.001:
+		return true
+	return not test_move(global_transform, -gravity_direction.normalized() * missing)
+
+
 func _update_safe_transform(delta:float)->void:
 	_safe_position_timer+=delta
 	if is_on_floor() and _safe_position_timer>=.25:
@@ -311,7 +363,9 @@ func _update_footsteps(delta: float, running: bool, was_falling: bool) -> void:
 	if is_on_floor() and horizontal > 1.0:
 		_step_timer -= delta
 		if _step_timer <= 0.0:
-			_step_timer = 0.31 if running else 0.45
+			# Crouched steps are spaced out, not just quieter: this is the interval
+			# the coming noise system will read as the player's audible footprint.
+			_step_timer = 0.31 if running else (0.68 if crouching else 0.45)
 			if am.has_method("footstep"):
 				am.footstep(running)
 	else:

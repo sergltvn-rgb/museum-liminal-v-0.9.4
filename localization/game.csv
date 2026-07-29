@@ -220,6 +220,7 @@ SET_AUDIO_DESC,Tune the museum's atmosphere and volume,Настройте атм
 SET_AUTOSAVE_HINT,Changes are saved\nautomatically,Изменения сохраняются\nавтоматически
 SET_BIND_BELT,Belt slot,Слот пояса
 SET_BIND_BELT_CYCLE,Cycle belt,Перебор пояса
+SET_BIND_CROUCH,Crouch,Присесть
 SET_BIND_DROP,Drop device,Бросить прибор
 SET_BIND_INTERACT,Interact,Взаимодействие
 SET_BIND_MOVE,Movement,Движение

@@ -162,14 +162,19 @@ const VOLUME_ROWS := [
 ## renders the right-hand chips from `InputMap.action_get_events()` -- the same
 ## table the game polls -- so the page cannot lie again.
 ##
-## Only the five actions that already have a row label in localization/game.csv
-## appear. The catalogue is frozen this round, so the rest of the map (jump,
-## sprint, flashlight, radar_scan, cam_prev/cam_next, confirm and the look axes)
-## has nothing to be called on screen and is reported instead of invented.
+## Only actions that already have a row label in localization/game.csv appear;
+## the rest of the map (jump, sprint, flashlight, radar_scan, cam_prev/cam_next,
+## confirm and the look axes) has nothing to be called on screen and is reported
+## instead of invented. "crouch" was added to the catalogue with the stealth
+## crouch, precisely so it could be shown here: a stealth verb the player is
+## never told about is the same as no verb at all.
 const BINDING_ROWS := [
 	# Four actions, one row: the player thinks of this as a single control.
 	{"label": "SET_BIND_MOVE",
 		"actions": ["move_forward", "move_left", "move_back", "move_right"]},
+	# Held, not toggled, and the pad legend comes out of InputMap, so the R3 that
+	# this action took off belt cycling is visible to the player on this page.
+	{"label": "SET_BIND_CROUCH", "actions": ["crouch"]},
 	{"label": "SET_BIND_INTERACT", "actions": ["interact"]},
 	{"label": "SET_BIND_TABLET", "actions": ["tablet"]},
 	{"label": "SET_BIND_DROP", "actions": ["drop_item"]},
