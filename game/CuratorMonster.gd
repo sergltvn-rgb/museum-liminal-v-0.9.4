@@ -50,6 +50,34 @@ const GRAVITY := 18.0
 ## staring straight at it.
 const OBSERVE_HEIGHTS := [0.15, 1.35, 2.12]
 
+## WHAT THE CURATOR CAN KNOW
+##
+## A different question from the weeping-angel test above: OBSERVE_HEIGHTS asks
+## whether the player can see the Curator, and the block below asks whether the
+## Curator can see the player. Until this existed it simply always knew -- it
+## steered at the player's live position every tick -- which made every hiding
+## place in the museum decoration.
+##
+## The player is sampled at fractions of its CURRENT capsule height, so the
+## crouch pays for itself with no hiding volumes to author: standing at 1.8 m
+## the head sample sits at 1.66 and clears a 1.25 m partition, crouched at
+## 1.04 m it sits at 0.96 and does not.
+const PLAYER_SAMPLE_RATIOS := [0.12, 0.55, 0.92]
+const SIGHT_RANGE := 26.0
+## Half-angle of the Curator's cone of attention, in degrees.
+const SIGHT_HALF_ANGLE_DEG := 62.0
+## Footsteps give the player away through cover -- but only above a crouch-walk
+## (2.1 m/s), which is what turns crouching into a decision rather than a pose.
+const HEARD_SPEED := 2.6
+const HEARD_DISTANCE := 12.0
+## Seconds spent on the last place the player was known to be before the
+## Curator gives up knowing anything at all.
+const SEARCH_HOLD := 6.0
+const SEARCH_ARRIVED := 1.6
+## Grab range while sight is lost. Short enough that a hidden player is not
+## caught by a passer-by, long enough to be caught mid-hide.
+const CATCH_BLIND_DISTANCE := 0.7
+
 ## Audio. Everything below plays on the SFX bus (AudioManager owns the layout);
 ## if that bus is missing the players fall back to Master rather than erroring.
 const AUDIO_BUS := "SFX"
@@ -116,6 +144,12 @@ var _step_streams: Array[AudioStream] = []
 var _catch_stream: AudioStream = null
 var _step_left := STEP_DISTANCE
 var _audio_manager: Node = null
+## The last place the player was seen or heard, and whether it is worth
+## anything. With no knowledge the Curator waits instead of homing.
+var _last_known := Vector3.ZERO
+var _has_last_known := false
+var _search_left := 0.0
+var _player_capsule: CapsuleShape3D = null
 
 
 func _ready() -> void:
@@ -146,6 +180,9 @@ func _build_agent() -> void:
 ## Teleport the Curator to a fresh starting point and clear the caught latch.
 func reset_at(spawn: Vector3) -> void:
 	_caught = false
+	_has_last_known = false
+	_search_left = 0.0
+	_last_known = spawn
 	velocity = Vector3.ZERO
 	global_position = spawn
 	_repath_left = 0.0
@@ -190,14 +227,36 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	var seen := _can_see_player()
+	if seen or _hears_player():
+		_last_known = target
+		_has_last_known = true
+		_search_left = SEARCH_HOLD
+	elif _has_last_known \
+			and global_position.distance_to(_last_known) < SEARCH_ARRIVED:
+		# Standing on the last known spot with nothing to show for it: search a
+		# while, then forget. Forgetting is what lets a hidden player leave.
+		_search_left -= delta
+		if _search_left <= 0.0:
+			_has_last_known = false
+	if not _has_last_known:
+		# It does not know where the player is, so it waits. Breathing and dread
+		# above keep running: the player must still feel it in the room.
+		velocity.x = 0.0
+		velocity.z = 0.0
+		velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+		move_and_slide()
+		return
+
+	var goal := _last_known
 	_repath_left -= delta
 	if _repath_left <= 0.0:
 		_repath_left = REPATH_INTERVAL
-		_agent.target_position = target
+		_agent.target_position = goal
 
 	# is_navigation_finished() also covers "no navmesh baked yet", so the
 	# Curator degrades to a straight-line stalker instead of standing still.
-	var waypoint := target if _agent.is_navigation_finished() else _agent.get_next_path_position()
+	var waypoint := goal if _agent.is_navigation_finished() else _agent.get_next_path_position()
 	var step := waypoint - global_position
 	step.y = 0.0
 
@@ -219,7 +278,11 @@ func _physics_process(delta: float) -> void:
 	# covered: it slows with the null lantern and stops dead against a wall.
 	_advance_footsteps(delta)
 
-	if global_position.distance_to(_player.global_position) < CATCH_DISTANCE:
+	# A blind grab must not reach as far as a seen one. Without this, hiding
+	# behind a partition still ended in a catch the moment the Curator happened
+	# to path past the player on its way to the last known spot.
+	var reach := CATCH_DISTANCE if seen else CATCH_BLIND_DISTANCE
+	if global_position.distance_to(_player.global_position) < reach:
 		_caught = true
 		active = false
 		velocity = Vector3.ZERO
@@ -275,6 +338,52 @@ func _is_observed() -> bool:
 		if space.intersect_ray(query).is_empty():
 			return true
 	return false
+
+
+## True while the Curator can actually see the player: in range, inside its cone
+## of attention, and with a clear line to feet, torso or head.
+func _can_see_player() -> bool:
+	var to_player := _player.global_position - global_position
+	var flat := Vector3(to_player.x, 0.0, to_player.z)
+	if flat.length() > SIGHT_RANGE:
+		return false
+	# Godot forward is -Z.
+	var forward := -global_transform.basis.z
+	forward.y = 0.0
+	if flat.length_squared() > 0.0001 and forward.length_squared() > 0.0001:
+		var off := rad_to_deg(forward.normalized().angle_to(flat.normalized()))
+		if off > SIGHT_HALF_ANGLE_DEG:
+			return false
+	var space := get_world_3d().direct_space_state
+	var eye := global_position + Vector3.UP * float(OBSERVE_HEIGHTS[2])
+	var blockers: Array[RID] = [_player.get_rid(), get_rid()]
+	var height := _player_height()
+	for ratio: float in PLAYER_SAMPLE_RATIOS:
+		var point := _player.global_position + Vector3.UP * (height * ratio)
+		var query := PhysicsRayQueryParameters3D.create(eye, point)
+		query.exclude = blockers
+		if space.intersect_ray(query).is_empty():
+			return true
+	return false
+
+
+## Footsteps carry through cover, so a running player is found without sight.
+## This is why the crouch has a speed cost: 2.1 m/s stays under the threshold.
+func _hears_player() -> bool:
+	if global_position.distance_to(_player.global_position) > HEARD_DISTANCE:
+		return false
+	var moved := Vector3(_player.velocity.x, 0.0, _player.velocity.z)
+	return moved.length() > HEARD_SPEED
+
+
+## The player's live capsule height, so the crouch lowers the sample points
+## instead of the Curator testing against a hardcoded 1.8 m that never moves.
+func _player_height() -> float:
+	if _player_capsule == null:
+		var col := _player.get_node_or_null("Player Collision") as CollisionShape3D
+		if col != null:
+			_player_capsule = col.shape as CapsuleShape3D
+	return _player_capsule.height if _player_capsule != null else 1.8
 
 
 func _resolve_player() -> bool:
