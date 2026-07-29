@@ -170,6 +170,7 @@ func _init() -> void:
 		# Before the blackout on purpose: this one teleports the player out to
 		# the forecourt and holds a key down, which wants a lit, quiet world.
 		await _verify_crouch()
+		await _verify_curator_cover(map_root)
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1334,6 +1335,15 @@ func _gd_sources(dir_path: String) -> PackedStringArray:
 const CROUCH_PROBE_SPOT := Vector3(0.0, 1.0, 44.0)
 const CROUCH_LID_CLEARANCE := 1.25
 const CROUCH_HEIGHT_TOLERANCE := 0.02
+## Live stealth-kit gate behind the office credenza. Y comes from the actual
+## bodies; only the authored floor-plan coordinates are fixed here.
+const CURATOR_COVER_PLAYER_XZ := Vector2(-25.0, 5.2)
+const CURATOR_COVER_WATCHER_XZ := Vector2(-25.0, 9.0)
+const CURATOR_EXPECTED_SEARCH := 6.0
+const CURATOR_EXPECTED_VISIBLE_CATCH := 1.25
+const CURATOR_EXPECTED_BLIND_CATCH := 0.7
+const CURATOR_SEARCH_MAX_TICKS := 420
+const CURATOR_SEARCH_TOLERANCE := 0.05
 const CROUCH_EYE_CLEARANCES := {
 	"terminal console top": 1.29,
 	"reception counter top": 1.16,
@@ -1429,6 +1439,131 @@ func _verify_crouch() -> void:
 			+ "stand-up refused under a %.2f m lid" % CROUCH_LID_CLEARANCE)
 	else:
 		_fail("Crouch: %s" % [", ".join(problems)])
+
+
+## CROUCHING BEHIND THE OFFICE CREDENZA MUST BREAK CONTACT
+##
+## This is the observable contract for the whole first stealth slice: on the
+## shipping map and the real player capsule, standing is visible, crouching is
+## hidden, knowledge expires after six seconds, and a blind grab is shorter.
+func _verify_curator_cover(map_root: Node) -> void:
+	var player := get_first_node_in_group("player") as CharacterBody3D
+	var scaler := get_first_node_in_group("player_scale_controller")
+	var curator := map_root.get_node_or_null("The Curator") as CharacterBody3D
+	if curator == null:
+		curator = map_root.find_child("The Curator", true, false) as CharacterBody3D
+	if player == null or scaler == null or curator == null:
+		_fail("Curator cover: player/scaler/Curator missing")
+		return
+	var camera := player.get_node_or_null("Player Camera") as Camera3D
+	var collision := player.get_node_or_null("Player Collision") as CollisionShape3D
+	var capsule := collision.shape as CapsuleShape3D if collision != null else null
+	if camera == null or capsule == null:
+		_fail("Curator cover: player camera or capsule missing")
+		return
+
+	var player_transform := player.global_transform
+	var camera_transform := camera.global_transform
+	var curator_transform := curator.global_transform
+	var player_processing := player.is_physics_processing()
+	var curator_processing := curator.is_physics_processing()
+	var prior_controls := bool(player.get("controls_enabled"))
+	var prior_active := bool(curator.get("active"))
+	var prior_caught := bool(curator.get("_caught"))
+	var prior_known := bool(curator.get("_has_last_known"))
+	var prior_last_known: Vector3 = curator.get("_last_known")
+	var prior_search := float(curator.get("_search_left"))
+
+	player.set("controls_enabled", false)
+	player.set_physics_process(false)
+	curator.set_physics_process(false)
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	player.global_position = Vector3(CURATOR_COVER_PLAYER_XZ.x,
+		player.global_position.y, CURATOR_COVER_PLAYER_XZ.y)
+	curator.global_position = Vector3(CURATOR_COVER_WATCHER_XZ.x,
+		curator.global_position.y, CURATOR_COVER_WATCHER_XZ.y)
+	curator.look_at(Vector3(player.global_position.x, curator.global_position.y,
+		player.global_position.z), Vector3.UP)
+	curator.call("_resolve_player")
+
+	scaler.call("set_crouch", false)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+	await _spin(2)
+	var stand_h := capsule.height
+	var standing_seen := bool(curator.call("_can_see_player"))
+
+	scaler.call("set_crouch", true)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+	await _spin(2)
+	var crouch_h := capsule.height
+	var crouched_seen := bool(curator.call("_can_see_player"))
+
+	# Look away so the weeping-angel guard does not freeze the knowledge timer.
+	camera.look_at(Vector3(player.global_position.x, camera.global_position.y,
+		player.global_position.z - 1.0), Vector3.UP)
+	curator.set("active", true)
+	curator.set("_caught", false)
+	curator.set("_has_last_known", true)
+	curator.set("_last_known", curator.global_position)
+	curator.set("_search_left", CURATOR_EXPECTED_SEARCH)
+	var anchor := curator.global_position
+	var forgot_ticks := 0
+	while not curator.has_lost_player() and forgot_ticks < CURATOR_SEARCH_MAX_TICKS:
+		# Navigation may retain a target from an earlier check. Keep this test at
+		# the last-known point: it measures the search hold, not path following.
+		curator.global_position = anchor
+		curator.velocity = Vector3.ZERO
+		curator.call("_physics_process", 1.0 / 60.0)
+		forgot_ticks += 1
+	var forgot_seconds := float(forgot_ticks) / 60.0
+
+	var constants: Dictionary = (curator.get_script() as GDScript).get_script_constant_map()
+	var visible_catch := float(constants.get("CATCH_DISTANCE", -1.0))
+	var blind_catch := float(constants.get("CATCH_BLIND_DISTANCE", -1.0))
+	var search_hold := float(constants.get("SEARCH_HOLD", -1.0))
+	var problems: Array[String] = []
+	if not standing_seen or crouched_seen:
+		problems.append("visibility standing/crouched=%s/%s" % [standing_seen, crouched_seen])
+	if not curator.has_lost_player() \
+			or absf(forgot_seconds - CURATOR_EXPECTED_SEARCH) > CURATOR_SEARCH_TOLERANCE \
+			or curator.search_ratio() > 0.001:
+		problems.append("forgot in %.3f s, lost=%s, ratio=%.3f"
+			% [forgot_seconds, curator.has_lost_player(), curator.search_ratio()])
+	if absf(search_hold - CURATOR_EXPECTED_SEARCH) > 0.001:
+		problems.append("SEARCH_HOLD %.3f" % search_hold)
+	if absf(visible_catch - CURATOR_EXPECTED_VISIBLE_CATCH) > 0.001 \
+			or absf(blind_catch - CURATOR_EXPECTED_BLIND_CATCH) > 0.001 \
+			or blind_catch >= visible_catch:
+		problems.append("catch visible/blind=%.3f/%.3f" % [visible_catch, blind_catch])
+
+	# Restore the world for the blackout check that deliberately runs next.
+	scaler.call("set_crouch", false)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+	player.global_transform = player_transform
+	camera.global_transform = camera_transform
+	curator.global_transform = curator_transform
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	player.set("controls_enabled", prior_controls)
+	curator.set("active", prior_active)
+	curator.set("_caught", prior_caught)
+	curator.set("_has_last_known", prior_known)
+	curator.set("_last_known", prior_last_known)
+	curator.set("_search_left", prior_search)
+	player.set_physics_process(player_processing)
+	curator.set_physics_process(curator_processing)
+
+	if problems.is_empty():
+		_ok("Curator cover: standing/crouched sees=%s/%s, capsule %.3f/%.3f, "
+			% [standing_seen, crouched_seen, stand_h, crouch_h]
+			+ "forgot %.3f s, catch %.2f/%.2f m"
+			% [forgot_seconds, visible_catch, blind_catch])
+	else:
+		_fail("Curator cover: %s" % [", ".join(problems)])
 
 
 ## Advances both steps, which a held input needs to be seen and acted upon.
