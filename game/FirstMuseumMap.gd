@@ -2144,6 +2144,12 @@ func _add_authored_exhibit(parent: Node, model_name: String,
 ## standard case. They keep the anomaly anchor and the plaque and lose the
 ## 2.8 m pedestal and the glass box.
 const PLINTH_FREE_EXHIBITS := ["superheavy_sphere", "dense_ingot", "mass_pendulum"]
+## One existing case in each open wing doubles as crouch-height cover. The
+## footprint was already baked into navigation; only the plinth height changes,
+## so this adds a stealth choice without adding another piece of furniture.
+const STEALTH_PLINTH_EXHIBITS := ["Inversion Room Exhibit", "Time Loop Exhibit"]
+const STEALTH_PLINTH_HEIGHT := 1.15
+const STANDARD_PLINTH_HEIGHT := 0.70
 
 
 func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
@@ -2153,9 +2159,11 @@ func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
 	anomaly_anchor.position=exhibit_position+Vector3(0,1.55,0); parent.add_child(anomaly_anchor)
 	var cased: bool = model_name not in PLINTH_FREE_EXHIBITS
 	if cased:
+		var plinth_height := STEALTH_PLINTH_HEIGHT \
+			if exhibit_name in STEALTH_PLINTH_EXHIBITS else STANDARD_PLINTH_HEIGHT
 		_box(parent, "%s Pedestal" % exhibit_name,
-			exhibit_position + Vector3(0, 0.35, 0),
-			Vector3(2.8, 0.7, 2.8), Color(0.16, 0.16, 0.15))
+			exhibit_position + Vector3(0, plinth_height * 0.5, 0),
+			Vector3(2.8, plinth_height, 2.8), Color(0.16, 0.16, 0.15))
 
 	# Authored geometry first, then a real model, then the primitive fallback.
 	if _add_authored_exhibit(parent, model_name, exhibit_position):

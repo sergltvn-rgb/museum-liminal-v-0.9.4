@@ -171,6 +171,7 @@ func _init() -> void:
 		# the forecourt and holds a key down, which wants a lit, quiet world.
 		await _verify_crouch()
 		await _verify_curator_cover(map_root)
+		await _verify_route_covers(map_root, generated)
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1344,6 +1345,19 @@ const CURATOR_EXPECTED_VISIBLE_CATCH := 1.25
 const CURATOR_EXPECTED_BLIND_CATCH := 0.7
 const CURATOR_SEARCH_MAX_TICKS := 420
 const CURATOR_SEARCH_TOLERANCE := 0.05
+## One existing object per room: no new furniture, just a permanent contract
+## that the night route keeps offering crouch-height cover.
+const ROUTE_COVERS := [
+	{"label": "Gravity", "owner": "Inversion Room Exhibit Pedestal",
+		"player": Vector2(28.0, -2.65), "curator": Vector2(28.0, -8.0)},
+	{"label": "Time", "owner": "Time Loop Exhibit Pedestal",
+		"player": Vector2(8.0, -25.65), "curator": Vector2(8.0, -31.5)},
+	{"label": "Archive", "owner": "Archive Card Catalogue",
+		"player": Vector2(-22.58, -15.95), "curator": Vector2(-26.5, -15.95)},
+]
+const ROUTE_COVER_MIN_HEIGHT := 1.0
+const ROUTE_COVER_MAX_HEIGHT := 1.4
+const ROUTE_COVER_MIN_SPAN := 1.0
 const CROUCH_EYE_CLEARANCES := {
 	"terminal console top": 1.29,
 	"reception counter top": 1.16,
@@ -1564,6 +1578,120 @@ func _verify_curator_cover(map_root: Node) -> void:
 			% [forgot_seconds, visible_catch, blind_catch])
 	else:
 		_fail("Curator cover: %s" % [", ".join(problems)])
+
+
+## THE NIGHT ROUTE MUST KEEP A THIRD HEIGHT CLASS
+##
+## Each entry uses an object already furnishing the room. The check measures its
+## real collider and then puts the real player and Curator close on opposite
+## sides, because a nominal 1.15 m box is not cover if the sightline clears it.
+func _verify_route_covers(map_root: Node, generated: Node) -> void:
+	var player := get_first_node_in_group("player") as CharacterBody3D
+	var scaler := get_first_node_in_group("player_scale_controller")
+	var curator := map_root.get_node_or_null("The Curator") as CharacterBody3D
+	if curator == null:
+		curator = map_root.find_child("The Curator", true, false) as CharacterBody3D
+	if player == null or scaler == null or curator == null:
+		_fail("Route covers: player/scaler/Curator missing")
+		return
+	var collision := player.get_node_or_null("Player Collision") as CollisionShape3D
+	var capsule := collision.shape as CapsuleShape3D if collision != null else null
+	if capsule == null:
+		_fail("Route covers: player capsule missing")
+		return
+
+	var player_transform := player.global_transform
+	var curator_transform := curator.global_transform
+	var player_processing := player.is_physics_processing()
+	var curator_processing := curator.is_physics_processing()
+	var prior_controls := bool(player.get("controls_enabled"))
+	var prior_active := bool(curator.get("active"))
+	player.set("controls_enabled", false)
+	player.set_physics_process(false)
+	curator.set_physics_process(false)
+	curator.set("active", false)
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	curator.call("_resolve_player")
+
+	var problems: Array[String] = []
+	var results: Array[String] = []
+	for cover in ROUTE_COVERS:
+		var owner_name := str(cover["owner"])
+		var owner := generated.find_child(owner_name, true, false) as Node3D
+		if owner == null:
+			problems.append("%s missing" % owner_name)
+			continue
+		var bounds := _cover_collider_bounds(owner)
+		var player_xz: Vector2 = cover["player"]
+		var curator_xz: Vector2 = cover["curator"]
+		player.global_position = Vector3(player_xz.x, player.global_position.y,
+			player_xz.y)
+		curator.global_position = Vector3(curator_xz.x, curator.global_position.y,
+			curator_xz.y)
+		curator.look_at(Vector3(player.global_position.x, curator.global_position.y,
+			player.global_position.z), Vector3.UP)
+
+		scaler.call("set_crouch", false)
+		scaler.call("_process", 1.0)
+		scaler.call("_process", 1.0)
+		await _spin(2)
+		var standing_seen := bool(curator.call("_can_see_player"))
+		var stand_h := capsule.height
+		scaler.call("set_crouch", true)
+		scaler.call("_process", 1.0)
+		scaler.call("_process", 1.0)
+		await _spin(2)
+		var crouched_seen := bool(curator.call("_can_see_player"))
+		var crouch_h := capsule.height
+
+		if bounds.x < ROUTE_COVER_MIN_HEIGHT \
+				or bounds.x > ROUTE_COVER_MAX_HEIGHT:
+			problems.append("%s height %.3f" % [cover["label"], bounds.x])
+		if maxf(bounds.y, bounds.z) < ROUTE_COVER_MIN_SPAN:
+			problems.append("%s span %.3f/%.3f"
+				% [cover["label"], bounds.y, bounds.z])
+		if not standing_seen or crouched_seen:
+			problems.append("%s sees %s/%s"
+				% [cover["label"], standing_seen, crouched_seen])
+		results.append("%s %.3f m sees=%s/%s"
+			% [cover["label"], bounds.x, standing_seen, crouched_seen])
+		if absf(stand_h - 1.8) > 0.02 or absf(crouch_h - 1.044) > 0.02:
+			problems.append("%s capsule %.3f/%.3f"
+				% [cover["label"], stand_h, crouch_h])
+
+	scaler.call("set_crouch", false)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+	player.global_transform = player_transform
+	curator.global_transform = curator_transform
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	player.set("controls_enabled", prior_controls)
+	curator.set("active", prior_active)
+	player.set_physics_process(player_processing)
+	curator.set_physics_process(curator_processing)
+
+	if problems.is_empty():
+		_ok("Route covers: %s" % [", ".join(results)])
+	else:
+		_fail("Route covers: %s" % [", ".join(problems)])
+
+
+## Returns top Y, widest X and widest Z across an object's real box colliders.
+func _cover_collider_bounds(owner: Node) -> Vector3:
+	var top := 0.0
+	var width := 0.0
+	var depth := 0.0
+	for node in owner.find_children("*", "CollisionShape3D", true, false):
+		var shape_node := node as CollisionShape3D
+		if shape_node == null or not (shape_node.shape is BoxShape3D):
+			continue
+		var size := (shape_node.shape as BoxShape3D).size
+		top = maxf(top, shape_node.global_position.y + size.y * 0.5)
+		width = maxf(width, size.x)
+		depth = maxf(depth, size.z)
+	return Vector3(top, width, depth)
 
 
 ## Advances both steps, which a held input needs to be seen and acted upon.
