@@ -59,6 +59,16 @@ const ROOM_RECT_EPSILON := 0.01
 ## colliders. Hits further out than this are things standing in the way.
 const EXHIBIT_SELF_CLEARANCE := 1.7
 
+## Storage-side double doors are visual geometry, but a closed-looking panel in
+## a collisionless doorway lies to the player. Keep the three service-room
+## thresholds clear through the full body-height band.
+const STORAGE_DOOR_CENTERS := [
+	Vector3(-25, 0, 7), Vector3(-25, 0, -7), Vector3(-25, 0, 17),
+]
+const DOOR_VISUAL_CLEARANCE := 0.75
+const DOOR_CLEARANCE_BOTTOM := 0.15
+const DOOR_CLEARANCE_TOP := 2.2
+
 ## Owner of the office wall's panel -> feed layout (stage 10.3).
 const MONITOR_WALL_SCRIPT := "res://game/MonitorWall.gd"
 ## Groups the wall and the bank it dresses join, which is the only way either is
@@ -446,6 +456,7 @@ func _verify(map_root: Node) -> void:
 			_fail("Door frame missing at %s" % [centre])
 	if door_frames == doorway_centers.size():
 		_ok("Door frames built: %d" % door_frames)
+	_verify_storage_door_clearance(generated)
 
 	# Exhibits: each has a "Glass Case".
 	var glass_cases := _count_contains(generated, "Glass Case")
@@ -513,6 +524,49 @@ func _verify(map_root: Node) -> void:
 				_fail("Atrium/Gravity shared wall does not meet at x=15 (%.3f vs %.3f)" % [seam_a, seam_b])
 			else:
 				_ok("Atrium/Gravity shared wall coincides at x=15")
+
+
+## The three service-room portals must read as open, not merely be passable.
+## Measure rendered BoxMesh geometry in the player's body-height band; thresholds
+## below the feet and lintels above the head are deliberately outside the band.
+func _verify_storage_door_clearance(generated: Node) -> void:
+	var problems: Array[String] = []
+	var measured: Array[float] = []
+	var meshes := generated.find_children("*", "MeshInstance3D", true, false)
+	for center in STORAGE_DOOR_CENTERS:
+		var nearest := INF
+		var nearest_name := ""
+		for node in meshes:
+			var instance := node as MeshInstance3D
+			if instance == null or not (instance.mesh is BoxMesh):
+				continue
+			var box := instance.mesh as BoxMesh
+			var half := box.size * 0.5
+			var bottom := instance.global_position.y - half.y
+			var top := instance.global_position.y + half.y
+			if top <= DOOR_CLEARANCE_BOTTOM or bottom >= DOOR_CLEARANCE_TOP:
+				continue
+			var at_height := Vector3(center.x, instance.global_position.y, center.z)
+			var local := instance.global_transform.affine_inverse() * at_height
+			var local_near := Vector3(
+				clampf(local.x, -half.x, half.x), 0.0,
+				clampf(local.z, -half.z, half.z))
+			var world_near := instance.global_transform * local_near
+			var distance := Vector2(
+				world_near.x - center.x, world_near.z - center.z).length()
+			if distance < nearest:
+				nearest = distance
+				nearest_name = str(instance.name)
+		measured.append(nearest)
+		if nearest < DOOR_VISUAL_CLEARANCE:
+			problems.append("%s has %s at %.3f m" % [center, nearest_name, nearest])
+	if problems.is_empty():
+		_ok("Storage door visuals: %d openings clear by %.3f/%.3f/%.3f m (gate %.2f m)"
+			% [STORAGE_DOOR_CENTERS.size(), measured[0], measured[1], measured[2],
+				DOOR_VISUAL_CLEARANCE])
+	else:
+		_fail("Storage door visuals: %s (gate %.2f m)"
+			% [", ".join(problems), DOOR_VISUAL_CLEARANCE])
 
 
 # ---------------------------------------------------------------------------
