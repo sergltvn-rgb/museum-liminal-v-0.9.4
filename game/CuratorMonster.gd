@@ -184,7 +184,13 @@ func reset_at(spawn: Vector3) -> void:
 	_search_left = 0.0
 	_last_known = spawn
 	velocity = Vector3.ZERO
-	global_position = spawn
+	# Spawn points are authored by hand. Some of them sit inside a prop or off
+	# the baked mesh entirely, and a Curator born there spends the night
+	# grinding against furniture while its path insists it is walking. Land on
+	# navigable floor instead.
+	global_position = _navigable(spawn)
+	_stuck_left = STUCK_PATIENCE
+	_stuck_anchor = global_position
 	_repath_left = 0.0
 	_step_left = STEP_DISTANCE
 	if _steps != null:
@@ -254,6 +260,8 @@ func _physics_process(delta: float) -> void:
 		_repath_left = REPATH_INTERVAL
 		_agent.target_position = goal
 
+	_check_stuck(delta)
+
 	# is_navigation_finished() also covers "no navmesh baked yet", so the
 	# Curator degrades to a straight-line stalker instead of standing still.
 	var waypoint := goal if _agent.is_navigation_finished() else _agent.get_next_path_position()
@@ -289,6 +297,137 @@ func _physics_process(delta: float) -> void:
 		_set_breathing(false)
 		_play_catch()
 		caught_player.emit()
+
+
+## How long the Curator may make no headway before we assume geometry has it.
+const STUCK_PATIENCE := 1.1
+## Ground covered within one patience window that still counts as pinned. A
+## walking Curator clears several metres, so this only catches real snags.
+const STUCK_TRAVEL := 0.12
+## Slack around a spawn point. Doorways keep 0.9 m of mesh, so a point this
+## close to the mesh is fine as authored and is left exactly where it is.
+const NAV_SNAP_TOLERANCE := 0.35
+## How far a candidate may sit above or below the point being repaired. The
+## bake covers the tops of benches and display cases as isolated islands, and
+## the nearest navigable point to a Curator standing beside a prop is often the
+## prop's lid. Landing there is how it ends up walking on the furniture.
+const NAV_STEP_HEIGHT := 0.45
+## How far sideways the Curator may be nudged when it is pinned and already
+## standing on navigable floor. It only ever moves while unobserved, so a shove
+## of this size is invisible to the player.
+const SHAKE_RADIUS := 1.5
+
+var _stuck_left := 0.0
+var _stuck_anchor := Vector3.ZERO
+
+
+## Nearest point the navigation mesh can actually stand on. Returns the input
+## untouched when there is no baked mesh yet: the bake runs on a worker thread
+## and an unbaked map answers every query with the origin, which would drag the
+## Curator to the middle of the atrium.
+func _navigable(point: Vector3) -> Vector3:
+	if _agent == null:
+		return point
+	var map: RID = _agent.get_navigation_map()
+	if not map.is_valid():
+		return point
+	var best := point
+	var best_flat := INF
+	for probe in _probe_ring(point):
+		var candidate: Vector3 = NavigationServer3D.map_get_closest_point(map, probe)
+		# An unbaked map answers every query with the origin.
+		if candidate.is_equal_approx(Vector3.ZERO) \
+				and not probe.is_equal_approx(Vector3.ZERO):
+			continue
+		if absf(candidate.y - point.y) > NAV_STEP_HEIGHT:
+			continue
+		# Distance with a stiff penalty for changing height. Two metres of floor
+		# is a better answer than a shelf 30 cm up and right here, because the
+		# shelf is where the Curator would stand on the furniture again.
+		var flat := Vector2(candidate.x - point.x, candidate.z - point.z).length()
+		var score := flat + 4.0 * absf(candidate.y - point.y)
+		if score < best_flat:
+			best_flat = score
+			best = candidate
+	if best_flat == INF or best_flat <= NAV_SNAP_TOLERANCE:
+		return point
+	return best
+
+
+## The point itself plus two rings around it. Sampling outwards is what lets a
+## point buried inside a prop find the floor beside it rather than the lid above
+## it, which a single closest-point query happily returns.
+func _probe_ring(point: Vector3) -> Array[Vector3]:
+	var probes: Array[Vector3] = [point]
+	for i in range(8):
+		var angle := TAU * float(i) / 8.0
+		var offset := Vector3(cos(angle), 0.0, sin(angle))
+		probes.append(point + offset * 1.0)
+		probes.append(point + offset * 2.0)
+	return probes
+
+
+## Watchdog for a Curator that is trying to walk and getting nowhere, which is
+## what a prop it was born inside, or a bench corner it clipped, looks like from
+## the inside. Measuring travel rather than testing collisions keeps this honest
+## about the only thing that matters: the player is not being hunted.
+func _check_stuck(delta: float) -> void:
+	_stuck_left -= delta
+	if _stuck_left > 0.0:
+		return
+	_stuck_left = STUCK_PATIENCE
+	var travelled := global_position.distance_to(_stuck_anchor)
+	_stuck_anchor = global_position
+	if travelled > STUCK_TRAVEL:
+		return
+	var freed := _navigable(global_position)
+	if not freed.is_equal_approx(global_position):
+		global_position = freed
+		_stuck_anchor = freed
+	else:
+		# Already on navigable floor and still going nowhere: something the bake
+		# does not know about is in the way. Step around it.
+		_shake_free()
+	# Even when the position was already navigable, the path it was following is
+	# the one that failed; force a fresh one on the next tick.
+	_repath_left = 0.0
+
+
+## Sidestep whatever is pinning the Curator: pick the neighbouring navigable
+## spot that gets closest to the goal, and only one it could have walked to, so
+## this never becomes a shortcut through a wall.
+func _shake_free() -> void:
+	var map: RID = _agent.get_navigation_map()
+	if not map.is_valid():
+		return
+	var space := get_world_3d().direct_space_state
+	var here := global_position
+	var best := here
+	var best_gap := here.distance_to(_last_known)
+	for i in range(8):
+		var angle := TAU * float(i) / 8.0
+		var probe := here + Vector3(cos(angle), 0.0, sin(angle)) * SHAKE_RADIUS
+		var candidate: Vector3 = NavigationServer3D.map_get_closest_point(map, probe)
+		if candidate.is_equal_approx(Vector3.ZERO):
+			continue
+		if absf(candidate.y - here.y) > NAV_STEP_HEIGHT:
+			continue
+		var gap := candidate.distance_to(_last_known)
+		if gap >= best_gap - 0.1:
+			continue
+		# Chest height rather than the floor: a threshold or a kerb must not read
+		# as a wall, but a wall must.
+		var lift := Vector3(0.0, 1.0, 0.0)
+		var query := PhysicsRayQueryParameters3D.create(here + lift, candidate + lift)
+		query.exclude = [get_rid()]
+		if not space.intersect_ray(query).is_empty():
+			continue
+		best_gap = gap
+		best = candidate
+	if best.is_equal_approx(here):
+		return
+	global_position = best
+	_stuck_anchor = best
 
 
 ## Ease the yaw instead of snapping with look_at(): the Curator now rounds
