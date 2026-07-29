@@ -157,6 +157,9 @@ func _init() -> void:
 		# Last of the world checks on purpose: it opens a real incident to read
 		# what the screen then says, and that lights the alarm state up.
 		await _verify_anomaly_terminal(map_root, generated)
+		# Before the blackout on purpose: this one teleports the player out to
+		# the forecourt and holds a key down, which wants a lit, quiet world.
+		await _verify_crouch()
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1257,6 +1260,128 @@ func _gd_sources(dir_path: String) -> PackedStringArray:
 	dir.list_dir_end()
 	found.sort()
 	return found
+
+
+## CROUCH MUST STAY A REAL STEALTH VERB
+##
+## Confirmed by hand once, then pinned here, because three different owners can
+## break it without a single error in the log:
+##
+## 1. PlayerScaleController owns the capsule, the collision offset and the camera
+##    height, and rewrites all three every frame an anomaly is resizing the
+##    player. Crouch therefore lives inside it as a second multiplier. If it is
+##    ever moved back into PlayerController, the two owners fight over the shape
+##    and the winner depends on the frame.
+## 2. Standing up is refused while there is no headroom. Without that check,
+##    releasing the key under a shelf grows the capsule into the shelf, and the
+##    body is either shoved sideways or pushed through the floor.
+## 3. The radius must NOT shrink with the crouch. A thinner player slips through
+##    gaps the level was never built to let anything pass.
+const CROUCH_PROBE_SPOT := Vector3(0.0, 1.0, 44.0)
+const CROUCH_LID_CLEARANCE := 1.25
+const CROUCH_HEIGHT_TOLERANCE := 0.02
+const CROUCH_EYE_CLEARANCES := {
+	"terminal console top": 1.29,
+	"reception counter top": 1.16,
+}
+
+func _verify_crouch() -> void:
+	if not InputMap.has_action("crouch") \
+			or InputMap.action_get_events("crouch").is_empty():
+		_fail("Crouch: the crouch action is missing or carries no events, so "
+			+ "the verb cannot be reached at all")
+		return
+	# R3 was taken from slot_next for the crouch; the belt must keep a way to cycle.
+	if InputMap.has_action("slot_next") \
+			and InputMap.action_get_events("slot_next").is_empty():
+		_fail("Crouch: slot_next lost every event when R3 was reassigned, the "
+			+ "belt can no longer be cycled")
+		return
+	var player := get_first_node_in_group("player") as Node3D
+	if player == null:
+		_fail("Crouch: no player in the tree")
+		return
+	var col := player.get_node_or_null("Player Collision") as CollisionShape3D
+	if col == null:
+		_fail("Crouch: the player carries no Player Collision node")
+		return
+	var capsule := col.shape as CapsuleShape3D
+	var cam := player.get_node_or_null("Player Camera") as Node3D
+	if capsule == null or cam == null:
+		_fail("Crouch: the player capsule or the camera is missing")
+		return
+	var scaler := get_first_node_in_group("player_scale_controller")
+	if scaler == null or not scaler.has_method("set_crouch"):
+		_fail("Crouch: the scale controller is absent or no longer owns the "
+			+ "crouch, which means the capsule has two owners again")
+		return
+
+	paused = false
+	var prior_controls := bool(player.get("controls_enabled"))
+	player.set("controls_enabled", true)
+	player.global_position = CROUCH_PROBE_SPOT
+	await _spin(8)
+	var stand_h := capsule.height
+	var stand_r := capsule.radius
+	var problems: Array[String] = []
+
+	Input.action_press("crouch")
+	await _spin(30)
+	var crouch_h := capsule.height
+	var crouch_r := capsule.radius
+	var crouch_eye := cam.position.y
+	if crouch_h > stand_h - 0.3:
+		problems.append("holding the key shrank the capsule from %.3f only to "
+			% stand_h + "%.3f" % crouch_h)
+	if not bool(player.get("crouching")):
+		problems.append("the player never reported itself as crouching")
+	if absf(crouch_r - stand_r) > 0.001:
+		problems.append("the radius moved with the crouch, %.3f -> %.3f"
+			% [stand_r, crouch_r])
+	for label in CROUCH_EYE_CLEARANCES:
+		var top: float = CROUCH_EYE_CLEARANCES[label]
+		if crouch_eye >= top:
+			problems.append("the crouched eye at %.3f does not clear the %s at "
+				% [crouch_eye, label] + "%.2f" % top)
+
+	# Releasing the key under a low lid must leave the player down.
+	var lid := StaticBody3D.new()
+	lid.name = "Crouch Gate Lid"
+	var lid_shape := CollisionShape3D.new()
+	var lid_box := BoxShape3D.new()
+	lid_box.size = Vector3(3.0, 0.2, 3.0)
+	lid_shape.shape = lid_box
+	lid.add_child(lid_shape)
+	player.get_parent().add_child(lid)
+	lid.global_position = player.global_position \
+		+ Vector3(0.0, CROUCH_LID_CLEARANCE, 0.0)
+	await _spin(4)
+	Input.action_release("crouch")
+	await _spin(20)
+	if capsule.height > crouch_h + CROUCH_HEIGHT_TOLERANCE:
+		problems.append("the player stood up under a %.2f m lid, capsule %.3f"
+			% [CROUCH_LID_CLEARANCE, capsule.height])
+	lid.queue_free()
+	await _spin(40)
+	if absf(capsule.height - stand_h) > CROUCH_HEIGHT_TOLERANCE:
+		problems.append("the player never stood back up once the lid was gone, "
+			+ "capsule %.3f against %.3f" % [capsule.height, stand_h])
+
+	Input.action_release("crouch")
+	player.set("controls_enabled", prior_controls)
+	if problems.is_empty():
+		_ok("Crouch: capsule %.3f -> %.3f, eye %.3f, radius held at %.3f, "
+			% [stand_h, crouch_h, crouch_eye, stand_r]
+			+ "stand-up refused under a %.2f m lid" % CROUCH_LID_CLEARANCE)
+	else:
+		_fail("Crouch: %s" % [", ".join(problems)])
+
+
+## Advances both steps, which a held input needs to be seen and acted upon.
+func _spin(frames: int) -> void:
+	for _i in range(frames):
+		await physics_frame
+		await process_frame
 
 
 func _ok(text: String) -> void:
