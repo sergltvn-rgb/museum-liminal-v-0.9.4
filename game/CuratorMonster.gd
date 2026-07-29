@@ -376,6 +376,20 @@ func _hears_player() -> bool:
 	return moved.length() > HEARD_SPEED
 
 
+## True while the Curator hunts but has no idea where the player is.
+##
+## The HUD's hiding signal reads this: the knowledge model is worth nothing to
+## the player until they can feel the moment it lost them.
+func has_lost_player() -> bool:
+	return active and not _caught and not _has_last_known
+
+
+## Share of the search hold still left: 1.0 the moment contact broke, 0.0 once
+## the Curator has given up on the last known spot.
+func search_ratio() -> float:
+	return clampf(_search_left / SEARCH_HOLD, 0.0, 1.0)
+
+
 ## The player's live capsule height, so the crouch lowers the sample points
 ## instead of the Curator testing against a hardcoded 1.8 m that never moves.
 func _player_height() -> float:

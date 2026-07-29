@@ -100,6 +100,20 @@ const WATCH_SECTOR_DOT := 0.7071
 ##   610 MenuManager ............... a paused game is not being hunted either.
 const WATCH_ALERT_LAYER := 320
 
+## Hiding signal: the screen's own breathing while the Curator has lost track of
+## the player. Layer 205 sits above the task block (199) and below the protocol
+## screen (210), so it never covers a screen that takes the game away.
+const LOST_ALERT_LAYER := 205
+## Seconds to full strength after contact breaks, and back to nothing once it is
+## re-established. Slower in than out is wrong here: relief has to be felt, but
+## being found again must land at once.
+const LOST_RISE := 0.9
+const LOST_FALL := 0.35
+## One breath every ~3.6 s: reads as breathing out, not as a strobe.
+const LOST_BREATH_HZ := 0.28
+const LOST_GRAIN_MIN := 0.18
+const LOST_GRAIN_MAX := 0.62
+
 # --- Being caught (stage 4.4) -----------------------------------------------
 #
 # The catch used to last one frame. _on_watcher_caught() called GameManager's
@@ -219,6 +233,10 @@ var _watch_style_critical: StyleBoxFlat
 var _watch_ping := 0.0
 var _watch_critical := false
 var _watch_pulse := 0.0
+var _lost_layer: CanvasLayer
+var _lost_grain: CRTOverlay
+var _lost_amount := 0.0
+var _lost_phase := 0.0
 var _incident_origin := Vector3.ZERO
 var _incident_name := ""
 var _rift_visual: Node3D
@@ -323,6 +341,7 @@ func _begin_anomaly(id: String) -> void:
 
 
 func _end_anomaly() -> void:
+	_reset_lost_signal()
 	if _game != null and _game.has_method("clear_objective"): _game.clear_objective("cctv")
 	_active = false
 	_anomaly = ""
@@ -354,6 +373,7 @@ func _update_anomaly(delta: float) -> void:
 	_update_player_scale()
 	_sync_watcher()
 	_update_watch_alert(delta)
+	_update_lost_signal(delta)
 	_update_readouts()
 
 
@@ -639,6 +659,7 @@ func _restore_player() -> void:
 func _build_hud() -> void:
 	_build_watch_alert()
 	_build_death_screen()
+	_build_lost_signal()
 
 
 ## The single task block, wherever it came from.
@@ -693,6 +714,59 @@ func _build_death_screen() -> void:
 	_death_screen.set_crt_enabled(false)
 	_death_screen.modulate.a = 0.0
 	_death_layer.add_child(_death_screen)
+
+
+## The screen's breath while the Curator has lost the player.
+##
+## Queue 13.3 item 1: the knowledge model (sight cone, hearing, last known spot,
+## the six second forget) already worked, but the player could not perceive any
+## of it, so for them it did not exist. This is that missing return signal, and
+## deliberately not the words "you are hidden": grain and a slow breathing pulse
+## over the frame, which reads as relief without turning stealth into a readout.
+##
+## CRTOverlay owns the accessibility contract -- reduced flashes and the quality
+## preset kill every animated term inside its own refresh() -- so nothing here
+## has to re-check the settings.
+func _build_lost_signal() -> void:
+	_lost_layer = CanvasLayer.new()
+	_lost_layer.name = "Curator Lost Contact"
+	_lost_layer.layer = LOST_ALERT_LAYER
+	_lost_layer.visible = false
+	add_child(_lost_layer)
+	_lost_grain = CRTOverlay.new()
+	_lost_grain.name = "Hiding Grain"
+	_lost_grain.set_intensity(0.0)
+	_lost_layer.add_child(_lost_grain)
+
+
+func _update_lost_signal(delta: float) -> void:
+	if _lost_layer == null or not is_instance_valid(_lost_grain):
+		return
+	var lost: bool = is_instance_valid(_watcher) \
+			and _watcher.has_method("has_lost_player") \
+			and bool(_watcher.has_lost_player())
+	var step := delta / LOST_RISE if lost else -delta / LOST_FALL
+	_lost_amount = clampf(_lost_amount + step, 0.0, 1.0)
+	if _lost_amount <= 0.0:
+		_reset_lost_signal()
+		return
+	_lost_layer.visible = true
+	_lost_phase += delta * LOST_BREATH_HZ * TAU
+	var breath := 0.5 + 0.5 * sin(_lost_phase)
+	_lost_grain.set_intensity(_lost_amount \
+		* lerpf(LOST_GRAIN_MIN, LOST_GRAIN_MAX, breath))
+
+
+## Off, all the way off. Called when the anomaly ends as well, or the glass would
+## keep breathing over a museum that has nothing hunting in it.
+func _reset_lost_signal() -> void:
+	if _lost_layer == null:
+		return
+	_lost_amount = 0.0
+	_lost_phase = 0.0
+	_lost_layer.visible = false
+	if is_instance_valid(_lost_grain):
+		_lost_grain.set_intensity(0.0)
 
 
 ## Motion readout drawn over the camera feed. Its own CanvasLayer at
