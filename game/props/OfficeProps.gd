@@ -145,6 +145,9 @@ static var _normal_noise: NoiseTexture2D = null
 static func _root(parent: Node3D, node_name: String, origin: Vector3,
 		yaw_deg: float) -> Node3D:
 	var root := Node3D.new()
+	# A repeated sibling name makes Godot rename the second prop to @Node3D@NNN.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	root.name = node_name
 	root.position = origin
 	root.rotation.y = deg_to_rad(yaw_deg)
@@ -236,6 +239,10 @@ static func _primitive(parent: Node3D, node_name: String,
 		color: Color, transparent: bool, emission_energy: float,
 		metallic: float) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
+	# Repeated sibling names make Godot fall back to @MeshInstance3D@NNN, which
+	# no test or feed can address. Tag the twin with its local offset instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, prim_position]
 	instance.name = node_name
 	instance.position = prim_position
 	instance.mesh = mesh
@@ -431,10 +438,10 @@ static func build_monitor_bank(parent: Node3D, origin: Vector3, columns := 3,
 	# Unistrut: two horizontal rails and two end posts. Everything else hangs
 	# off this, so the bank reads as installed rather than glued to the wall.
 	for rail_y in [bottom_y - 0.05, top_y + 0.05]:
-		_box(root, "Monitor Rail", Vector3(0, rail_y, 0.025),
+		_box(root, "Monitor Rail %s" % [rail_y], Vector3(0, rail_y, 0.025),
 			Vector3(bank_w, 0.06, 0.05), COL_STEEL, 0.0, 0.55)
 	for side in [-1.0, 1.0]:
-		_box(root, "Monitor Rail Post", Vector3(side * bank_w * 0.5, mid_y, 0.025),
+		_box(root, "Monitor Rail Post %s" % [side], Vector3(side * bank_w * 0.5, mid_y, 0.025),
 			Vector3(0.05, frame_h, 0.05), COL_STEEL, 0.0, 0.55)
 
 	var panels := columns * rows
@@ -543,7 +550,7 @@ static func build_desk(parent: Node3D, origin: Vector3, width := 2.4,
 		Vector3(width - 0.20, 0.04, 0.04), COL_STEEL, 0.0, 0.55)
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			_box(root, "Desk Leg", Vector3(sx * (half - 0.07), 0.35, sz * 0.28),
+			_box(root, "Desk Leg %s" % [Vector2(sx, sz)], Vector3(sx * (half - 0.07), 0.35, sz * 0.28),
 				Vector3(0.06, 0.70, 0.06), COL_STEEL, 0.0, 0.6)
 
 	# Drawer pedestal on the left, so the dock has the right end to itself.

@@ -142,6 +142,15 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 		_cache[path] = packed
 
 	var instance: Node3D = packed.instantiate()
+	# The instantiated root carries the GLB's own name ("Sketchfab_model", "FAB
+	# converted model") or none at all, so several placements collide and Godot
+	# renames them to @Node3D@NNN -- unaddressable from tests and from code that
+	# looks a placed exhibit up by name. Name the holder after the asset, tagged
+	# with its position when the same asset is placed more than once.
+	var holder_name := model_name
+	if parent.has_node(NodePath(holder_name)):
+		holder_name = "%s %s" % [model_name, world_position]
+	instance.name = holder_name
 	instance.position = world_position
 	instance.scale = Vector3.ONE * scale_factor
 	# Read-modify-write rather than a fresh Vector3: roll (Z) stays whatever the

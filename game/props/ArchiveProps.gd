@@ -122,6 +122,10 @@ static var _bump_noise: NoiseTexture2D = null
 static func _mount(parent: Node3D, node_name: String, origin: Vector3,
 		yaw_degrees: float) -> Node3D:
 	var root := Node3D.new()
+	# A repeated sibling name makes Godot rename the second prop to @Node3D@NNN,
+	# which loses it for anything that looks props up by name. Tag it instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	root.name = node_name
 	root.position = origin
 	root.rotation_degrees = Vector3(0, yaw_degrees, 0)
@@ -133,6 +137,10 @@ static func _primitive(parent: Node3D, node_name: String, prim_position: Vector3
 		mesh: PrimitiveMesh, extent: Vector3, color: Color, emission_energy: float,
 		metallic: float, tilt: Vector3, transparent: bool) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
+	# Repeated sibling names make Godot fall back to @MeshInstance3D@NNN, which
+	# no test or feed can address. Tag the twin with its local offset instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, prim_position]
 	instance.name = node_name
 	instance.position = prim_position
 	instance.rotation_degrees = tilt
@@ -389,7 +397,7 @@ static func build_rolling_stacks(parent: Node3D, origin: Vector3,
 		run_width += STACK_OPEN_GAP
 
 	for rail_z in [-1.22, 1.22]:
-		_box(root, "Stack Rail", Vector3(0, 0.025, rail_z),
+		_box(root, "Stack Rail %s" % [rail_z], Vector3(0, 0.025, rail_z),
 			Vector3(run_width, 0.05, 0.09), _STEEL_DARK, 0.0, 0.45)
 
 	var x: float = -run_width * 0.5 + STACK_CARRIAGE_W * 0.5
@@ -531,7 +539,7 @@ static func build_reading_desk(parent: Node3D, origin: Vector3,
 	_box(root, "Desk Top", Vector3(0, 0.75, 0), Vector3(1.70, 0.06, 0.82), _WOOD)
 	for leg in [Vector3(-0.78, 0.36, -0.34), Vector3(0.78, 0.36, -0.34),
 			Vector3(-0.78, 0.36, 0.34), Vector3(0.78, 0.36, 0.34)]:
-		_box(root, "Desk Leg", leg, Vector3(0.07, 0.72, 0.07), _WOOD_DARK)
+		_box(root, "Desk Leg %s" % [leg], leg, Vector3(0.07, 0.72, 0.07), _WOOD_DARK)
 	_box(root, "Desk Modesty Panel", Vector3(0, 0.55, -0.38),
 		Vector3(1.56, 0.34, 0.03), _WOOD_DARK)
 	_box(root, "Desk Drawer", Vector3(-0.34, 0.65, 0.06),
@@ -571,7 +579,7 @@ static func build_reading_desk(parent: Node3D, origin: Vector3,
 		Vector3(0.44, 0.52, 0.05), _WOOD)
 	for leg in [Vector3(-0.19, 0.22, -0.19), Vector3(0.19, 0.22, -0.19),
 			Vector3(-0.19, 0.22, 0.19), Vector3(0.19, 0.22, 0.19)]:
-		_box(chair, "Chair Leg", leg, Vector3(0.05, 0.44, 0.05), _WOOD_DARK)
+		_box(chair, "Chair Leg %s" % [leg], leg, Vector3(0.05, 0.44, 0.05), _WOOD_DARK)
 	_collider(chair, "Chair Body", Vector3(0, 0.50, -0.06),
 		Vector3(0.46, 1.00, 0.52))
 
@@ -629,7 +637,7 @@ static func build_work_bench(parent: Node3D, origin: Vector3,
 		Color(0.205, 0.160, 0.115))
 	for leg in [Vector3(-1.12, 0.44, -0.35), Vector3(1.12, 0.44, -0.35),
 			Vector3(-1.12, 0.44, 0.35), Vector3(1.12, 0.44, 0.35)]:
-		_box(root, "Bench Leg", leg, Vector3(0.06, 0.88, 0.06), _STEEL_DARK)
+		_box(root, "Bench Leg %s" % [leg], leg, Vector3(0.06, 0.88, 0.06), _STEEL_DARK)
 	_box(root, "Bench Lower Shelf", Vector3(0, 0.28, 0),
 		Vector3(2.26, 0.04, 0.72), _STEEL_DARK)
 	_box(root, "Bench Skirt Rail", Vector3(0, 0.84, -0.41),
@@ -679,10 +687,10 @@ static func build_tool_tray(parent: Node3D, origin: Vector3,
 	_box(root, "Tray Floor", Vector3(0, 0.008, 0), Vector3(0.46, 0.016, 0.30),
 		_STEEL, 0.0, 0.5)
 	for rim_z in [-0.143, 0.143]:
-		_box(root, "Tray Rim", Vector3(0, 0.036, rim_z),
+		_box(root, "Tray Rim Z %s" % [rim_z], Vector3(0, 0.036, rim_z),
 			Vector3(0.46, 0.055, 0.014), _STEEL, 0.0, 0.5)
 	for rim_x in [-0.223, 0.223]:
-		_box(root, "Tray Rim", Vector3(rim_x, 0.036, 0),
+		_box(root, "Tray Rim X %s" % [rim_x], Vector3(rim_x, 0.036, 0),
 			Vector3(0.014, 0.055, 0.30), _STEEL, 0.0, 0.5)
 
 	if variant == 0:
@@ -773,7 +781,7 @@ static func build_shrouded_exhibit(parent: Node3D, origin: Vector3,
 		_STEEL_DARK)
 	for castor in [Vector3(-0.58, 0.11, -0.42), Vector3(0.58, 0.11, -0.42),
 			Vector3(-0.58, 0.11, 0.42), Vector3(0.58, 0.11, 0.42)]:
-		_cylinder(root, "Dolly Castor", castor, 0.09, 0.06, _STEEL_DARK, 0.0,
+		_cylinder(root, "Dolly Castor %s" % [castor], castor, 0.09, 0.06, _STEEL_DARK, 0.0,
 			0.4, Vector3(0, 0, 90))
 	# One support, off-centre, in a gap wide enough to show two.
 	_cylinder(root, "Support", Vector3(0.16, 0.50, 0.0), 0.15, 0.30, _VOID)
@@ -829,14 +837,14 @@ static func build_open_crate(parent: Node3D, origin: Vector3,
 	var root := _mount(parent, "Lab Exhibit Crate", origin, yaw_degrees)
 	_box(root, "Crate Floor", Vector3(0, 0.03, 0), Vector3(1.46, 0.06, 1.10), _WOOD)
 	for wall_z in [-0.525, 0.525]:
-		_box(root, "Crate Wall", Vector3(0, 0.52, wall_z),
+		_box(root, "Crate Wall Z %s" % [wall_z], Vector3(0, 0.52, wall_z),
 			Vector3(1.46, 0.92, 0.05), _WOOD)
 	for wall_x in [-0.705, 0.705]:
-		_box(root, "Crate Wall", Vector3(wall_x, 0.52, 0),
+		_box(root, "Crate Wall X %s" % [wall_x], Vector3(wall_x, 0.52, 0),
 			Vector3(0.05, 0.92, 1.00), _WOOD)
 	for bx in [-0.71, 0.71]:
 		for bz in [-0.53, 0.53]:
-			_box(root, "Crate Corner Batten", Vector3(bx, 0.49, bz),
+			_box(root, "Crate Corner Batten %s" % [Vector2(bx, bz)], Vector3(bx, 0.49, bz),
 				Vector3(0.08, 0.98, 0.08), _WOOD_DARK)
 	for band_y in [0.30, 0.76]:
 		_box(root, "Crate Band", Vector3(0, band_y, 0.545),
@@ -959,10 +967,10 @@ static func build_keep_back_line(parent: Node3D, origin: Vector3,
 		size := Vector2(2.9, 2.6), yaw_degrees := 0.0) -> Node3D:
 	var root := _mount(parent, "Keep Back Line", origin, yaw_degrees)
 	for edge_z in [-size.y * 0.5, size.y * 0.5]:
-		_box(root, "Floor Line", Vector3(0, 0.006, edge_z),
+		_box(root, "Floor Line Z %s" % [edge_z], Vector3(0, 0.006, edge_z),
 			Vector3(size.x, 0.012, 0.07), _TAPE)
 	for edge_x in [-size.x * 0.5, size.x * 0.5]:
-		_box(root, "Floor Line", Vector3(edge_x, 0.006, 0),
+		_box(root, "Floor Line X %s" % [edge_x], Vector3(edge_x, 0.006, 0),
 			Vector3(0.07, 0.012, size.y - 0.14), _TAPE)
 	return root
 

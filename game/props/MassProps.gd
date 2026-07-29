@@ -703,6 +703,9 @@ static func build_tension_chains(parent: Node3D, origin: Vector3,
 static func _root(parent: Node3D, node_name: String, origin: Vector3,
 		yaw_deg: float) -> Node3D:
 	var node := Node3D.new()
+	# A repeated sibling name makes Godot rename the second prop to @Node3D@NNN.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	node.name = node_name
 	node.position = origin
 	node.rotation_degrees = Vector3(0, yaw_deg, 0)

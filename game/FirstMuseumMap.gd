@@ -47,11 +47,14 @@ func _add_stanchions(parent: Node, center: Vector3, radius: float,
 
 # Simple potted plant: tapered pot and a fan of dark leaves.
 func _add_plant(parent: Node, plant_position: Vector3) -> void:
-	_cone(parent, "Plant Pot", plant_position + Vector3(0, 0.26, 0),
+	# Every plant is a sibling of every other one under GeneratedMap, so a fixed
+	# name means Godot silently renames all but the first to @MeshInstance3D@NNN.
+	# The position tag is the same convention _add_door_frame already uses.
+	_cone(parent, "Plant Pot %s" % [plant_position], plant_position + Vector3(0, 0.26, 0),
 		0.3, 0.36, 0.52, Color(0.17, 0.1, 0.07))
 	for i in range(6):
 		var a: float = TAU * float(i) / 6.0 + plant_position.x * 0.7
-		var leaf := _prism(parent, "Plant Leaf %d" % i,
+		var leaf := _prism(parent, "Plant Leaf %d %s" % [i, plant_position],
 			plant_position + Vector3(cos(a) * 0.14, 0.95, sin(a) * 0.14),
 			Vector3(0.15, 0.95, 0.15), Color(0.05, 0.15, 0.07))
 		leaf.rotation_degrees = Vector3(sin(a) * 22.0, 0, cos(a) * -22.0)
@@ -1280,7 +1283,7 @@ func _add_atrium_landmarks(parent: Node) -> void:
 	_cylinder(parent,"Кольцо ротонды",Vector3(0,.08,0),5.8,.16,Color(.16,.17,.18))
 	_cylinder(parent,"Пол ротонды",Vector3(0,.11,0),4.9,.10,Color(.72,.72,.69))
 	for p:Vector3 in [Vector3(-11.5,0,-11.5),Vector3(11.5,0,-11.5),Vector3(-11.5,0,11.5),Vector3(11.5,0,11.5)]:
-		_cylinder(parent,"Колонна ротонды",p+Vector3(0,WALL_HEIGHT*.5,0),.42,WALL_HEIGHT,Color(.16,.16,.155))
+		_cylinder(parent,"Колонна ротонды %s" % [p],p+Vector3(0,WALL_HEIGHT*.5,0),.42,WALL_HEIGHT,Color(.16,.16,.155))
 	# 45, 135, 225, 315 rather than the cardinals. On the axes these four benches
 	# sat squarely on the circulation line between every opposing pair of
 	# doorways -- Entrance to Time Wing and Office to Gravity Wing both ran
@@ -1365,7 +1368,7 @@ func _add_entrance_details(parent: Node) -> void:
 	_box(parent,"Пилон входа — запад",Vector3(-3.7,1.65,34.45),Vector3(2.2,3.3,.34),Color(.20,.21,.22))
 	_box(parent,"Пилон входа — восток",Vector3(3.7,1.65,34.45),Vector3(2.2,3.3,.34),Color(.20,.21,.22))
 	_box(parent,"Перемычка входа",Vector3(0,3.12,34.45),Vector3(9.6,.42,.34),Color(.20,.21,.22))
-	for x:float in [-2.75,2.75]:_glass_case(parent,"Стена тамбура",Vector3(x,1.45,31.9),Vector3(.10,2.9,4.8))
+	for x:float in [-2.75,2.75]:_glass_case(parent,"Стена тамбура %s" % ("запад" if x < 0.0 else "восток"),Vector3(x,1.45,31.9),Vector3(.10,2.9,4.8))
 	_box(parent,"Козырёк тамбура",Vector3(0,3.05,32),Vector3(5.6,.18,5),Color(.12,.13,.14),0,.45)
 	_box(parent,"Ковёр тамбура",Vector3(0,.02,32),Vector3(4.6,.03,3.4),Color(.24,.07,.065),0,0,false)
 	_box(parent,"Стойка приёма",Vector3(-7.2,.58,25.5),Vector3(5.4,1.16,1.25),Color(.18,.14,.10))
@@ -1487,7 +1490,7 @@ func _add_office_details(parent: Node) -> void:
 	_box(parent, "Stabilization Locker", Vector3(-34.05, 1.25, 4.45),
 		Vector3(1.35, 2.5, 3.0), Color(0.075, 0.095, 0.09), 0.0, 0.45)
 	for shelf_y in [0.55, 1.15, 1.75, 2.35]:
-		_box(parent, "Locker Shelf", Vector3(-33.35, shelf_y, 4.45),
+		_box(parent, "Locker Shelf %s" % [shelf_y], Vector3(-33.35, shelf_y, 4.45),
 			Vector3(0.045, 0.07, 2.65), Color(0.14, 0.16, 0.15), 0.0, 0.5, false)
 	_add_label(parent, "STABILIZATION / AUTHORIZED STAFF", Vector3(-33.2, 2.85, 4.45),
 		Color(0.55, 0.88, 0.66))
@@ -1518,7 +1521,7 @@ func _add_office_details(parent: Node) -> void:
 		Vector3(7.0, 0.10, 0.34), Color(0.055, 0.06, 0.065), 0.0, 0.6, false)
 	for light_x in [-27.0, -23.0]:
 		var task_light := SpotLight3D.new()
-		task_light.name = "Office Task Light"
+		task_light.name = "Office Task Light %s" % [light_x]
 		task_light.position = Vector3(light_x, 2.9, -0.4)
 		task_light.rotation_degrees = Vector3(-90, 0, 0)
 		task_light.light_color = Color(0.72, 0.84, 0.92)
@@ -1776,8 +1779,11 @@ func _add_exhibits(parent: Node) -> void:
 	_add_wing_dressing(parent)
 
 	# Per-exhibit accent lights follow the new gallery rows.
+	# These six had no name at all, so Godot handed them @OmniLight3D@NNN and the
+	# blackout audit could not tell an accent light from any other stray node.
 	for pos in [Vector3(21.5, 2.4, -4.5), Vector3(28, 2.4, -4.5), Vector3(35.5, 2.4, -4.5)]:
 		var l := OmniLight3D.new()
+		l.name = "Gravity Exhibit Accent Light %s" % [pos]
 		l.position = pos
 		l.light_energy = 0.4
 		l.omni_range = 6.0
@@ -1785,6 +1791,7 @@ func _add_exhibits(parent: Node) -> void:
 		parent.add_child(l)
 	for pos in [Vector3(-8, 2.4, -27.5), Vector3(0, 2.4, -27.5), Vector3(8, 2.4, -27.5)]:
 		var l := OmniLight3D.new()
+		l.name = "Time Exhibit Accent Light %s" % [pos]
 		l.position = pos
 		l.light_energy = 0.4
 		l.omni_range = 6.0
@@ -2471,19 +2478,31 @@ func _add_outdoor(parent: Node) -> void:
 		Color(0.78, 0.77, 0.73))
 	_box(parent, "Entrance Plaza", Vector3(0, -0.005, 38.2), Vector3(17, 0.10, 5.6),
 		Color(0.70, 0.70, 0.68))
+	# These plates used to be a hump, not a stair. Their tops ran 0.100 (z 35.6),
+	# 0.160, 0.220 (z 36.4) while the plaza in front of them is 0.045 and the lobby
+	# floor behind them is 0.000: walking in meant climbing 0.175 and then
+	# immediately dropping 0.220, on ground the fiction calls flat. The lobby floor
+	# cannot be raised (the whole building sits on y=0) and any plate standing
+	# above the plaza rebuilds the hump, so the plates now sit FLUSH with the plaza
+	# at 0.045 and read as a porch by their lighter stone alone, widening outwards.
+	# Measured after the change: a ray walk from z 38.6 to the threshold reports
+	# 0.045 the whole way, step +0.000, and the body crosses in both directions
+	# without a single stuck frame.
 	for i in range(3):
 		_box(parent, "Entrance Step %d" % i,
-			Vector3(0, 0.04 + float(i) * 0.06, 35.6 + float(i) * 0.4),
-			Vector3(7.2 - float(i) * 0.8, 0.12, 0.5), Color(0.80, 0.79, 0.75))
+			Vector3(0, -0.015, 35.6 + float(i) * 0.4),
+			Vector3(5.6 + float(i) * 0.8, 0.12, 0.5),
+			Color(0.80 - float(i) * 0.02, 0.79 - float(i) * 0.02, 0.75 - float(i) * 0.02))
 
 	# Long planting beds frame the route without narrowing the playable path.
 	for side: float in [-1.0, 1.0]:
 		var bed_x: float = side * 10.5
-		_box(parent, "Formal Lawn", Vector3(bed_x, -0.005, 45), Vector3(13, 0.08, 14),
+		var bed_tag: String = "West" if side < 0.0 else "East"
+		_box(parent, "Formal Lawn %s" % bed_tag, Vector3(bed_x, -0.005, 45), Vector3(13, 0.08, 14),
 			Color(0.25, 0.37, 0.23), 0.0, 0.0, false)
-		_box(parent, "Lawn Stone Border", Vector3(bed_x, 0.05, 45), Vector3(13.4, 0.12, 14.4),
+		_box(parent, "Lawn Stone Border %s" % bed_tag, Vector3(bed_x, 0.05, 45), Vector3(13.4, 0.12, 14.4),
 			Color(0.50, 0.50, 0.47), 0.0, 0.0, false)
-		_box(parent, "Lawn Inset", Vector3(bed_x, 0.065, 45), Vector3(12.8, 0.08, 13.8),
+		_box(parent, "Lawn Inset %s" % bed_tag, Vector3(bed_x, 0.065, 45), Vector3(12.8, 0.08, 13.8),
 			Color(0.25, 0.37, 0.23), 0.0, 0.0, false)
 		for z: float in [40.0, 45.0, 50.0]:
 			_add_plant(parent, Vector3(side * 6.2, 0, z))
@@ -2491,9 +2510,9 @@ func _add_outdoor(parent: Node) -> void:
 	# Six lights create an even cadence from curb to entrance.
 	for z: float in [39.5, 45.0, 50.5]:
 		for lx: float in [-4.5, 4.5]:
-			_cylinder(parent, "Street Lamp Post", Vector3(lx, 1.6, z), 0.08, 3.2,
+			_cylinder(parent, "Street Lamp Post %s" % [Vector2(lx, z)], Vector3(lx, 1.6, z), 0.08, 3.2,
 				Color(0.12, 0.13, 0.14))
-			_box(parent, "Street Lamp Head", Vector3(lx, 3.25, z),
+			_box(parent, "Street Lamp Head %s" % [Vector2(lx, z)], Vector3(lx, 3.25, z),
 				Vector3(0.42, 0.28, 0.42), Color(0.92, 0.86, 0.68), 0.55)
 
 	# Facing benches form a deliberate pause point halfway to the entrance.
@@ -2584,7 +2603,7 @@ func _add_street_extras(parent: Node) -> void:
 	_box(parent, "Visitor Car Cabin", Vector3(15.1, 1.25, 59.0), Vector3(2.1, 0.55, 1.6),
 		Color(0.24, 0.29, 0.34), 0.0, 0.35)
 	for off: Vector3 in [Vector3(-1.3, 0, -0.86), Vector3(1.3, 0, -0.86), Vector3(-1.3, 0, 0.86), Vector3(1.3, 0, 0.86)]:
-		var wheel := _cylinder(parent, "Visitor Car Wheel", Vector3(15.5, 0.32, 59.0) + off,
+		var wheel := _cylinder(parent, "Visitor Car Wheel %s" % [off], Vector3(15.5, 0.32, 59.0) + off,
 			0.32, 0.24, Color(0.06, 0.06, 0.07))
 		wheel.rotation_degrees = Vector3(90, 0, 0)
 	_box(parent, "Museum Service Van", Vector3(-17.0, 0.95, 59.0), Vector3(4.4, 1.7, 1.9),
@@ -2592,20 +2611,21 @@ func _add_street_extras(parent: Node) -> void:
 	_box(parent, "Service Van Stripe", Vector3(-17.0, 1.08, 58.01), Vector3(3.4, 0.32, 0.03),
 		Color(0.24, 0.34, 0.42), 0.15, 0.0, false)
 	for off: Vector3 in [Vector3(-1.45, 0, -0.9), Vector3(1.45, 0, -0.9), Vector3(-1.45, 0, 0.9), Vector3(1.45, 0, 0.9)]:
-		var van_wheel := _cylinder(parent, "Service Van Wheel", Vector3(-17.0, 0.34, 59.0) + off,
+		var van_wheel := _cylinder(parent, "Service Van Wheel %s" % [off], Vector3(-17.0, 0.34, 59.0) + off,
 			0.34, 0.26, Color(0.06, 0.06, 0.07))
 		van_wheel.rotation_degrees = Vector3(90, 0, 0)
 
 	# Symmetrical tree line and flag pair frame the museum facade.
 	for tree_pos: Vector3 in [Vector3(-25, 0, 39.5), Vector3(-25, 0, 50.5), Vector3(25, 0, 39.5), Vector3(25, 0, 50.5)]:
-		_cylinder(parent, "Street Tree Trunk", tree_pos + Vector3(0, 1.1, 0), 0.18,
+		_cylinder(parent, "Street Tree Trunk %s" % [tree_pos], tree_pos + Vector3(0, 1.1, 0), 0.18,
 			2.2, Color(0.30, 0.22, 0.14))
-		_cone(parent, "Street Tree Crown", tree_pos + Vector3(0, 3.3, 0), 1.5, 0.15,
+		_cone(parent, "Street Tree Crown %s" % [tree_pos], tree_pos + Vector3(0, 3.3, 0), 1.5, 0.15,
 			2.4, Color(0.18, 0.31, 0.16))
 	for fx: float in [-5.4, 5.4]:
-		_cylinder(parent, "Flag Pole", Vector3(fx, 2.5, 36.8), 0.05, 5.0,
+		var flag_tag: String = "West" if fx < 0.0 else "East"
+		_cylinder(parent, "Flag Pole %s" % flag_tag, Vector3(fx, 2.5, 36.8), 0.05, 5.0,
 			Color(0.60, 0.62, 0.66))
-		_box(parent, "Flag", Vector3(fx + 0.5, 4.55, 36.8), Vector3(0.9, 0.5, 0.04),
+		_box(parent, "Flag %s" % flag_tag, Vector3(fx + 0.5, 4.55, 36.8), Vector3(0.9, 0.5, 0.04),
 			Color(0.30, 0.42, 0.72) if fx < 0.0 else Color(0.72, 0.50, 0.30),
 			0.15, 0.0, false)
 
@@ -2629,8 +2649,8 @@ func _add_street_extras(parent: Node) -> void:
 	# a rim puts the opening at 1.0 m, i.e. hand height, and still leaves 0.64 m
 	# to the beds at z 52.2 and 0.99 m to the kerb at 54.55.
 	for bin_pos: Vector3 in [Vector3(-4.8, 0.50, 53.2), Vector3(8.0, 0.50, 53.2)]:
-		_cylinder(parent, "Street Bin", bin_pos, 0.36, 1.00, Color(0.16, 0.25, 0.18))
-		_cylinder(parent, "Street Bin Rim", bin_pos + Vector3(0, 0.52, 0), 0.39,
+		_cylinder(parent, "Street Bin %s" % [bin_pos], bin_pos, 0.36, 1.00, Color(0.16, 0.25, 0.18))
+		_cylinder(parent, "Street Bin Rim %s" % [bin_pos], bin_pos + Vector3(0, 0.52, 0), 0.39,
 			0.06, Color(0.12, 0.19, 0.14))
 	_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0), 0.14, 0.6,
 		Color(0.62, 0.14, 0.12))
@@ -2649,7 +2669,7 @@ func _add_street_extras(parent: Node) -> void:
 	_box(parent, "Lot Wall South", Vector3(0, 0.6, 63.5), Vector3(64, 1.2, 0.4),
 		Color(0.26, 0.27, 0.25))
 	for bx: float in [-3.2, 3.2]:
-		_cylinder(parent, "Billboard Post", Vector3(bx, 0.7, 62.9), 0.08, 1.4,
+		_cylinder(parent, "Billboard Post %s" % ("West" if bx < 0.0 else "East"), Vector3(bx, 0.7, 62.9), 0.08, 1.4,
 			Color(0.12, 0.13, 0.14))
 	_box(parent, "Street Billboard", Vector3(0, 2.2, 62.9), Vector3(7.2, 2.2, 0.2),
 		Color(0.13, 0.15, 0.19))

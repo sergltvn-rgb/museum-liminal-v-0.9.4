@@ -39,3 +39,8 @@ __pycache__/
 start-mcp.cjs
 start-mcp.cmd
 bypass-wrapper.cjs
+.mcp.json
+
+# Assistant session logs (claude/): tens of MB of JSONL transcripts and
+# per-subagent dumps. Useful locally for post-mortems, worthless in history.
+claude/

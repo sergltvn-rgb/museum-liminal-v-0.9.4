@@ -14,8 +14,10 @@ extends CharacterBody3D
 @export var air_acceleration := 8.0
 @export var air_control := 0.42
 @export var step_height := 0.38
-## How far ahead the step probe looks. One frame of walking is 7.5 cm at 60 Hz,
-## which is not enough to see a kerb before the body is already jammed into it.
+## How far ahead the step probe looks for something to climb. One frame of
+## walking is 7.5 cm at 60 Hz, which is not enough to see a kerb before the body
+## is already jammed into it. This only DETECTS an obstacle; the height is
+## measured by a ray, so this value no longer has to clear the capsule shell.
 @export var step_probe_distance := 0.30
 ## Slack above the ledge, so the body lands ON the step and not INSIDE it.
 @export var step_clearance := 0.02
@@ -45,6 +47,10 @@ var _coyote_left := 0.0
 var _jump_buffer_left := 0.0
 var _last_safe_transform := Transform3D.IDENTITY
 var _safe_position_timer := 0.0
+# The body's own capsule, needed to aim the step ray past its shell. Cached as
+# the shape (not as a radius) because PlayerScaleController rewrites the radius
+# while a size trial is running, and a copied number would go stale.
+var _step_capsule: CapsuleShape3D = null
 
 
 func _ready() -> void:
@@ -60,6 +66,9 @@ func _ready() -> void:
 	# same height the player can climb makes a flight of steps walkable in both
 	# directions.
 	floor_snap_length = maxf(step_height, 0.1)
+	var collision := get_node_or_null("Player Collision") as CollisionShape3D
+	if collision != null:
+		_step_capsule = collision.shape as CapsuleShape3D
 
 
 ## SettingsManager pushes the saved sensitivity onto whatever is in the "player"
@@ -141,7 +150,7 @@ func _physics_process(delta: float) -> void:
 	elif Input.is_action_just_released("jump") and velocity.dot(local_up)>0.0:
 		velocity-=local_up*velocity.dot(local_up)*(1.0-short_jump_multiplier)
 	elif grounded: velocity+=gravity_direction.normalized()*.1
-	if grounded and gravity_direction.is_equal_approx(Vector3.DOWN): _try_step_up(direction,speed,delta)
+	if grounded: _try_step_up(direction,speed,delta)
 	var was_falling := velocity.dot(gravity_direction.normalized())>3.0
 	move_and_slide(); _update_safe_transform(delta); _update_footsteps(delta,wants_run,was_falling)
 
@@ -158,38 +167,79 @@ func _physics_process(delta: float) -> void:
 ## This version measures the ledge:
 ##   1. probe at least `step_probe_distance` ahead, so a kerb is seen before the
 ##      body is already pressed into it;
-##   2. give up if there is no headroom for the lift;
-##   3. give up if the obstacle is still in the way once lifted -- that is a
-##      wall, not a step;
-##   4. drop the lifted body back down and take the REAL rise from how far it
-##      fell before touching the ledge;
-##   5. give up if the ledge is too steep to stand on, using the body's own
-##      floor_max_angle rather than a second opinion about what a floor is.
+##   2. drop rays along the path, from just past the capsule shell out to the
+##      full probe length, and take the REAL rise from the highest standable
+##      face they land on;
+##   3. give up if nothing standable was found (the body's own floor_max_angle
+##      decides that, not a second opinion about what a floor is) or if the face
+##      is higher than step_height;
+##   4. give up if there is no headroom for THAT rise;
+##   5. give up if the obstacle is still in the way once lifted -- that is a
+##      wall, not a step.
 ##
 ## The lift is applied to the position directly, as before: velocity is left
 ## alone so the step costs no speed and adds no upward momentum.
+##
+## The height is measured by a RAY, not by dropping the capsule back down. The
+## capsule version was measured on the live map and it lied on every ledge,
+## because a capsule sweep stops when the shell touches the ledge, and the shell
+## is a radius away from the body's axis: the rounded side of the capsule caught
+## the lip of the step, so the collision reported the ledge's SIDE and not its
+## top. The kerb around the rotunda (a true 0.160) measured 0.095, the street
+## kerb (0.099) measured 0.034, and with a shorter probe the cylindrical kerb was
+## not even noticed. Everything was still climbable only because
+## floor_snap_length papered over the shortfall. A ray dropped from beyond the
+## shell hits the top face itself, so `rise` is the real height and the lift can
+## be exact.
 func _try_step_up(direction: Vector3, speed: float, delta: float) -> void:
 	if direction.length_squared() < 0.01 or step_height <= 0.0:
 		return
-	var forward: Vector3 = direction.normalized() * maxf(speed * delta, step_probe_distance)
-	if not test_move(global_transform, forward):
+	# Every axis here is the body's own up, so the step works in the rift zones
+	# where gravity points sideways or backwards. Vector3.UP used to be hardcoded,
+	# and the whole routine was skipped unless gravity pointed straight down,
+	# which turned every ledge into a wall the moment gravity was rotated.
+	var up: Vector3 = -gravity_direction.normalized()
+	var heading: Vector3 = direction.normalized()
+	var probe: Vector3 = heading * maxf(speed * delta, step_probe_distance)
+	if not test_move(global_transform, probe):
 		return
-	var lift: Vector3 = Vector3.UP * (step_height + step_clearance)
+	var ceiling: float = step_height + step_clearance
+	var radius: float = _step_capsule.radius if _step_capsule != null else 0.35
+	# The rays have to cover the whole path the body is about to travel, not just
+	# the far end of it. Measured: standing 0.15 m off a kerb puts the body's axis
+	# 0.50 m from the edge, so a single ray at radius + 0.06 still landed on the
+	# road behind the kerb and reported a rise of 0.000 -- the street kerb and both
+	# sides of the rotunda kerb were simply not climbed. Sampling from just past
+	# the shell out to the full probe length and taking the HIGHEST standable face
+	# also handles a narrow step, where a single far ray would overshoot the tread
+	# and measure whatever lies beyond it.
+	var space := get_world_3d().direct_space_state
+	var reach: float = probe.length()
+	var rise := 0.0
+	for i in 4:
+		var ahead: float = radius + lerpf(0.06, reach, float(i) / 3.0)
+		var from: Vector3 = global_position + up * ceiling + heading * ahead
+		var query := PhysicsRayQueryParameters3D.create(from, from - up * (ceiling + 0.05))
+		query.exclude = [get_rid()]
+		query.collision_mask = collision_mask
+		var hit: Dictionary = space.intersect_ray(query)
+		if hit.is_empty():
+			continue
+		if (hit["normal"] as Vector3).dot(up) < cos(floor_max_angle):
+			continue
+		rise = maxf(rise, ((hit["position"] as Vector3) - global_position).dot(up))
+	if rise <= 0.001 or rise > step_height:
+		return
+	# Headroom is asked for the lift we are actually about to make. Asking for the
+	# full step_height (0.40 with the clearance) even to cross a 4 cm floor seam
+	# meant the player stopped taking the floor under a low shelf or in a 2.0 m
+	# doorway.
+	var lift: Vector3 = up * (rise + step_clearance)
 	if test_move(global_transform, lift):
 		return
-	var lifted: Transform3D = global_transform.translated(lift)
-	if test_move(lifted, forward):
+	if test_move(global_transform.translated(lift), probe):
 		return
-	var landing: Transform3D = lifted.translated(forward)
-	var hit := KinematicCollision3D.new()
-	if not test_move(landing, -lift, hit):
-		return
-	if hit.get_normal().dot(Vector3.UP) < cos(floor_max_angle):
-		return
-	var rise: float = lift.y - hit.get_travel().length()
-	if rise <= 0.001:
-		return
-	global_position += Vector3.UP * minf(rise + step_clearance, lift.y)
+	global_position += lift
 
 func _update_safe_transform(delta:float)->void:
 	_safe_position_timer+=delta

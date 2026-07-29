@@ -636,6 +636,9 @@ static func build_atrium(parent: Node3D, origin: Vector3, dais_y := 0.16,
 
 static func _root(parent: Node3D, node_name: String, origin: Vector3) -> Node3D:
 	var node := Node3D.new()
+	# A repeated sibling name makes Godot rename the second prop to @Node3D@NNN.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	node.name = node_name
 	node.position = origin
 	parent.add_child(node)

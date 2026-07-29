@@ -712,6 +712,10 @@ static func _deck_chevron(parent: Node3D, node_name: String, z: float,
 static func _holder(parent: Node3D, node_name: String, origin: Vector3,
 		yaw_degrees := 0.0) -> Node3D:
 	var root := Node3D.new()
+	# Same-kind rigs are siblings under the map root, so a repeated name makes
+	# Godot rename the second one to @Node3D@NNN. Tag the duplicate instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	root.name = node_name
 	root.position = origin
 	if not is_zero_approx(yaw_degrees):

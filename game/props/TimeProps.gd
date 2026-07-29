@@ -458,6 +458,9 @@ static func dress_time_wing(parent: Node3D, room_center: Vector3,
 
 static func _root(parent: Node3D, node_name: String, origin: Vector3) -> Node3D:
 	var root := Node3D.new()
+	# A repeated sibling name makes Godot rename the second prop to @Node3D@NNN.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	root.name = node_name
 	root.position = origin
 	parent.add_child(root)

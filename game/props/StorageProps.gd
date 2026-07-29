@@ -134,10 +134,10 @@ static func shelving_bay(parent: Node3D, origin: Vector3, facing_deg: float,
 	# whole reason this reads as industrial from across the room.
 	for sx: float in [-1.165, 1.165]:
 		for sz: float in [0.055, 0.565]:
-			_box(root, "Upright", Vector3(sx, 1.20, sz),
+			_box(root, "Upright %s" % [Vector2(sx, sz)], Vector3(sx, 1.20, sz),
 				Vector3(0.07, 2.40, 0.07), STEEL_DARK, 0.0, METAL_STEEL)
 	for tilt: float in [-63.6, 63.6]:
-		var brace := _box(root, "Back Brace", Vector3(0, 1.40, 0.035),
+		var brace := _box(root, "Back Brace %s" % [tilt], Vector3(0, 1.40, 0.035),
 			Vector3(0.05, 2.522, 0.03), STEEL_DARK, 0.0, METAL_STEEL)
 		brace.rotation_degrees = Vector3(0, 0, tilt)
 	_box(root, "Kick Plate", Vector3(0, 0.10, 0.585),
@@ -294,9 +294,9 @@ static func hazard_cabinet(parent: Node3D, origin: Vector3, facing_deg: float,
 	# Two leaves with a 0.02 m gap. That vertical seam is the strongest line on
 	# the prop and it reads at any distance.
 	for sx: float in [-0.245, 0.245]:
-		_box(root, "Cabinet Door", Vector3(sx, 1.05, 0.535),
+		_box(root, "Cabinet Door %s" % [sx], Vector3(sx, 1.05, 0.535),
 			Vector3(0.47, 1.80, 0.035), STEEL, 0.0, METAL_STEEL)
-		_cylinder(root, "Cabinet Handle", Vector3(sx * 0.225, 1.10, 0.565),
+		_cylinder(root, "Cabinet Handle %s" % [sx], Vector3(sx * 0.225, 1.10, 0.565),
 			0.018, 0.30, STEEL_PALE, 0.0, METAL_BRIGHT)
 
 	if sealed:
@@ -361,13 +361,13 @@ static func tool_board(parent: Node3D, origin: Vector3, facing_deg: float,
 	_box(root, "Board Panel", Vector3(0, mid_y, 0.02),
 		Vector3(2.20, 1.50, 0.04), Color(0.085, 0.095, 0.090))
 	for sy: float in [mount_y - 0.025, mount_y + 1.525]:
-		_box(root, "Board Rail", Vector3(0, sy, 0.025),
+		_box(root, "Board Rail %s" % [sy], Vector3(0, sy, 0.025),
 			Vector3(2.28, 0.05, 0.05), STEEL_DARK, 0.0, METAL_STEEL)
 	for sx: float in [-1.115, 1.115]:
-		_box(root, "Board Stile", Vector3(sx, mid_y, 0.025),
+		_box(root, "Board Stile %s" % [sx], Vector3(sx, mid_y, 0.025),
 			Vector3(0.05, 1.50, 0.05), STEEL_DARK, 0.0, METAL_STEEL)
 	for sy: float in [mount_y + 0.28, mount_y + 1.16]:
-		_box(root, "Registration Line", Vector3(0, sy, 0.042),
+		_box(root, "Registration Line %s" % [sy], Vector3(0, sy, 0.042),
 			Vector3(2.14, 0.012, 0.006), Color(0.300, 0.310, 0.280))
 
 	var row_y: float = mount_y + 0.80
@@ -474,11 +474,11 @@ static func bay_sign(parent: Node3D, origin: Vector3, facing_deg: float,
 	_box(root, "Sign Board", Vector3(0, 2.60, 0.0),
 		Vector3(1.70, 0.44, 0.05), PAINT_DARK)
 	for sy: float in [2.395, 2.805]:
-		_box(root, "Sign Edge", Vector3(0, sy, 0.0),
+		_box(root, "Sign Edge %s" % [sy], Vector3(0, sy, 0.0),
 			Vector3(1.70, 0.03, 0.055), PAINT_WORN)
 	var rod_len: float = maxf(0.05, ceiling_y - 2.82)
 	for sx: float in [-0.62, 0.62]:
-		_cylinder(root, "Sign Rod", Vector3(sx, 2.82 + rod_len * 0.5, 0.0),
+		_cylinder(root, "Sign Rod %s" % [sx], Vector3(sx, 2.82 + rod_len * 0.5, 0.0),
 			0.014, rod_len, STEEL_PALE, 0.0, METAL_BRIGHT)
 
 	var range_text := ""
@@ -585,6 +585,11 @@ static func _paint_tool_outline(root: Node3D, station: int, at: Vector3) -> void
 static func _root(parent: Node3D, node_name: String, origin: Vector3,
 		facing_deg: float) -> Node3D:
 	var node := Node3D.new()
+	# Two props of the same kind are siblings under the map root, so a repeated
+	# name makes Godot rename the second one to @Node3D@NNN and the prop becomes
+	# unfindable by name. Tag the duplicate with its origin instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	node.name = node_name
 	node.position = origin
 	node.rotation_degrees = Vector3(0, facing_deg, 0)
@@ -644,6 +649,10 @@ static func _mesh(parent: Node3D, node_name: String, at: Vector3,
 		mesh: PrimitiveMesh, size: Vector3, color: Color, emission: float,
 		metallic: float) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
+	# Repeated sibling names make Godot fall back to @MeshInstance3D@NNN, which
+	# no test or feed can address. Tag the twin with its local offset instead.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, at]
 	instance.name = node_name
 	instance.position = at
 	instance.mesh = mesh

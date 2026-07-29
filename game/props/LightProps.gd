@@ -692,6 +692,10 @@ static func clear_material_cache() -> void:
 
 static func _root(parent: Node3D, origin: Vector3, node_name: String) -> Node3D:
 	var root := Node3D.new()
+	# A repeated sibling name makes Godot rename the second fitting to
+	# @Node3D@NNN, so the blackout audit can no longer identify it.
+	if parent.has_node(NodePath(node_name)):
+		node_name = "%s %s" % [node_name, origin]
 	root.name = node_name
 	root.position = origin
 	root.add_to_group(FIXTURE_GROUP)
