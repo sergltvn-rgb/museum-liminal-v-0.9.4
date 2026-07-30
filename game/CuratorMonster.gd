@@ -115,15 +115,16 @@ enum State {PATROL, INVESTIGATE, STALK, EXPOSED, SEARCH, COMMIT, RETREAT}
 ## Patrol pace. Below the player's walk 4.5 on purpose: a Curator doing rounds
 ## must never look like a Curator that has found you.
 const PATROL_SPEED := 2.2
-## Rough waypoints of the night round, in world XZ. Every one of them is passed
-## through _navigable() before use, so they only have to be near walkable floor,
-## not on it -- the same guarantee reset_at() relies on.
+## Waypoints of the night round, in world XZ, all five read off the baked mesh
+## rather than off the map layout. Nearness is not enough after all: the atrium
+## centre has no floor under it, and the north-west wing bakes as an island the
+## round can never leave, so a waypoint there stalls the Curator for good.
 const PATROL_POINTS := [
-	Vector3(0.0, 0.0, 0.0),
+	Vector3(-4.0, 0.0, 0.0),
 	Vector3(-17.0, 0.0, -12.0),
 	Vector3(-25.0, 0.0, 2.0),
-	Vector3(-17.0, 0.0, 12.0),
-	Vector3(9.6, 0.0, -20.6),
+	Vector3(-12.0, 0.0, 12.0),
+	Vector3(10.15, 0.0, -20.6),
 ]
 ## Close enough to a waypoint to call it visited.
 const PATROL_ARRIVED := 1.8

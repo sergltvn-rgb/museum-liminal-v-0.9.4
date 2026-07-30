@@ -1795,6 +1795,9 @@ func _verify_noise_model(map_root: Node) -> void:
 ## the Curator does is worth nothing to the player watching from a cupboard.
 const CURATOR_STATE_PATROL_TICKS := 420
 const CURATOR_STATE_PATROL_MIN_TRAVEL := 0.5
+## How close a navigation path has to end to its waypoint before the leg counts
+## as connected. Bigger than the mesh cell 0.15 and smaller than PATROL_ARRIVED.
+const CURATOR_STATE_LEG_TOLERANCE := 0.6
 ## Half a second of lantern. Short on purpose: at RETREAT_SPEED a full second
 ## would carry the Curator past RETREAT_RANGE, and the state would drop on the
 ## very tick the check reads it.
@@ -1852,6 +1855,32 @@ func _verify_curator_states(map_root: Node) -> void:
 	var patrol_travel := patrol_from.distance_to(curator.global_position)
 	if patrol_travel < CURATOR_STATE_PATROL_MIN_TRAVEL:
 		problems.append("patrol stood still (%.2f m)" % patrol_travel)
+
+	# Walking for seven seconds only proves the first leg. Every leg of the round
+	# has to be a real path on the baked mesh: waypoints written from the map
+	# layout can land on an island the Curator enters and never leaves, and the
+	# state machine would keep reporting PATROL while standing in a corner.
+	var nav_agent := curator.get("_agent") as NavigationAgent3D
+	var round_points: Array = curator.get_script().get_script_constant_map()["PATROL_POINTS"]
+	var round_length := 0.0
+	if nav_agent == null:
+		problems.append("Curator has no navigation agent")
+	else:
+		var nav_map: RID = nav_agent.get_navigation_map()
+		for i in range(round_points.size()):
+			var next_i: int = (i + 1) % round_points.size()
+			var leg_from: Vector3 = curator.call("_navigable", round_points[i])
+			var leg_to: Vector3 = curator.call("_navigable", round_points[next_i])
+			var leg: PackedVector3Array = NavigationServer3D.map_get_path(
+				nav_map, leg_from, leg_to, true)
+			if leg.size() == 0:
+				problems.append("leg %d->%d has no path" % [i, next_i])
+				continue
+			for n in range(1, leg.size()):
+				round_length += leg[n - 1].distance_to(leg[n])
+			var short_by: float = leg[leg.size() - 1].distance_to(leg_to)
+			if short_by > CURATOR_STATE_LEG_TOLERANCE:
+				problems.append("leg %d->%d stops %.2f m short" % [i, next_i, short_by])
 
 	# A fresh noise is an errand.
 	paused = false
@@ -1932,8 +1961,8 @@ func _verify_curator_states(map_root: Node) -> void:
 	curator.call("reset_at", curator_transform.origin)
 
 	if problems.is_empty():
-		_ok("Curator states: patrol walked %.2f m, noise -> INVESTIGATE -> SEARCH, seen at %.2f m -> COMMIT, lantern pushed it back %.2f m"
-			% [patrol_travel, commit_range, retreat_gain])
+		_ok("Curator states: patrol walked %.2f m of a %.2f m round, noise -> INVESTIGATE -> SEARCH, seen at %.2f m -> COMMIT, lantern pushed it back %.2f m"
+			% [patrol_travel, round_length, commit_range, retreat_gain])
 	else:
 		_fail("Curator states: %s" % [", ".join(problems)])
 
