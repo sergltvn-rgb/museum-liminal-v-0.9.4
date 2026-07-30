@@ -173,6 +173,7 @@ func _init() -> void:
 		await _verify_curator_cover(map_root)
 		await _verify_route_covers(map_root, generated)
 		await _verify_noise_model(map_root)
+		await _verify_curator_states(map_root)
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1787,6 +1788,154 @@ func _verify_noise_model(map_root: Node) -> void:
 			% [closed, float(forget) / 60.0])
 	else:
 		_fail("Curator hearing: %s" % [", ".join(problems)])
+
+
+## Curator states. Each case drives the machine into one named state and then
+## checks the behaviour that state promises: a name that does not change what
+## the Curator does is worth nothing to the player watching from a cupboard.
+const CURATOR_STATE_PATROL_TICKS := 420
+const CURATOR_STATE_PATROL_MIN_TRAVEL := 0.5
+## Half a second of lantern. Short on purpose: at RETREAT_SPEED a full second
+## would carry the Curator past RETREAT_RANGE, and the state would drop on the
+## very tick the check reads it.
+const CURATOR_STATE_RETREAT_TICKS := 30
+const CURATOR_STATE_RETREAT_MIN_GAIN := 0.5
+## Same pair the Gravity route cover uses, where a standing player is provably
+## visible: borrowing a measured sightline beats inventing a new one.
+const CURATOR_STATE_SEEN_PLAYER_XZ := Vector2(28.0, -2.65)
+const CURATOR_STATE_SEEN_CURATOR_XZ := Vector2(28.0, -8.0)
+const CURATOR_STATE_LANTERN_CURATOR_XZ := Vector2(28.0, -6.0)
+
+
+func _verify_curator_states(map_root: Node) -> void:
+	var player := get_first_node_in_group("player") as CharacterBody3D
+	var curator := map_root.get_node_or_null("The Curator") as CharacterBody3D
+	if curator == null:
+		curator = map_root.find_child("The Curator", true, false) as CharacterBody3D
+	if player == null or curator == null:
+		_fail("Curator states: player/Curator missing")
+		return
+
+	var player_transform := player.global_transform
+	var curator_transform := curator.global_transform
+	var player_processing := player.is_physics_processing()
+	var prior_controls := bool(player.get("controls_enabled"))
+	var prior_active := bool(curator.get("active"))
+	var prior_night: int = curator.get("night")
+	var prior_slowed := bool(curator.get("slowed"))
+	var prior_paused := paused
+	player.set("controls_enabled", false)
+	player.set_physics_process(false)
+	player.velocity = Vector3.ZERO
+	# Far past SIGHT_RANGE for the knowledge cases below.
+	player.global_position = Vector3(28.0, player.global_position.y, -4.5)
+	curator.call("reset_at", Vector3(-25.0, 0.0, -12.0))
+	curator.set("night", 2)
+	curator.set("slowed", false)
+	paused = false
+	curator.visible = true
+	curator.set("active", true)
+	await _spin(1)
+
+	var problems: Array[String] = []
+
+	# Knows nothing: walks its round. Standing still here is the bug this state
+	# machine exists to kill.
+	var patrol_state := str(curator.call("state_name"))
+	if patrol_state != "PATROL":
+		problems.append("no knowledge -> %s" % patrol_state)
+	var patrol_from := curator.global_position
+	for _i in range(CURATOR_STATE_PATROL_TICKS):
+		paused = false
+		curator.set("active", true)
+		await physics_frame
+	var patrol_travel := patrol_from.distance_to(curator.global_position)
+	if patrol_travel < CURATOR_STATE_PATROL_MIN_TRAVEL:
+		problems.append("patrol stood still (%.2f m)" % patrol_travel)
+
+	# A fresh noise is an errand.
+	paused = false
+	curator.set("active", true)
+	curator.call("hear_noise", curator.global_position + Vector3(8.0, 0.0, 0.0), 1.6)
+	# Exactly one physics tick, not _spin(): the noise is consumed on the tick it
+	# arrives, so a second tick would already read as the stale SEARCH below.
+	await physics_frame
+	var heard_state := str(curator.call("state_name"))
+	if heard_state != "INVESTIGATE":
+		problems.append("fresh noise -> %s" % heard_state)
+
+	# One tick later the noise is stale but the place is still believed in.
+	paused = false
+	curator.set("active", true)
+	await physics_frame
+	var search_state := str(curator.call("state_name"))
+	if search_state != "SEARCH":
+		problems.append("stale noise -> %s" % search_state)
+
+	# Seen and close. The player faces away on purpose: an observed Curator is
+	# frozen by the weeping-angel rule and would never reach COMMIT.
+	var seen_player := Vector3(CURATOR_STATE_SEEN_PLAYER_XZ.x,
+		player.global_position.y, CURATOR_STATE_SEEN_PLAYER_XZ.y)
+	player.global_position = seen_player
+	player.global_rotation = Vector3(0.0, PI, 0.0)
+	var commit_spot := Vector3(CURATOR_STATE_SEEN_CURATOR_XZ.x, 0.0,
+		CURATOR_STATE_SEEN_CURATOR_XZ.y)
+	curator.call("reset_at", commit_spot)
+	curator.look_at(Vector3(seen_player.x, curator.global_position.y,
+		seen_player.z), Vector3.UP)
+	paused = false
+	curator.set("active", true)
+	await _spin(2)
+	var commit_range := curator.global_position.distance_to(player.global_position)
+	var commit_state := str(curator.call("state_name"))
+	if not bool(curator.call("_can_see_player")):
+		problems.append("commit case lost its sightline")
+	elif commit_state != "COMMIT":
+		problems.append("seen at %.2f m -> %s" % [commit_range, commit_state])
+
+	# Null lantern held close: it has to give ground, not just slow down.
+	curator.call("reset_at", Vector3(CURATOR_STATE_LANTERN_CURATOR_XZ.x, 0.0,
+		CURATOR_STATE_LANTERN_CURATOR_XZ.y))
+	# Re-armed every tick: the lantern is a held tool, and whatever owns it in a
+	# real night keeps writing this flag too.
+	curator.set("slowed", true)
+	paused = false
+	curator.set("active", true)
+	var retreat_from := curator.global_position.distance_to(player.global_position)
+	# The state is read on the LAST tick, not the first: a flag written between
+	# frames can still be cleared by whoever owns the lantern before the Curator
+	# processes, so only a tick that ran with the flag in force proves anything.
+	var retreat_state := ""
+	for _i in range(CURATOR_STATE_RETREAT_TICKS):
+		paused = false
+		curator.set("active", true)
+		curator.set("slowed", true)
+		await physics_frame
+		retreat_state = str(curator.call("state_name"))
+	var retreat_gain := curator.global_position.distance_to(player.global_position) \
+		- retreat_from
+	if retreat_state != "RETREAT":
+		problems.append("lantern at %.2f m -> %s" % [retreat_from, retreat_state])
+	if retreat_gain < CURATOR_STATE_RETREAT_MIN_GAIN:
+		problems.append("lantern gained only %.2f m" % retreat_gain)
+
+	paused = prior_paused
+	player.global_transform = player_transform
+	curator.global_transform = curator_transform
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	player.set("controls_enabled", prior_controls)
+	player.set_physics_process(player_processing)
+	curator.set("night", prior_night)
+	curator.set("slowed", prior_slowed)
+	curator.set("active", prior_active)
+	curator.call("reset_at", curator_transform.origin)
+
+	if problems.is_empty():
+		_ok("Curator states: patrol walked %.2f m, noise -> INVESTIGATE -> SEARCH, seen at %.2f m -> COMMIT, lantern pushed it back %.2f m"
+			% [patrol_travel, commit_range, retreat_gain])
+	else:
+		_fail("Curator states: %s" % [", ".join(problems)])
 
 
 ## Returns top Y, widest X and widest Z across an object's real box colliders.

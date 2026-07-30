@@ -103,6 +103,44 @@ const SEARCH_ARRIVED := 1.6
 ## caught by a passer-by, long enough to be caught mid-hide.
 const CATCH_BLIND_DISTANCE := 0.7
 
+## WHAT THE CURATOR IS DOING, AS A NAMED STATE
+##
+## Knowledge (above) answers "where does it think the player is". This answers
+## "what is it doing about it", and it exists because the player could not read
+## the difference: standing still meant both "frozen under your stare" and "it
+## has no idea where you are", and every kind of movement looked like a chase.
+## The state is derived every tick from knowledge, not stored as a mood, so it
+## can never disagree with what the Curator actually knows.
+enum State {PATROL, INVESTIGATE, STALK, EXPOSED, SEARCH, COMMIT, RETREAT}
+## Patrol pace. Below the player's walk 4.5 on purpose: a Curator doing rounds
+## must never look like a Curator that has found you.
+const PATROL_SPEED := 2.2
+## Rough waypoints of the night round, in world XZ. Every one of them is passed
+## through _navigable() before use, so they only have to be near walkable floor,
+## not on it -- the same guarantee reset_at() relies on.
+const PATROL_POINTS := [
+	Vector3(0.0, 0.0, 0.0),
+	Vector3(-17.0, 0.0, -12.0),
+	Vector3(-25.0, 0.0, 2.0),
+	Vector3(-17.0, 0.0, 12.0),
+	Vector3(9.6, 0.0, -20.6),
+]
+## Close enough to a waypoint to call it visited.
+const PATROL_ARRIVED := 1.8
+## Seconds spent standing at a waypoint before moving on. The pause is what
+## makes a round readable as a round instead of a lap.
+const PATROL_HOLD := 2.5
+## Seen, but far enough that sprinting in would only telegraph the chase early.
+## Inside this range the Curator commits; outside it, it closes at a stalk.
+const COMMIT_RANGE := 12.0
+const STALK_FACTOR := 0.62
+const INVESTIGATE_FACTOR := 0.78
+const SEARCH_FACTOR := 0.7
+## Null lantern counterplay: held this close it stops being a speed debuff and
+## starts pushing the Curator back, so the tool buys space instead of seconds.
+const RETREAT_RANGE := 6.0
+const RETREAT_SPEED := 3.0
+
 ## Audio. Everything below plays on the SFX bus (AudioManager owns the layout);
 ## if that bus is missing the players fall back to Master rather than erroring.
 const AUDIO_BUS := "SFX"
@@ -182,6 +220,13 @@ var _noise_loudness := 0.0
 ## quieter event arriving later cannot rewrite the place already believed in.
 var _heard_origin := Vector3.ZERO
 var _player_capsule: CapsuleShape3D = null
+## Current named state. Derived every tick; read from outside through
+## state_name() so the HUD and the gates never touch the enum directly.
+var state: int = State.PATROL
+var _patrol_index := -1
+var _patrol_goal := Vector3.ZERO
+var _has_patrol_goal := false
+var _patrol_hold_left := 0.0
 
 
 func _ready() -> void:
@@ -228,6 +273,11 @@ func reset_at(spawn: Vector3) -> void:
 	_stuck_anchor = global_position
 	_repath_left = 0.0
 	_step_left = STEP_DISTANCE
+	# A new night starts a new round, not the tail of the last one.
+	state = State.PATROL
+	_patrol_index = -1
+	_has_patrol_goal = false
+	_patrol_hold_left = 0.0
 	if _steps != null:
 		# The catch stinger borrows this player and leaves it loud; a new night
 		# must not open with a footstep at stinger level.
@@ -264,6 +314,7 @@ func _physics_process(delta: float) -> void:
 	# Weeping-angel rule: the Curator only advances while unobserved. A frustum
 	# test alone is not enough — a wall between the two still counts as unseen.
 	if _is_observed():
+		state = State.EXPOSED
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
@@ -290,13 +341,34 @@ func _physics_process(delta: float) -> void:
 		_search_left -= delta
 		if _search_left <= 0.0:
 			_has_last_known = false
-	if not _has_last_known:
-		# It does not know where the player is, so it waits. Breathing and dread
-		# above keep running: the player must still feel it in the room.
-		velocity.x = 0.0
-		velocity.z = 0.0
-		velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
-		move_and_slide()
+	# One place decides what the Curator is doing, and it decides from what the
+	# Curator knows this very tick. Order matters: being pushed off beats having
+	# seen you, and seeing you beats every kind of guess.
+	var to_player := global_position.distance_to(target)
+	if slowed and to_player < RETREAT_RANGE:
+		state = State.RETREAT
+	elif seen:
+		state = State.COMMIT if to_player <= COMMIT_RANGE else State.STALK
+	elif heard:
+		state = State.INVESTIGATE
+	elif _has_last_known:
+		state = State.SEARCH
+	else:
+		state = State.PATROL
+
+	if state == State.RETREAT:
+		# The null lantern was a speed multiplier and nothing else, which the
+		# player could not see happening. Held this close it now gives ground
+		# back -- the tool costs the only carry slot and has to pay for it.
+		_retreat(target, delta)
+		return
+
+	if state == State.PATROL:
+		# It does not know where the player is, so it walks its round instead of
+		# standing where it lost them. A waiting Curator was reported live as a
+		# broken one; a walking one is a museum that is still inhabited, and its
+		# footsteps are information the player can use.
+		_patrol(delta)
 		return
 
 	var goal := _last_known
@@ -314,7 +386,7 @@ func _physics_process(delta: float) -> void:
 	step.y = 0.0
 
 	if step.length() > 0.05:
-		var speed := BASE_SPEED + SPEED_PER_NIGHT * float(night - 1)
+		var speed := _state_speed()
 		if slowed and global_position.distance_to(target) < NULL_LANTERN_RANGE:
 			speed *= NULL_LANTERN_FACTOR
 		var desired := step.normalized() * speed
@@ -473,6 +545,107 @@ func _shake_free() -> void:
 		return
 	global_position = best
 	_stuck_anchor = best
+
+
+## The named state, for the HUD and for the gates. Public on purpose: nothing
+## outside this file may reach into the enum or the private knowledge fields.
+## Names come from the enum itself rather than a parallel string list: a list
+## would drift out of order on the first inserted state, and the localization
+## gate reads bare capitalised literals as missing translation keys.
+func state_name() -> String:
+	return String(State.keys()[state])
+
+
+## Chase speed for the current intention. The night curve stays the single
+## source of pace; states only take a fraction of it, so raising SPEED_PER_NIGHT
+## still moves every state at once.
+func _state_speed() -> float:
+	var speed := BASE_SPEED + SPEED_PER_NIGHT * float(night - 1)
+	match state:
+		State.STALK:
+			speed *= STALK_FACTOR
+		State.INVESTIGATE:
+			speed *= INVESTIGATE_FACTOR
+		State.SEARCH:
+			speed *= SEARCH_FACTOR
+	return speed
+
+
+## Stand still, but keep gravity honest: a Curator that skips move_and_slide()
+## on a waiting tick floats off any ledge it happens to be standing on.
+func _halt(delta: float) -> void:
+	velocity.x = 0.0
+	velocity.z = 0.0
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	move_and_slide()
+
+
+## The night round: walk the waypoint list in order, pause at each one. In order
+## rather than at random because a route the player can learn is a route they
+## can plan against; randomness here would only read as noise.
+func _patrol(delta: float) -> void:
+	if _patrol_hold_left > 0.0:
+		_patrol_hold_left -= delta
+		_halt(delta)
+		return
+	if not _has_patrol_goal \
+			or global_position.distance_to(_patrol_goal) < PATROL_ARRIVED:
+		_next_patrol_goal()
+		_patrol_hold_left = PATROL_HOLD
+		_halt(delta)
+		return
+	_repath_left -= delta
+	if _repath_left <= 0.0:
+		_repath_left = REPATH_INTERVAL
+		_agent.target_position = _patrol_goal
+	_check_stuck(delta)
+	var waypoint := _patrol_goal if _agent.is_navigation_finished() \
+		else _agent.get_next_path_position()
+	var step := waypoint - global_position
+	step.y = 0.0
+	if step.length() > 0.05:
+		var desired := step.normalized() * PATROL_SPEED
+		velocity.x = desired.x
+		velocity.z = desired.z
+		_face(step, delta)
+	else:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	move_and_slide()
+	# Patrol footsteps are the point, not a side effect: they are how a player
+	# in another room learns the round without ever seeing it.
+	_advance_footsteps(delta)
+
+
+## Advance to the next waypoint, snapped to floor the same way a spawn is.
+func _next_patrol_goal() -> void:
+	if PATROL_POINTS.is_empty():
+		_has_patrol_goal = false
+		return
+	_patrol_index = (_patrol_index + 1) % PATROL_POINTS.size()
+	var point: Vector3 = PATROL_POINTS[_patrol_index]
+	_patrol_goal = _navigable(point)
+	_has_patrol_goal = true
+
+
+## Backing off from the null lantern. Straight away from the player rather than
+## along the navmesh: this is a flinch, not a plan, and move_and_slide() already
+## makes it slide along a wall instead of grinding into it. It keeps FACING the
+## player while it goes, because a thing that retreats without turning its back
+## is worse than one that runs.
+func _retreat(target: Vector3, delta: float) -> void:
+	var away := global_position - target
+	away.y = 0.0
+	if away.length() < 0.05:
+		away = -global_transform.basis.z
+	var desired := away.normalized() * RETREAT_SPEED
+	velocity.x = desired.x
+	velocity.z = desired.z
+	_face(-away, delta)
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	move_and_slide()
+	_advance_footsteps(delta)
 
 
 ## Ease the yaw instead of snapping with look_at(): the Curator now rounds
