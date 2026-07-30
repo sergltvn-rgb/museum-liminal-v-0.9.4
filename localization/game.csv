@@ -19,26 +19,16 @@ ADMIN_SUBTITLE,Pick a rift — you drop inside instantly. Night progress and sav
 ADMIN_TEST_DONE,TEST COMPLETE · F9 — pick the next dimension,ТЕСТ ЗАВЕРШЁН · F9 — выбрать следующее измерение
 ADMIN_TEST_PREFIX,TEST: %s,ТЕСТ: %s
 ADMIN_TITLE,SERVICE CONSOLE · DIMENSION TEST,СЛУЖЕБНАЯ КОНСОЛЬ · ТЕСТ ИЗМЕРЕНИЙ
-ANOMALY_ASCENT_READOUT,RISING FOG IN THE SHAFT\nSUPPORTS FRAGMENTED,ВОСХОДЯЩИЙ ТУМАН В ШАХТЕ\nОПОРЫ ФРАГМЕНТИРОВАНЫ
 ANOMALY_ASCENT_TITLE,VERTICAL RIFT,ВЕРТИКАЛЬНЫЙ РАЗЛОМ
-ANOMALY_ECHO_READOUT,ACOUSTIC LOOP CLOSED\nREPEATING FLASHES\nPROTOCOL: RESONANCE TUNER,АКУСТИЧЕСКИЙ КОНТУР ЗАМКНУТ\nПОВТОРЯЮЩИЕСЯ ВСПЫШКИ\nПРОТОКОЛ: РЕЗОНАНСНЫЙ НАСТРОЙЩИК
 ANOMALY_ECHO_TITLE,RESONANT ECHO,РЕЗОНАНСНОЕ ЭХО
-ANOMALY_GLASS_READOUT,LOAD-BEARING SURFACES UNSTABLE\nPHANTOM GEOMETRY\nPROTOCOL: PHASE PRISM,ОПОРНЫЕ ПОВЕРХНОСТИ НЕСТАБИЛЬНЫ\nФАНТОМНАЯ ГЕОМЕТРИЯ\nПРОТОКОЛ: ФАЗОВАЯ ПРИЗМА
 ANOMALY_GLASS_TITLE,PHASE COLLAPSE,ФАЗОВЫЙ ПРОВАЛ
-ANOMALY_GRAVITY_READOUT,MASS FLOW +340%\nOBJECTS LOSING WEIGHT\nPROTOCOL: GRAVITY ANCHOR,ПОТОК МАССЫ +340%\nОБЪЕКТЫ ТЕРЯЮТ ВЕС\nПРОТОКОЛ: ГРАВИТАЦИОННЫЙ ЯКОРЬ
 ANOMALY_GRAVITY_TITLE,GRAVITY SURGE,ГРАВИТАЦИОННЫЙ СКАЧОК
-ANOMALY_MIRROR_READOUT,REFLECTIONS DESYNCHRONIZED\nFALSE GEOMETRY IN THE MIRRORS,ОТРАЖЕНИЯ РАССИНХРОНИЗИРОВАНЫ\nЛОЖНАЯ ГЕОМЕТРИЯ В ЗЕРКАЛАХ
 ANOMALY_MIRROR_TITLE,MIRROR RIFT,ЗЕРКАЛЬНЫЙ РАЗЛОМ
-ANOMALY_RADIATION_READOUT,RADIATION 12.8 MSV/H AND RISING\nGREEN GLOW\nPROTOCOL: CONTAINMENT ROD,"РАДИАЦИЯ 12,8 МЗВ/Ч И РАСТЁТ\nЗЕЛЁНОЕ СВЕЧЕНИЕ\nПРОТОКОЛ: СТЕРЖЕНЬ СДЕРЖИВАНИЯ"
 ANOMALY_RADIATION_TITLE,RADIATION BLOOM,РАДИАЦИОННОЕ ЦВЕТЕНИЕ
-ANOMALY_SCRAP_READOUT,EXHIBITS DISPLACED TO THE SHADOW DEPOT\nEXTRACTION REQUIRED,ЭКСПОНАТЫ СМЕЩЕНЫ В ТЕНЕВОЙ СКЛАД\nТРЕБУЕТСЯ ИЗВЛЕЧЕНИЕ
 ANOMALY_SCRAP_TITLE,ASSET SEIZURE,ИЗЪЯТИЕ ЦЕННОСТЕЙ
-ANOMALY_TEMPORAL_READOUT,LOCAL CLOCKS RUNNING BACKWARDS\nAUDIO LOG LAGS ITS FEED BY 4 S\nOPERATOR: NAME THE DEVICE YOURSELF,ЛОКАЛЬНЫЕ ЧАСЫ ИДУТ НАЗАД\nАУДИОЖУРНАЛ ОТСТАЁТ ОТ ФИДА НА 4 С\nОПЕРАТОР: ПРИБОР ВЫБИРАЕТЕ ВЫ
 ANOMALY_TEMPORAL_TITLE,TEMPORAL DRIFT,ВРЕМЕННОЙ СДВИГ
 ANOMALY_UNKNOWN,UNKNOWN ANOMALY,НЕИЗВЕСТНАЯ АНОМАЛИЯ
-ANOMALY_VOID_READOUT,MASS FLOW −270%\nLIGHT ABSORPTION DETECTED\nPROTOCOL: FIELD EMITTER,ПОТОК МАССЫ −270%\nОБНАРУЖЕНО ПОГЛОЩЕНИЕ СВЕТА\nПРОТОКОЛ: ПОЛЕВОЙ ИЗЛУЧАТЕЛЬ
 ANOMALY_VOID_TITLE,VOID RIFT,РАЗРЫВ ПУСТОТЫ
-ANOMALY_YELLOW_READOUT,CLASS 0 LIMINAL ZONE\nFLUORESCENT LAMP HUM,ЛИМИНАЛЬНАЯ ЗОНА КЛАССА 0\nГУЛ ЛЮМИНЕСЦЕНТНЫХ ЛАМП
 ANOMALY_YELLOW_TITLE,YELLOW LIMIT,ЖЁЛТЫЙ ПРЕДЕЛ
 CAM_ACCESS_OFFICE_ONLY,CCTV access is only available from the security office.,Доступ к CCTV возможен только из офиса охраны.
 CAM_ATRIUM_EAST,Atrium — East,Атриум — восток
@@ -129,9 +119,18 @@ HUD_EFFECT_TEMPORAL,TEMPORAL DRIFT: %.0f%%,ТЕМПОРАЛЬНЫЙ СДВИГ: 
 HUD_EFFECT_VOID,LIGHT CIRCUIT UNSTABLE,СВЕТОВОЙ КОНТУР НЕСТАБИЛЕН
 HUD_EFFECT_YELLOW,LIMINAL BACKGROUND: LAMP HUM,ЛИМИНАЛЬНЫЙ ФОН: ГУЛ ЛАМП
 HUD_ENTER_POCKET,ENTERING POCKET DIMENSION,ПЕРЕХОД В КАРМАННОЕ ИЗМЕРЕНИЕ
+HUD_EVIDENCE_ASCENT,THE FLOOR IN THIS POST READS LEVEL AND THE CART ROLLS UPHILL,ПОЛ В ЭТОМ ПОСТУ РОВНЫЙ А ТЕЛЕЖКА КАТИТСЯ В ГОРУ
 HUD_EVIDENCE_CONFIRMED,SIGN RECORDED. THE DEVICE IS STILL YOUR CALL.,ПРИЗНАК ЗАФИКСИРОВАН. ПРИБОР ПО-ПРЕЖНЕМУ ЗА ВАМИ.
+HUD_EVIDENCE_ECHO,THE SOUND ON THIS FEED ARRIVES A SECOND LATE,ЗВУК НА ЭТОМ ФИДЕ ПРИХОДИТ НА СЕКУНДУ ПОЗЖЕ
+HUD_EVIDENCE_GLASS,A WALL IN THIS POST GOES TRANSPARENT AND SOLID AGAIN,СТЕНА В ЭТОМ ПОСТУ СТАНОВИТСЯ ПРОЗРАЧНОЙ И СНОВА ПЛОТНОЙ
+HUD_EVIDENCE_GRAVITY,THE DUST IN THIS POST HANGS AT WAIST HEIGHT,ПЫЛЬ В ЭТОМ ПОСТУ ВИСИТ НА ВЫСОТЕ ПОЯСА
+HUD_EVIDENCE_MIRROR,THE REFLECTION IN THIS POST MOVES A MOMENT LATE,ОТРАЖЕНИЕ В ЭТОМ ПОСТУ ДВИЖЕТСЯ С ЗАПОЗДАНИЕМ
+HUD_EVIDENCE_RADIATION,THE COUNTER ON THIS POST TICKS WITH NO SOURCE IN FRAME,СЧЁТЧИК В ЭТОМ ПОСТУ ЩЁЛКАЕТ БЕЗ ИСТОЧНИКА В КАДРЕ
+HUD_EVIDENCE_SCRAP,SMALL EXHIBITS IN THIS POST HAVE CREPT TO ONE WALL,МЕЛКИЕ ЭКСПОНАТЫ В ЭТОМ ПОСТУ СПОЛЗЛИ К ОДНОЙ СТЕНЕ
 HUD_EVIDENCE_SEEK,SIGNS UNCONFIRMED — WATCH CAM %02d,ПРИЗНАКИ НЕ ПОДТВЕРЖДЕНЫ — СМОТРИТЕ КАМЕРУ %02d
 HUD_EVIDENCE_TEMPORAL,THE CLOCK IN THIS POST IS RUNNING BACKWARDS,ЧАСЫ В ЭТОМ ПОСТУ ИДУТ НАЗАД
+HUD_EVIDENCE_VOID,THE SHADOWS IN THIS POST FALL AWAY FROM THE LAMPS,ТЕНИ В ЭТОМ ПОСТУ ПАДАЮТ В СТОРОНУ ОТ ЛАМП
+HUD_EVIDENCE_YELLOW,THE SAME DOOR NUMBER APPEARS TWICE IN THIS POST,ОДИН И ТОТ ЖЕ НОМЕР ДВЕРИ ВИДЕН В ЭТОМ ПОСТУ ДВАЖДЫ
 HUD_FALL_RESPAWN,You slipped over the edge — back on solid ground.,Вы сорвались с края — возврат на твёрдую землю.
 HUD_FINISH_TRIAL_FIRST,Finish the current dimension first.,Сначала завершите текущее измерение.
 HUD_HINT_APPLY,E - apply %s to the anomaly,E - применить %s к аномалии
@@ -273,18 +272,18 @@ SET_TAB_CONTROLS,Controls,Управление
 SET_TAB_GRAPHICS,Graphics,Графика
 SET_VSYNC,Vertical sync,Вертикальная синхронизация
 SET_VSYNC_DESC,Eliminates screen tearing,Устраняет разрывы изображения
-SIGN_CLOCK_BACKWARDS,EVERY CLOCK IN THE ROOM RUNS BACKWARDS.,ВСЕ ЧАСЫ В ЗАЛЕ ИДУТ НАЗАД.
-SIGN_COLD_DRAFT,A COLD DRAUGHT MOVES AGAINST THE VENTS.,ХОЛОДНЫЙ СКВОЗНЯК ИДЁТ ПРОТИВ ВЕНТИЛЯЦИИ.
-SIGN_DOOR_REPEATS,THE SAME DOOR NUMBER APPEARS TWICE IN ONE CORRIDOR.,ОДИН И ТОТ ЖЕ НОМЕР ДВЕРИ ВСТРЕЧАЕТСЯ ДВАЖДЫ В КОРИДОРЕ.
-SIGN_DUST_HANGS,DUST HANGS IN THE AIR INSTEAD OF SETTLING.,ПЫЛЬ ВИСИТ В ВОЗДУХЕ ВМЕСТО ТОГО ЧТОБЫ ОСЕДАТЬ.
-SIGN_FLOOR_SLOPE,THE FLOOR READS LEVEL AND WALKS UPHILL.,ПОЛ ВЫГЛЯДИТ РОВНЫМ А ИДЁТСЯ В ГОРУ.
-SIGN_GEIGER_TICKS,THE BADGE COUNTER TICKS WITH NO SOURCE IN REACH.,СЧЁТЧИК НА БЕЙДЖЕ ЩЁЛКАЕТ БЕЗ ИСТОЧНИКА РЯДОМ.
-SIGN_LIGHT_FLICKER,THE LIGHTS FLICKER OUT OF STEP WITH EACH OTHER.,СВЕТИЛЬНИКИ МИГАЮТ ВРАЗНОБОЙ ДРУГ С ДРУГОМ.
-SIGN_OBJECTS_DRIFT,SMALL OBJECTS HAVE CREPT TO ONE WALL.,МЕЛКИЕ ПРЕДМЕТЫ СПОЛЗЛИ К ОДНОЙ СТЕНЕ.
-SIGN_REFLECTION_LAG,REFLECTIONS COPY THE MOVEMENT A MOMENT LATE.,ОТРАЖЕНИЯ ПОВТОРЯЮТ ДВИЖЕНИЕ С ЗАПОЗДАНИЕМ.
-SIGN_SHADOW_WRONG,SHADOWS FALL AWAY FROM THE LAMPS.,ТЕНИ ПАДАЮТ В СТОРОНУ ОТ ЛАМП.
-SIGN_SOUND_DELAY,SOUNDS ARRIVE ABOUT A SECOND LATE.,ЗВУКИ ПРИХОДЯТ ПРИМЕРНО НА СЕКУНДУ ПОЗЖЕ.
-SIGN_SURFACES_TRANSPARENT,SOLID SURFACES GO BRIEFLY TRANSPARENT.,ПЛОТНЫЕ ПОВЕРХНОСТИ НЕНАДОЛГО СТАНОВЯТСЯ ПРОЗРАЧНЫМИ.
+SIGN_CLOCK_BACKWARDS,CLOCKS RUN BACKWARDS,ЧАСЫ ИДУТ НАЗАД
+SIGN_COLD_DRAFT,COLD DRAUGHT AGAINST THE VENTS,ХОЛОД ИДЁТ ПРОТИВ ВЕНТИЛЯЦИИ
+SIGN_DOOR_REPEATS,ONE DOOR NUMBER TWICE,НОМЕР ДВЕРИ ПОВТОРЯЕТСЯ
+SIGN_DUST_HANGS,DUST HANGS IN THE AIR,ПЫЛЬ ВИСИТ В ВОЗДУХЕ
+SIGN_FLOOR_SLOPE,LEVEL FLOOR WALKS UPHILL,РОВНЫЙ ПОЛ ИДЁТ В ГОРУ
+SIGN_GEIGER_TICKS,COUNTER TICKS WITH NO SOURCE,СЧЁТЧИК ЩЁЛКАЕТ БЕЗ ИСТОЧНИКА
+SIGN_LIGHT_FLICKER,LAMPS FLICKER OUT OF STEP,ЛАМПЫ МИГАЮТ ВРАЗНОБОЙ
+SIGN_OBJECTS_DRIFT,OBJECTS CREEP TO ONE WALL,ПРЕДМЕТЫ СПОЛЗЛИ К СТЕНЕ
+SIGN_REFLECTION_LAG,REFLECTIONS LAG BEHIND,ОТРАЖЕНИЯ ЗАПАЗДЫВАЮТ
+SIGN_SHADOW_WRONG,SHADOWS FALL AWAY FROM LAMPS,ТЕНИ ПАДАЮТ ПРОЧЬ ОТ ЛАМП
+SIGN_SOUND_DELAY,SOUND ARRIVES A SECOND LATE,ЗВУК ОТСТАЁТ НА СЕКУНДУ
+SIGN_SURFACES_TRANSPARENT,SURFACES GO TRANSPARENT,ПОВЕРХНОСТИ ПРОЗРАЧНЕЮТ
 STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.
 STORY_END_01,"Three nights. The core holds, and wing by wing the constants settle back into their cases.","Три ночи. Ядро держит, и крыло за крылом постоянные величины возвращаются в свои витрины."
 STORY_END_02,The monitors go quiet one after another. Nothing walks the halls that the cameras can name.,"Мониторы гаснут один за другим. По залам не ходит ничего такого, что камеры сумели бы назвать."

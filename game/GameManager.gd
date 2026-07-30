@@ -75,86 +75,102 @@ const STATE_CALM := 5
 const STATE_NIGHT_DONE := 6
 const STATE_WIN := 7
 
-# Anomaly types (step 2): terminal readout + required equipment id.
-# title/readout — ключи перевода (const нельзя оборачивать в tr()),
-# tr() вызывается там, где строки выводятся на экран.
+# Anomaly types: title, the three signs it shows, the device that closes it and
+# the line its CCTV post yields. title/evidence — ключи перевода (const нельзя
+# оборачивать в tr()), tr() вызывается там, где строки выводятся на экран.
+#
+# There is no "readout" field any more (audit 16.6 п. 1). A written-out readout was
+# a second place where the same incident was described, and the second place is
+# where the prescription survived: five of the ten still ended in PROTOCOL: and a
+# device name. The terminal now composes its readout from the signs themselves --
+# see _incident_signs_text() -- so the matrix in SIGNS is the only description of
+# an anomaly in the game and nothing can quietly disagree with it.
 const ANOMALIES := {
 	"gravity_surge": {
 		"title": "ANOMALY_GRAVITY_TITLE",
-		"readout": "ANOMALY_GRAVITY_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_GRAVITY",
 		"equipment": "gravity_anchor",
 		"signs": ["dust_hangs", "objects_drift", "floor_slope"],
 		"color": Color(0.62, 0.35, 0.95),
 	},
 	"temporal_drift": {
 		"title": "ANOMALY_TEMPORAL_TITLE",
-		"readout": "ANOMALY_TEMPORAL_READOUT",
-		"equipment": "chrono_stabilizer",
-		"signs": ["clock_backwards", "sound_delay", "light_flicker"],
-		# THE VERTICAL SLICE (12.6 p.4). This one anomaly is not diagnosed for the
-		# operator: the terminal prints two independent signs and stops, and naming
-		# the device is the player's job. A flag rather than a rewrite of all ten,
-		# because P2 of the audit checklist says not to scale before one slice has
-		# earned it. Read by _begin_anomaly() and _show_protocol().
+		# THE VERTICAL SLICE THAT SCALED (12.6 p.4, audit 16.6 п. 1). This anomaly was
+		# the first one the terminal refused to diagnose; all ten refuse now, so the
+		# flag is true everywhere and the branch it guards in _begin_anomaly() and
+		# _show_protocol() is kept only so an eleventh anomaly can be written the old
+		# way on purpose rather than by omission.
 		"self_diagnosed": true,
 		# What the required CCTV post is expected to yield when the operator finally
 		# watches it. Its presence is what turns the scan from a progress bar into a
-		# reading -- see GameplayEnhancements._update_readouts().
+		# reading -- see GameplayEnhancements._update_readouts(). Every anomaly names
+		# one of its own three signs here: the post confirms a sign, never a device.
 		"evidence": "HUD_EVIDENCE_TEMPORAL",
+		"equipment": "chrono_stabilizer",
+		"signs": ["clock_backwards", "sound_delay", "light_flicker"],
 		"color": Color(0.95, 0.68, 0.25),
 	},
 	"radiation_bloom": {
 		"title": "ANOMALY_RADIATION_TITLE",
-		"readout": "ANOMALY_RADIATION_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_RADIATION",
 		"equipment": "containment_rod",
 		"signs": ["geiger_ticks", "sound_delay", "dust_hangs"],
 		"color": Color(0.35, 0.90, 0.35),
 	},
 	"void_rift": {
 		"title": "ANOMALY_VOID_TITLE",
-		"readout": "ANOMALY_VOID_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_VOID",
 		"equipment": "field_emitter",
 		"signs": ["shadow_wrong", "cold_draft", "surfaces_transparent"],
 		"color": Color(0.25, 0.45, 0.95),
 	},
 	"echo_chamber": {
 		"title": "ANOMALY_ECHO_TITLE",
-		"readout": "ANOMALY_ECHO_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_ECHO",
 		"equipment": "resonance_tuner",
 		"signs": ["sound_delay", "door_repeats", "cold_draft"],
 		"color": Color(0.95, 0.42, 0.22),
 	},
 	"glass_bridge": {
 		"title": "ANOMALY_GLASS_TITLE",
-		"readout": "ANOMALY_GLASS_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_GLASS",
 		"equipment": "phase_prism",
 		"signs": ["surfaces_transparent", "reflection_lag", "floor_slope"],
 		"color": Color(0.78, 0.38, 0.92),
 	},
 	"mirror_maze": {
 		"title": "ANOMALY_MIRROR_TITLE",
-		"readout": "ANOMALY_MIRROR_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_MIRROR",
 		"equipment": "spectral_lens",
 		"signs": ["reflection_lag", "door_repeats", "shadow_wrong"],
 		"color": Color(0.55, 0.78, 0.95),
 	},
 	"yellow_halls": {
 		"title": "ANOMALY_YELLOW_TITLE",
-		"readout": "ANOMALY_YELLOW_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_YELLOW",
 		"equipment": "thread_spool",
 		"signs": ["door_repeats", "light_flicker", "dust_hangs"],
 		"color": Color(0.90, 0.80, 0.30),
 	},
 	"scrap_run": {
 		"title": "ANOMALY_SCRAP_TITLE",
-		"readout": "ANOMALY_SCRAP_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_SCRAP",
 		"equipment": "mass_clamp",
 		"signs": ["objects_drift", "geiger_ticks", "surfaces_transparent"],
 		"color": Color(0.55, 0.90, 0.75),
 	},
 	"ascent": {
 		"title": "ANOMALY_ASCENT_TITLE",
-		"readout": "ANOMALY_ASCENT_READOUT",
+		"self_diagnosed": true,
+		"evidence": "HUD_EVIDENCE_ASCENT",
 		"equipment": "thermal_chalk",
 		"signs": ["floor_slope", "cold_draft", "clock_backwards"],
 		"color": Color(0.95, 0.55, 0.65),
@@ -584,7 +600,7 @@ func _start_accident() -> void:
 		env.volumetric_fog_albedo = color.lightened(0.2)
 	# Terminal readout (step 5).
 	if _terminal_label != null:
-		_terminal_label.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), tr(str(info["readout"]))])
+		_terminal_label.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), _incident_signs_text(info)])
 	# The tool, named on the device itself and left standing there. Same wording
 	# the protocol panel uses, so the room and the panel cannot disagree.
 	if _terminal_take != null:
@@ -2417,6 +2433,23 @@ func incident_evidence_key() -> String:
 	if not ANOMALIES.has(_anomaly_id):
 		return ""
 	return str((ANOMALIES[_anomaly_id] as Dictionary).get("evidence", ""))
+
+
+## The three signs of an incident as the terminal prints them: three observations
+## and nothing else. Composed from SIGNS rather than stored per anomaly, so the
+## office screen, the protocol page and the discrimination matrix cannot drift
+## apart -- and so no future edit can put a device name back on the screen
+## without deleting a sign to make room for it.
+##
+## Exactly three lines, which is what the alarm plate was measured for (see the
+## AABB note further down this file): a fourth line spills off the frame.
+func _incident_signs_text(info: Dictionary) -> String:
+	var lines := PackedStringArray()
+	for sign_id in (info.get("signs", []) as Array):
+		var key := str(SIGNS.get(str(sign_id), ""))
+		if key != "":
+			lines.append(tr(key))
+	return "\n".join(lines)
 
 
 func _hide_protocol() -> void:

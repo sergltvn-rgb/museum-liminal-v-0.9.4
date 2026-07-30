@@ -320,6 +320,7 @@ func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
 		consts = (gm.get_script() as GDScript).get_script_constant_map()
 	var anomalies: Dictionary = consts.get("ANOMALIES", {})
 	var equipment: Dictionary = consts.get("EQUIPMENT", {})
+	var sign_texts: Dictionary = consts.get("SIGNS", {})
 	var saved_readout: String = readout.text
 	var saved_order: String = order.text
 	var worst_h := 0.0
@@ -329,8 +330,14 @@ func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
 	for id in anomalies:
 		var info: Dictionary = anomalies[id]
 		var device: String = tr(str(equipment[str(info["equipment"])]["name"]))
-		readout.text = Loc.fmt("HUD_TERMINAL_BREACH",
-			[tr(str(info["title"])), tr(str(info["readout"]))])
+		# The same three lines GameManager._incident_signs_text() composes. Built
+		# here rather than called, because this check measures what the plate will
+		# hold in a locale the running game has not necessarily loaded.
+		var lines := PackedStringArray()
+		for sign_id in (info.get("signs", []) as Array):
+			lines.append(tr(str(sign_texts.get(str(sign_id), ""))))
+		var printed := "\n".join(lines)
+		readout.text = Loc.fmt("HUD_TERMINAL_BREACH", [tr(str(info["title"])), printed])
 		order.text = "%s\n%s" % [tr("HUD_PROTO_TAKE"), device]
 		await process_frame
 		var stack: float = readout.get_aabb().size.y + order.get_aabb().size.y
@@ -339,7 +346,7 @@ func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
 			worst_h = stack
 			worst_id = str(id)
 		worst_w = maxf(worst_w, wide)
-		if tr(str(info["readout"])).to_upper().find(device.to_upper()) < 0:
+		if printed.to_upper().find(device.to_upper()) < 0:
 			unnamed += 1
 	readout.text = saved_readout
 	order.text = saved_order
@@ -354,7 +361,11 @@ func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
 	print("    (%d of %d anomaly readouts do not name the tool themselves — the order line is what covers them)"
 		% [unnamed, anomalies.size()])
 
-	# 3. Open a real incident: the device must name the tool without being pressed.
+	# 3. Open a real incident: the stand sign must SAY SOMETHING and must NOT be the
+	# answer. This check used to demand the opposite -- that the tool be named on
+	# the screen -- which was right while the terminal did the diagnosing. Now all
+	# ten anomalies leave the device to the operator (audit 16.6 п. 1), so the same
+	# plate is held to the inverse rule: never blank, never a device name.
 	if gm == null or not gm.has_method("_start_accident"):
 		_fail("Anomaly terminal: no GameManager._start_accident() — cannot verify the order line")
 		return
@@ -369,12 +380,12 @@ func _verify_anomaly_terminal(map_root: Node, generated: Node) -> void:
 			names_a_tool = true
 			break
 	if shown.strip_edges().is_empty():
-		_fail("Anomaly terminal: incident open and the order line is blank — the tool is only named by the flash again")
-	elif not names_a_tool:
-		_fail("Anomaly terminal: order line reads '%s' but names no equipment"
+		_fail("Anomaly terminal: incident open and the order line is blank — the operator is told nothing at all")
+	elif names_a_tool:
+		_fail("Anomaly terminal: order line reads '%s' and hands over the device"
 			% shown.replace("\n", " / "))
 	else:
-		_ok("Anomaly terminal: an open incident leaves the tool named on the screen ('%s')"
+		_ok("Anomaly terminal: an open incident leaves the device to the operator ('%s')"
 			% shown.replace("\n", " / "))
 
 
@@ -1592,9 +1603,13 @@ func _verify_incident_signs() -> void:
 	if rows.is_empty():
 		_fail("Incident signs: %s is empty or unreadable" % LOCALIZATION_CSV)
 		return
+	var signs_table: Variant = _script_constant("res://game/GameManager.gd", "SIGNS")
+	if typeof(signs_table) != TYPE_DICTIONARY:
+		_fail("Incident signs: GameManager exposes no sign table")
+		return
 	var problems: Array[String] = []
-	var slice_count := 0
-	var sign_lines := 0
+	var posts := 0
+	var checked := 0
 	for id in anomalies:
 		var info: Dictionary = anomalies[id]
 		var equip := str(info.get("equipment", ""))
@@ -1602,46 +1617,52 @@ func _verify_incident_signs() -> void:
 		if equip == "" or not equipment.has(equip):
 			problems.append("%s names no device on the shelf" % id)
 			continue
+		# The written readout is gone on purpose: it was the second description of an
+		# incident and the one the prescription survived in. A new anomaly that
+		# brings it back would be diagnosed for the operator again.
+		if info.has("readout"):
+			problems.append("%s still carries a written readout" % id)
 		if not bool(info.get("self_diagnosed", false)):
+			problems.append("%s is still diagnosed for the operator" % id)
+		var device_key := str((equipment[equip] as Dictionary).get("name", ""))
+		if not rows.has(device_key):
+			problems.append("%s has no catalogue row for its device" % id)
 			continue
-		slice_count += 1
+		var names: PackedStringArray = rows[device_key]
+		# Everything the operator gets to read about this incident: the three signs
+		# the terminal prints and the line its camera post yields. All of it is held
+		# to the same rule, because the answer only has to leak from one of them.
+		var keys := PackedStringArray()
+		for sign_id in (info.get("signs", []) as Array):
+			keys.append(str(signs_table.get(str(sign_id), "")))
 		# The camera post owes a readable line too, or "signs instead of a bar" is
 		# only true of the terminal and the CCTV is still a fill with a percentage.
 		var evidence := str(info.get("evidence", ""))
 		if evidence == "" or not rows.has(evidence):
 			problems.append("%s promises no evidence line for its camera post" % id)
-		var readout := str(info.get("readout", ""))
-		var device_key := str((equipment[equip] as Dictionary).get("name", ""))
-		if not rows.has(readout) or not rows.has(device_key):
-			problems.append("%s has no catalogue row for its readout or its device" % id)
-			continue
-		var texts: PackedStringArray = rows[readout]
-		var names: PackedStringArray = rows[device_key]
-		# Every shipped locale, not just the one this run happens to boot in: a
-		# translation that kept the old prescription hands the answer back to half
-		# the players and nothing else in the build would notice.
-		for i in range(texts.size()):
-			var lines := PackedStringArray()
-			for line in texts[i].split("\\n"):
-				if line.strip_edges() != "":
-					lines.append(line.strip_edges())
-			# The last line is the operator's instruction, not an observation, so it
-			# is not counted as one of the two signs.
-			var signs := maxi(0, lines.size() - 1)
-			if signs < 2:
-				problems.append("%s gives %d sign(s) in column %d" % [id, signs, i])
-			else:
-				sign_lines += signs
-			var upper := texts[i].to_upper()
-			if i < names.size() and names[i].strip_edges() != "" and upper.contains(names[i].to_upper()):
-				problems.append("%s still names %s in column %d" % [id, names[i], i])
-			if upper.contains("PROTOCOL:") or upper.contains("ПРОТОКОЛ:"):
-				problems.append("%s still prescribes a protocol in column %d" % [id, i])
-	if slice_count == 0:
-		problems.append("no anomaly is marked as self-diagnosed")
+		else:
+			posts += 1
+			keys.append(evidence)
+		for key in keys:
+			if key == "" or not rows.has(key):
+				problems.append("%s reads a line with no catalogue row" % id)
+				continue
+			checked += 1
+			var texts: PackedStringArray = rows[key]
+			# Every shipped locale, not just the one this run happens to boot in: a
+			# translation that kept the old prescription hands the answer back to half
+			# the players and nothing else in the build would notice.
+			for i in range(texts.size()):
+				var upper := texts[i].to_upper()
+				if upper.strip_edges() == "":
+					problems.append("%s is empty in column %d" % [key, i])
+				if i < names.size() and names[i].strip_edges() != "" and upper.contains(names[i].to_upper()):
+					problems.append("%s names %s in column %d" % [key, names[i], i])
+				if upper.contains("PROTOCOL:") or upper.contains("ПРОТОКОЛ:"):
+					problems.append("%s still prescribes a protocol in column %d" % [key, i])
 	if problems.is_empty():
-		_ok("Incident signs: %d anomalies close on exactly one device, %d self-diagnosed carrying %d sign lines"
-			% [anomalies.size(), slice_count, sign_lines])
+		_ok("Incident signs: %d anomalies self-diagnosed, %d camera posts yielding a line, %d readable lines and none names its device"
+			% [anomalies.size(), posts, checked])
 	else:
 		_fail("Incident signs: %s" % [", ".join(problems)])
 
