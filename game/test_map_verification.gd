@@ -175,6 +175,7 @@ func _init() -> void:
 		await _verify_noise_model(map_root)
 		await _verify_curator_states(map_root)
 		await _verify_hide_spots()
+		await _verify_rift_gate(map_root)
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1962,6 +1963,93 @@ func _verify_hide_spots() -> void:
 			% [spots.size(), width_slack, head_slack, blocked, cleared, reachable, handed_over])
 	else:
 		_fail("Hide spots: %s" % [", ".join(problems)])
+
+
+## How far a gate's approach point may sit from navigable floor. Same tolerance a
+## locker gets, for the same reason: a threshold nobody can walk up to is scenery.
+const GATE_APPROACH_TOLERANCE := 0.6
+const EXHIBIT_SCRIPT := "res://game/ExhibitPuzzleController.gd"
+
+
+## A RIFT MUST BE A DOORWAY IN THIS ROOM, NOT A LEVEL CHANGE
+##
+## Audit 16.6 п. 6: the pocket dimension used to start the instant the device
+## touched the exhibit, and the player was moved 262 m along Z and 72 m up. The
+## rift is now a RiftGate standing in the hall's own geometry, and the transition
+## only happens when the operator walks through it. That is only true if the gate
+## can actually be walked through, at every exhibit the incident can pick.
+##
+## For each exhibit origin in ExhibitPuzzleController.EXHIBITS this builds the
+## real gate, then measures three things on the shipping map: the heading picker
+## found a facing with RiftGate.CLEARANCE of clear floor in front of the opening,
+## the approach point lands on the baked navigation mesh, and the opening itself
+## is passable — a ray from the approach point through the threshold and out the
+## far side hits nothing.
+func _verify_rift_gate(map_root: Node) -> void:
+	var exhibits_script := load(EXHIBIT_SCRIPT) as Script
+	if exhibits_script == null:
+		_fail("Rift gate: cannot load %s" % EXHIBIT_SCRIPT)
+		return
+	var table: Variant = exhibits_script.get_script_constant_map().get("EXHIBITS", null)
+	if typeof(table) != TYPE_DICTIONARY:
+		_fail("Rift gate: %s exposes no EXHIBITS table" % EXHIBIT_SCRIPT)
+		return
+	var world: World3D = root.world_3d
+	var space: PhysicsDirectSpaceState3D = world.direct_space_state
+	var nav_map: RID = map_root.get_world_3d().navigation_map
+	var problems: Array[String] = []
+	var built := 0
+	var worst_drift := 0.0
+	for kind in (table as Dictionary).keys():
+		for entry in (table as Dictionary)[kind]:
+			var origin: Vector3 = (entry as Dictionary).get("origin", Vector3.ZERO)
+			var label := str((entry as Dictionary).get("name", kind))
+			# The preferred facing is deliberately arbitrary here: the picker is
+			# what has to find a clear one, and a test that hands it the answer
+			# would measure nothing.
+			var gate: RiftGate = RiftGate.build(map_root as Node3D, str(kind), origin,
+				origin + Vector3(0.0, 0.0, 3.0), Color(0.7, 0.8, 1.0))
+			await _spin(1)
+			built += 1
+			var forward: Vector3 = gate.global_transform.basis.z
+			var approach: Vector3 = gate.approach_point()
+
+			var front := PhysicsRayQueryParameters3D.create(
+				gate.global_position + Vector3(0.0, 1.10, 0.0),
+				approach + Vector3(0.0, 1.10, 0.0))
+			front.collision_mask = 1
+			var front_hit := space.intersect_ray(front)
+			if not front_hit.is_empty():
+				problems.append("%s has no clear facing — %s blocks the opening at %.2f m"
+					% [label, str((front_hit["collider"] as Node).name),
+					gate.global_position.distance_to(front_hit["position"] as Vector3)])
+
+			# The ray stops at the far face of the threshold, not beyond it: the
+			# transition fires the moment the body enters the gate volume, so what
+			# stands behind the doorway is the exhibit's business, not the walk's.
+			var through := PhysicsRayQueryParameters3D.create(
+				approach + Vector3(0.0, 1.10, 0.0),
+				gate.global_position - forward * (RiftGate.DEPTH * 0.5) + Vector3(0.0, 1.10, 0.0))
+			through.collision_mask = 1
+			var through_hit := space.intersect_ray(through)
+			if not through_hit.is_empty():
+				problems.append("%s cannot be walked through — %s stands in the threshold"
+					% [label, str((through_hit["collider"] as Node).name)])
+
+			var on_mesh := NavigationServer3D.map_get_closest_point(nav_map, approach)
+			var drift := Vector2(on_mesh.x - approach.x, on_mesh.z - approach.z).length()
+			worst_drift = maxf(worst_drift, drift)
+			if drift > GATE_APPROACH_TOLERANCE:
+				problems.append("%s stands %.2f m off the navigation mesh" % [label, drift])
+
+			gate.queue_free()
+			await _spin(1)
+
+	if problems.is_empty():
+		_ok("Rift gate: %d exhibit thresholds, every one with %.2f m of clear floor in front, passable, worst navmesh drift %.2f m"
+			% [built, RiftGate.CLEARANCE, worst_drift])
+	else:
+		_fail("Rift gate: %s" % [", ".join(problems)])
 
 
 ## CROUCHING BEHIND THE OFFICE CREDENZA MUST BREAK CONTACT

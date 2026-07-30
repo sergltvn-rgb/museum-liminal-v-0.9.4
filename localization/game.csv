@@ -154,6 +154,7 @@ HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУ
 HUD_PROTO_SIGNS_HINT,Match the signs to what a device does. Storage labels every one of them.,"Сопоставьте признаки с тем, что делает прибор. На складе подписан каждый."
 HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
 HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
+HUD_RIFT_GATE_OPEN,THE BREACH OPENS A DOORWAY — STEP THROUGH IT,ПРОРЫВ РАСКРЫЛСЯ ДВЕРЬЮ — ШАГНИТЕ ВНУТРЬ
 HUD_RIFT_RETURN_SHIFT,SECTION DARK — THE BUILDING CHANGED WITHOUT YOU,СЕКЦИЯ ОБЕСТОЧЕНА — ЗДАНИЕ ИЗМЕНИЛОСЬ БЕЗ ВАС
 HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
 HUD_SOURCE_CONFIRMED,SOURCE CONFIRMED. PROTOCOL UNLOCKED.,ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.
@@ -213,6 +214,7 @@ OBJ_INCIDENT_EXHIBIT,Anomaly at the %s exhibit in zone %s. Find a stabilizer and
 OBJ_NIGHT_DONE,Night %d complete. ENTER - next night.,Ночь %d пройдена. ENTER - следующая ночь.
 OBJ_NIGHT_INTRO,Night %d. Look around the museum. The security office is in the west wing.,Ночь %d. Осмотрите музей. Офис охраны — в западном крыле.
 OBJ_NIGHT_RESTART,Night %d. The core is unstable again...,Ночь %d. Ядро снова нестабильно...
+OBJ_RIFT_GATE,Step through the open breach at the exhibit.,Шагните в открытый разлом у экспоната.
 OBJ_TRIAL,Clear the pocket dimension and forge the stabilization key.,Пройдите карманное измерение и создайте ключ стабилизации.
 PROP_CRATE_DO_NOT_OPEN,DO NOT OPEN,НЕ ВСКРЫВАТЬ
 PROP_EXHIBIT_9_TAG,EXHIBIT 9,ЭКСПОНАТ 9

@@ -262,6 +262,8 @@ var _memory_reel_used := false
 var _calm_time := 0.0
 var _trial_active := false
 var _trial_manager: Node
+## Створ разлома, открытый прибором и ещё не перейденный (аудит 16.6 п. 6).
+var _rift_gate: RiftGate = null
 # Cached exhibit puzzle controller: _update_hint() asks for it every frame.
 var _puzzle: Node = null
 
@@ -631,6 +633,7 @@ func _start_accident() -> void:
 
 func _resolve() -> void:
 	_state = STATE_RESOLVED
+	_close_rift_gate()
 	# The device is spent in the containment field.
 	var body: StaticBody3D = _devices.get(_carried_id)
 	if body != null:
@@ -1177,7 +1180,7 @@ func _interact() -> void:
 			for gate in get_tree().get_nodes_in_group("resolution_gate"):
 				if gate.has_method("can_resolve") and not gate.can_resolve():
 					return
-			_begin_trial()
+			_open_rift_gate()
 		else:
 			_wrong_device_costs()
 		return
@@ -1203,7 +1206,53 @@ func _interact() -> void:
 		_teach_protocol_read = true
 
 
-func _begin_trial() -> void:
+## ПРИБОР ОТКРЫВАЕТ ДВЕРЬ, А НЕ ТЕЛЕПОРТИРУЕТ (аудит 16.6 п. 6).
+##
+## Раньше эта ветка звала _begin_trial() прямо из _interact(): касание прибором —
+## и через кадр игрок уже стоял в другом измерении, в 262 м по Z и 72 м по Y оттуда,
+## где только что был, с обнулённым курсом. Переход не читался как шаг в разлом — он
+## читался как смена уровня.
+##
+## Теперь правильный прибор строит створ в геометрии текущего зала, лицом к тому,
+## кто его открыл, и ждёт. Ничего не происходит, пока игрок сам не переступит
+## порог; шаг можно не делать вовсе.
+func _open_rift_gate() -> void:
+	if _trial_active or _player == null or _map_root == null:
+		return
+	if is_instance_valid(_rift_gate):
+		return
+	var info: Dictionary = ANOMALIES.get(_anomaly_id, {})
+	var color: Color = info.get("color", UITheme.ACCENT)
+	_rift_gate = RiftGate.build(_map_root, _anomaly_id, _incident_position(),
+		_player.global_position, color)
+	_rift_gate.crossed_by.connect(_on_rift_gate_crossed)
+	set_objective("rift_gate", tr("OBJ_RIFT_GATE"), 50)
+	_flash(tr("HUD_RIFT_GATE_OPEN"), UITheme.ACCENT)
+	_sfx("terminal_beep")
+
+
+## Шаг сквозь створ. Смещение вбок и курс относительно створа едут вместе с
+## игроком, чтобы по ту сторону камера не развернулась сама собой.
+func _on_rift_gate_crossed(body: Node3D) -> void:
+	if _trial_active or body != _player or not is_instance_valid(_rift_gate):
+		return
+	var entry := {
+		"lateral": _rift_gate.lateral_offset(_player.global_position),
+		"heading": _player.rotation_degrees.y - _rift_gate.heading_degrees(),
+	}
+	clear_objective("rift_gate")
+	_close_rift_gate()
+	_begin_trial(entry)
+
+
+func _close_rift_gate() -> void:
+	if is_instance_valid(_rift_gate):
+		_rift_gate.queue_free()
+	_rift_gate = null
+	clear_objective("rift_gate")
+
+
+func _begin_trial(entry: Dictionary = {}) -> void:
 	if _trial_manager == null or _player == null or _trial_active:
 		return
 	_trial_active = true
@@ -1222,7 +1271,7 @@ func _begin_trial() -> void:
 	var enhancements := get_tree().get_first_node_in_group("gameplay_enhancements")
 	if enhancements != null and enhancements.has_method("release_readouts"):
 		enhancements.call("release_readouts")
-	_trial_manager.call("begin", _anomaly_id, _player)
+	_trial_manager.call("begin", _anomaly_id, _player, entry)
 
 
 func _complete_trial() -> void:

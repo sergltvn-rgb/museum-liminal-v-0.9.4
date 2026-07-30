@@ -221,7 +221,11 @@ func _ready() -> void:
 func setup(game: Node) -> void: _game = game
 func is_active() -> bool: return _active
 
-func begin(kind: String, player: CharacterBody3D) -> void:
+## `entry` — как игрок вошёл в створ (аудит 16.6 п. 6): "lateral" — смещение вбок от
+## оси створа в метрах, "heading" — курс относительно створа в градусах. Пустой
+## словарь — вход не через створ (консоль F9), тогда старое поведение: центр
+## порога и курс 0.
+func begin(kind: String, player: CharacterBody3D, entry: Dictionary = {}) -> void:
 	if _active or player == null: return
 	_active = true; _kind = kind; _player = player; _saved = player.global_transform; _step = 0
 	last_fail_reason = ""; last_fail_detail = ""
@@ -244,8 +248,13 @@ func begin(kind: String, player: CharacterBody3D) -> void:
 	await get_tree().physics_frame
 	if not _active or not is_instance_valid(_player): return
 	_player.velocity = Vector3.ZERO
-	_player.global_position = _spawn_position()
-	_player.rotation_degrees = Vector3.ZERO
+	# Шаг сквозь створ продолжается тем же шагом: кто вошёл по левому краю и боком,
+	# тот по ту сторону тоже стоит по левому краю и боком. Ось створа ложится на ось
+	# арены (курс 0 смотрит вглубь, в −Z), поэтому смещение идёт по X.
+	var lateral := clampf(float(entry.get("lateral", 0.0)), -1.6, 1.6)
+	var heading := float(entry.get("heading", 0.0))
+	_player.global_position = _spawn_position() + Vector3(lateral, 0.0, 0.0)
+	_player.rotation_degrees = Vector3(0.0, wrapf(heading, -180.0, 180.0), 0.0)
 	_player.reset_gravity_direction()
 	_player.controls_enabled = true
 	_layer.visible = true
