@@ -80,6 +80,12 @@ const ANOMALIES := {
 		"title": "ANOMALY_TEMPORAL_TITLE",
 		"readout": "ANOMALY_TEMPORAL_READOUT",
 		"equipment": "chrono_stabilizer",
+		# THE VERTICAL SLICE (12.6 p.4). This one anomaly is not diagnosed for the
+		# operator: the terminal prints two independent signs and stops, and naming
+		# the device is the player's job. A flag rather than a rewrite of all ten,
+		# because P2 of the audit checklist says not to scale before one slice has
+		# earned it. Read by _begin_anomaly() and _show_protocol().
+		"self_diagnosed": true,
 		"color": Color(0.95, 0.68, 0.25),
 	},
 	"radiation_bloom": {
@@ -524,6 +530,12 @@ func _start_accident() -> void:
 	if _terminal_take != null:
 		_terminal_take.text = "%s\n%s" % [tr("HUD_PROTO_TAKE"),
 			tr(str(EQUIPMENT[str(info["equipment"])]["name"]))]
+		# A self-diagnosed anomaly withholds the device name on the stand sign as
+		# well. Written over the line above rather than branched around it: the
+		# name has to disappear from every surface at once, and one override next
+		# to the assignment is harder to forget than a second copy of the lookup.
+		if bool(info.get("self_diagnosed", false)):
+			_terminal_take.text = tr("HUD_PROTO_DIAGNOSE")
 	_set_screen_color(color)
 	_set_objective(Loc.fmt("OBJ_INCIDENT", [_incident_name(), _anomalies_left]))
 	_flash(tr("HUD_CONTAINMENT_BREACHED"), UITheme.DANGER)
@@ -2233,9 +2245,18 @@ func _show_protocol(info: Dictionary, _accent: Color) -> void:
 	# The page's subject, as a key: the frame resolves it, recolours it on the
 	# corruption ramp and lets it rot, which no formatted string could do.
 	_protocol_frame.set_title(str(info["title"]))
-	_proto_item.text = equip_name.to_upper()
+	# On a self-diagnosed anomaly the page keeps everything except its answer:
+	# masthead, incident zone, shift status, the signs the terminal is showing in
+	# the office. The one line the player used to leave remembering is now theirs.
+	var self_diagnosed := bool(info.get("self_diagnosed", false))
+	_proto_item.text = tr("HUD_PROTO_DIAGNOSE") if self_diagnosed else equip_name.to_upper()
 	var hint_key := str(TOOL_HINTS.get(equip_id, ""))
-	_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
+	if self_diagnosed:
+		# Not the tool hint: that names the device by describing exactly what it
+		# does, which is the same answer one sentence later.
+		_proto_purpose.text = tr("HUD_PROTO_SIGNS_HINT")
+	else:
+		_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
 	_proto_status.text = Loc.fmt("HUD_PROTO_STATUS", [_night, _incident_name()])
 	_raise_terminal(_protocol_frame)
 	_protocol_layer.visible = true

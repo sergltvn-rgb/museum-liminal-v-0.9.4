@@ -179,6 +179,7 @@ func _init() -> void:
 		await _verify_blackout(map_root, generated)
 
 	_verify_localization()
+	_verify_incident_signs()
 
 	if _failed:
 		print("\n❌ VERIFICATION FAILED — see errors above")
@@ -1277,6 +1278,99 @@ func _verify_localization() -> void:
 	else:
 		_fail("Localization: %d key(s) absent from game.csv -> %s"
 			% [missing.size(), ", ".join(missing)])
+
+
+## EVERY SLICE ANOMALY HAS TO SHOW ITS WORK
+##
+## The price the audit sets for taking the diagnosis off the terminal (12.7 p.12):
+## an anomaly that stops naming the device owes at least two independent signs in
+## its place, and must still have exactly one canonical way to be closed. Both
+## halves matter. Signs with no single closure is a guessing game with ten
+## answers; a single closure with no signs is the progress bar the slice exists
+## to delete.
+##
+## Catalogue-only, so it stands next to _verify_localization() instead of inside
+## the world sweep: nothing here needs a built map or a physics frame.
+func _verify_incident_signs() -> void:
+	var anomalies: Variant = _script_constant("res://game/GameManager.gd", "ANOMALIES")
+	var equipment: Variant = _script_constant("res://game/GameManager.gd", "EQUIPMENT")
+	if typeof(anomalies) != TYPE_DICTIONARY or typeof(equipment) != TYPE_DICTIONARY:
+		_fail("Incident signs: GameManager exposes no anomaly or equipment table")
+		return
+	var rows := _catalogue_rows()
+	if rows.is_empty():
+		_fail("Incident signs: %s is empty or unreadable" % LOCALIZATION_CSV)
+		return
+	var problems: Array[String] = []
+	var slice_count := 0
+	var sign_lines := 0
+	for id in anomalies:
+		var info: Dictionary = anomalies[id]
+		var equip := str(info.get("equipment", ""))
+		# One canonical closure, and one the storage shelf actually holds.
+		if equip == "" or not equipment.has(equip):
+			problems.append("%s names no device on the shelf" % id)
+			continue
+		if not bool(info.get("self_diagnosed", false)):
+			continue
+		slice_count += 1
+		var readout := str(info.get("readout", ""))
+		var device_key := str((equipment[equip] as Dictionary).get("name", ""))
+		if not rows.has(readout) or not rows.has(device_key):
+			problems.append("%s has no catalogue row for its readout or its device" % id)
+			continue
+		var texts: PackedStringArray = rows[readout]
+		var names: PackedStringArray = rows[device_key]
+		# Every shipped locale, not just the one this run happens to boot in: a
+		# translation that kept the old prescription hands the answer back to half
+		# the players and nothing else in the build would notice.
+		for i in range(texts.size()):
+			var lines := PackedStringArray()
+			for line in texts[i].split("\\n"):
+				if line.strip_edges() != "":
+					lines.append(line.strip_edges())
+			# The last line is the operator's instruction, not an observation, so it
+			# is not counted as one of the two signs.
+			var signs := maxi(0, lines.size() - 1)
+			if signs < 2:
+				problems.append("%s gives %d sign(s) in column %d" % [id, signs, i])
+			else:
+				sign_lines += signs
+			var upper := texts[i].to_upper()
+			if i < names.size() and names[i].strip_edges() != "" and upper.contains(names[i].to_upper()):
+				problems.append("%s still names %s in column %d" % [id, names[i], i])
+			if upper.contains("PROTOCOL:") or upper.contains("ПРОТОКОЛ:"):
+				problems.append("%s still prescribes a protocol in column %d" % [id, i])
+	if slice_count == 0:
+		problems.append("no anomaly is marked as self-diagnosed")
+	if problems.is_empty():
+		_ok("Incident signs: %d anomalies close on exactly one device, %d self-diagnosed carrying %d sign lines"
+			% [anomalies.size(), slice_count, sign_lines])
+	else:
+		_fail("Incident signs: %s" % [", ".join(problems)])
+
+
+## Whole rows, not just the first column: the signs gate has to read what the
+## catalogue actually says in every shipped locale.
+func _catalogue_rows() -> Dictionary:
+	var rows := {}
+	var file := FileAccess.open(LOCALIZATION_CSV, FileAccess.READ)
+	if file == null:
+		return rows
+	var header := true
+	while not file.eof_reached():
+		var row := file.get_csv_line()
+		if header:
+			header = false
+			continue
+		if row.is_empty():
+			continue
+		var key := row[0].strip_edges()
+		if key == "":
+			continue
+		rows[key] = row.slice(1)
+	file.close()
+	return rows
 
 
 # First column of the catalogue. get_csv_line() is used rather than split(",")

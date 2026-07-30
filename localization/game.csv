@@ -33,7 +33,7 @@ ANOMALY_RADIATION_READOUT,RADIATION 12.8 MSV/H AND RISING\nGREEN GLOW\nPROTOCOL:
 ANOMALY_RADIATION_TITLE,RADIATION BLOOM,РАДИАЦИОННОЕ ЦВЕТЕНИЕ
 ANOMALY_SCRAP_READOUT,EXHIBITS DISPLACED TO THE SHADOW DEPOT\nEXTRACTION REQUIRED,ЭКСПОНАТЫ СМЕЩЕНЫ В ТЕНЕВОЙ СКЛАД\nТРЕБУЕТСЯ ИЗВЛЕЧЕНИЕ
 ANOMALY_SCRAP_TITLE,ASSET SEIZURE,ИЗЪЯТИЕ ЦЕННОСТЕЙ
-ANOMALY_TEMPORAL_READOUT,DESYNC 11.3 S/MIN\nLOCAL TIME UNSTABLE\nPROTOCOL: CHRONO STABILIZER,"РАССИНХРОНИЗАЦИЯ 11,3 С/МИН\nЛОКАЛЬНОЕ ВРЕМЯ НЕСТАБИЛЬНО\nПРОТОКОЛ: ХРОНОСТАБИЛИЗАТОР"
+ANOMALY_TEMPORAL_READOUT,LOCAL CLOCKS RUNNING BACKWARDS\nAUDIO LOG LAGS ITS FEED BY 4 S\nOPERATOR: NAME THE DEVICE YOURSELF,ЛОКАЛЬНЫЕ ЧАСЫ ИДУТ НАЗАД\nАУДИОЖУРНАЛ ОТСТАЁТ ОТ ФИДА НА 4 С\nОПЕРАТОР: ПРИБОР ВЫБИРАЕТЕ ВЫ
 ANOMALY_TEMPORAL_TITLE,TEMPORAL DRIFT,ВРЕМЕННОЙ СДВИГ
 ANOMALY_UNKNOWN,UNKNOWN ANOMALY,НЕИЗВЕСТНАЯ АНОМАЛИЯ
 ANOMALY_VOID_READOUT,MASS FLOW −270%\nLIGHT ABSORPTION DETECTED\nPROTOCOL: FIELD EMITTER,ПОТОК МАССЫ −270%\nОБНАРУЖЕНО ПОГЛОЩЕНИЕ СВЕТА\nПРОТОКОЛ: ПОЛЕВОЙ ИЗЛУЧАТЕЛЬ
@@ -143,8 +143,10 @@ HUD_MEMORY_REEL_BONUS,MEMORY REEL: +45 SECONDS ON THE TIMER,КАТУШКА ПА�
 HUD_NIGHT,NIGHT %d,НОЧЬ %d
 HUD_NIGHT_COMPLETE,NIGHT %d COMPLETE,НОЧЬ %d ПРОЙДЕНА
 HUD_NIGHT_WING_UNLOCKED,NIGHT %d. Wing unlocked: %s,НОЧЬ %d. Открыто крыло: %s
+HUD_PROTO_DIAGNOSE,DEVICE NOT ASSIGNED — OPERATOR'S CALL,ПРИБОР НЕ НАЗНАЧЕН — РЕШАЕТ ОПЕРАТОР
 HUD_PROTO_FOOTER,E / ENTER — close · The screen closes on its own,E / ENTER — закрыть · Экран закроется сам
 HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУЗЕЙ · СЛУЖБА НОЧНОГО СДЕРЖИВАНИЯ
+HUD_PROTO_SIGNS_HINT,Match the signs to what a device does. Storage labels every one of them.,"Сопоставьте признаки с тем, что делает прибор. На складе подписан каждый."
 HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
 HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
 HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
