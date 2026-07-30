@@ -45,6 +45,15 @@ const FALL_SAFE_MAX_Y := 20.0
 const MAX_NIGHT := 3
 const SAVE_PATH := "user://museum_save.cfg"
 const CALM_TIME := 12.0
+## THE PRICE OF GUESSING (audit 16.6 п. 3). Seconds burned per wrong device,
+## multiplied by the attempt number: 8 / 16 / 24 against a 170 s third night, so
+## three guesses eat a quarter of it. WRONG_TOOL_NOISE sits above a run (1.0) and
+## below a thrown object (1.6) on the Curator's scale. WRONG_TOOL_FLOOR is the
+## time a guess may never take away: a night that ends on a penalty the player did
+## not see coming reads as a bug, not as a cost.
+const WRONG_TOOL_PENALTY := 8.0
+const WRONG_TOOL_NOISE := 1.15
+const WRONG_TOOL_FLOOR := 10.0
 const NIGHT_CONFIG := {
 	1: {"count": 1, "timer": 240.0, "unlock": ""},
 	2: {"count": 2, "timer": 200.0, "unlock": "Space Wing C"},
@@ -206,6 +215,9 @@ var _device_homes: Dictionary = {}
 ## _resolve() and _retry(). That is the whole reason the belt is expressed as
 ## "four slots, one of which is this variable" rather than as a new owner.
 var _carried_id := ""
+## Wrong devices applied to the CURRENT incident. Resets with the incident, not
+## with the night: the price is for guessing at this anomaly.
+var _wrong_tool_tries := 0
 
 # --- THE BELT ---------------------------------------------------------------
 #
@@ -505,6 +517,7 @@ func _start_accident() -> void:
 	_time_left = float(NIGHT_CONFIG[_night]["timer"])
 	_pulse = 0.0
 	_anomaly_id = str(ANOMALIES.keys().pick_random())
+	_wrong_tool_tries = 0
 	var puzzle := get_tree().get_first_node_in_group("exhibit_puzzle_controller")
 	if puzzle != null and puzzle.has_method("prepare_incident"):
 		puzzle.prepare_incident(_anomaly_id, _night)
@@ -1059,7 +1072,7 @@ func _interact() -> void:
 					return
 			_begin_trial()
 		else:
-			_flash(tr("HUD_WRONG_TOOL"), UITheme.DANGER)
+			_wrong_device_costs()
 		return
 	# Pick up a device. Full hands are no longer a silent refusal: the belt takes
 	# four, and only a belt with no free slot says no -- and it says so.
@@ -1306,6 +1319,29 @@ func _report_noise(origin: Vector3, loudness: float) -> void:
 		_curator_node = get_tree().get_root().find_child("The Curator", true, false)
 	if _curator_node != null and _curator_node.has_method("hear_noise"):
 		_curator_node.call("hear_noise", origin, loudness)
+
+
+## THE WRONG DEVICE HAS TO COST SOMETHING (audit 16.6 п. 3).
+##
+## Applying the wrong instrument used to print one red line and change nothing.
+## With no cost, the storage row is a keyring: walk it device by device and the
+## diagnosis falls out for free, which makes the terminal readout, the signs and
+## the whole investigation decoration. Now the exhibit answers, and both answers
+## escalate with the attempt: the night burns WRONG_TOOL_PENALTY seconds per try,
+## and the exhibit makes a noise at its own position -- so from the second night
+## on, guessing calls the Curator to exactly where the operator is standing.
+func _wrong_device_costs() -> void:
+	_wrong_tool_tries += 1
+	var penalty := WRONG_TOOL_PENALTY * float(_wrong_tool_tries)
+	# Never take the last of the clock: leave WRONG_TOOL_FLOOR to act on.
+	penalty = minf(penalty, maxf(_time_left - WRONG_TOOL_FLOOR, 0.0))
+	_time_left -= penalty
+	_report_noise(_incident_position(), WRONG_TOOL_NOISE)
+	# Both lines, in one flash: what happened, and what it cost. The first half is
+	# the old refusal, which is still the only line that says where to look.
+	_flash("%s %s" % [tr("HUD_WRONG_TOOL"), tr("HUD_WRONG_TOOL_COST") % int(round(penalty))],
+		UITheme.DANGER)
+	_sfx("terminal_beep")
 
 
 func _raycast_body() -> Node:

@@ -182,6 +182,7 @@ func _init() -> void:
 	_verify_incident_signs()
 	_verify_rift_shift()
 	_verify_curator_pace()
+	_verify_wrong_tool_cost()
 
 	if _failed:
 		print("\n❌ VERIFICATION FAILED — see errors above")
@@ -1423,6 +1424,75 @@ func _verify_curator_pace() -> void:
 			% ["/".join(nights), run_speed, walk_speed, slowed, gained, burst])
 	else:
 		_fail("Curator pace: %s" % "; ".join(problems))
+
+
+## GUESSING THE DEVICE HAS TO COST (audit 16.6 п. 3).
+##
+## The failure this guards is a whole missing game rather than a bug: with a free
+## wrong answer the ten instruments are a keyring, and the terminal readout, the
+## signs and the walk to storage are all decoration. The numbers have to stay in a
+## narrow band on both sides -- large enough that brute force loses the night,
+## small enough that one honest mistake does not.
+func _verify_wrong_tool_cost() -> void:
+	const MANAGER := "res://game/GameManager.gd"
+	## A single mistake may not take more than this share of the shortest night;
+	## the whole storage row must take more than the second share of it.
+	const SINGLE_MAX_SHARE := 0.10
+	const THREE_MIN_SHARE := 0.20
+	var penalty: Variant = _script_constant(MANAGER, "WRONG_TOOL_PENALTY")
+	var noise: Variant = _script_constant(MANAGER, "WRONG_TOOL_NOISE")
+	var floor_left: Variant = _script_constant(MANAGER, "WRONG_TOOL_FLOOR")
+	var nights: Variant = _script_constant(MANAGER, "NIGHT_CONFIG")
+	var run_noise: Variant = _script_constant("res://game/CuratorMonster.gd", "NOISE_RUN")
+	var throw_noise: Variant = _script_constant("res://game/CuratorMonster.gd", "NOISE_THROW")
+	if typeof(penalty) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(noise) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(floor_left) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(run_noise) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(throw_noise) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(nights) != TYPE_DICTIONARY:
+		_fail("Wrong-tool cost: the penalty or noise constants are missing")
+		return
+	# The shortest night is the one the price has to be judged against: it is the
+	# night with the least room for a mistake.
+	var shortest := 0.0
+	for key in (nights as Dictionary).keys():
+		var row: Variant = (nights as Dictionary)[key]
+		if typeof(row) == TYPE_DICTIONARY and (row as Dictionary).has("timer"):
+			var seconds := float((row as Dictionary)["timer"])
+			shortest = seconds if shortest <= 0.0 else minf(shortest, seconds)
+	var problems: Array[String] = []
+	if shortest <= 0.0:
+		problems.append("NIGHT_CONFIG carries no timers to price the guess against")
+	else:
+		var one := float(penalty)
+		# The three guesses of an escalating price, which is what walking the
+		# storage row actually costs: 1x, then 2x, then 3x.
+		var three := one * 6.0
+		if one > shortest * SINGLE_MAX_SHARE:
+			problems.append("one mistake costs %.0f s of a %.0f s night, over %d%%"
+				% [one, shortest, int(SINGLE_MAX_SHARE * 100.0)])
+		if three < shortest * THREE_MIN_SHARE:
+			problems.append("three guesses cost %.0f s of a %.0f s night, under %d%%"
+				% [three, shortest, int(THREE_MIN_SHARE * 100.0)])
+		if float(floor_left) <= 0.0 or float(floor_left) >= shortest:
+			problems.append("the floor of %.0f s does not sit inside a %.0f s night"
+				% [float(floor_left), shortest])
+	# Heard, and heard as something louder than a running operator: the exhibit
+	# answering is the loudest thing in the wing short of a thrown object.
+	if float(noise) <= float(run_noise) or float(noise) >= float(throw_noise):
+		problems.append("the noise %.2f is not between a run (%.2f) and a throw (%.2f)"
+			% [float(noise), float(run_noise), float(throw_noise)])
+	var rows := _catalogue_rows()
+	for key in ["HUD_WRONG_TOOL", "HUD_WRONG_TOOL_COST"]:
+		if not rows.has(key):
+			problems.append("%s is missing from the catalogue" % key)
+	if problems.is_empty():
+		_ok("Wrong-tool cost: %.0f/%.0f/%.0f s of a %.0f s night and a noise of %.2f, floor %.0f s"
+			% [float(penalty), float(penalty) * 2.0, float(penalty) * 3.0, shortest,
+			float(noise), float(floor_left)])
+	else:
+		_fail("Wrong-tool cost: %s" % "; ".join(problems))
 
 
 ## Catalogue-only, so it stands next to _verify_localization() instead of inside

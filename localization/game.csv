@@ -175,6 +175,7 @@ HUD_WATCH_CRITICAL,IT IS IN THE ROOM — LOWER THE TABLET (TAB),ОН УЖЕ РЯ
 HUD_WATCH_MOTION,"!! MOTION SENSOR — %d m, %s","!! ДАТЧИК ДВИЖЕНИЯ — %d м, %s"
 HUD_WIN,SHIFT OVER\nAll three nights are done. The museum sleeps again.,СМЕНА ОКОНЧЕНА\nВсе три ночи пройдены. Музей снова спит.
 HUD_WRONG_TOOL,The device has no effect. Check the terminal readout.,Прибор не действует. Проверьте показания терминала.
+HUD_WRONG_TOOL_COST,THE EXHIBIT REACTS: %d SECONDS LOST AND SOMETHING HEARD IT.,ЭКСПОНАТ ОТВЕЧАЕТ: ПОТЕРЯНО %d С — И ЭТО УСЛЫШАЛИ.
 MENU_BACK,Back,Назад
 MENU_CONTINUE_NIGHT,Continue — Night %d,Продолжить — Ночь %d
 MENU_FB_COMMENT,Feedback / Bug description:,Отзыв / Описание бага:
