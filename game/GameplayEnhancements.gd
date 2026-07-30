@@ -458,13 +458,19 @@ func _update_void() -> void:
 func _update_scan(delta: float) -> void:
 	if _scan_complete or _required_camera < 0 or _tablet == null:
 		return
-	var open := bool(_tablet.get("_open"))
-	var active_camera := int(_tablet.get("_active"))
-	if (open and active_camera == _required_camera) or _wall_shows_required():
+	# Both places the post can be watched are folded into _watching_required()
+	# now, because the evidence readout has to name the same condition.
+	if _watching_required():
 		_scan_progress += delta
 		if _scan_progress >= SCAN_TIME:
 			_scan_complete = true
-			_game.call("_flash", tr("HUD_SOURCE_CONFIRMED"), Color(0.45, 1.0, 0.65))
+			# "PROTOCOL UNLOCKED" is the old promise: confirm the post, collect the
+			# answer. On a slice incident the post yields an observation and the
+			# device stays the operator's call, so the flash says exactly that.
+			if _evidence_key() != "":
+				_game.call("_flash", tr("HUD_EVIDENCE_CONFIRMED"), Color(0.45, 1.0, 0.65))
+			else:
+				_game.call("_flash", tr("HUD_SOURCE_CONFIRMED"), Color(0.45, 1.0, 0.65))
 			_game.clear_objective("cctv")
 	else:
 		_scan_progress = maxf(0.0, _scan_progress - delta * 0.5)
@@ -483,6 +489,28 @@ func _wall_shows_required() -> bool:
 	if not _monitor_wall.has_method("watched_feed"):
 		return false
 	return int(_monitor_wall.call("watched_feed")) == _required_camera
+
+
+## Is the required post on screen right now, from either of the two places it can
+## be watched? Lifted out of _update_scan() so the readout can say what the
+## operator is looking at without a second copy of the condition drifting apart
+## from the one that actually advances the scan.
+func _watching_required() -> bool:
+	if _required_camera < 0 or _tablet == null:
+		return false
+	if bool(_tablet.get("_open")) and int(_tablet.get("_active")) == _required_camera:
+		return true
+	return _wall_shows_required()
+
+
+## The evidence line the running incident promises, or "" for the nine incidents
+## that still confirm by scan. Asked of GameManager every time rather than cached:
+## it owns the anomaly table, and a copy here would be a second thing to clear
+## when the night moves on.
+func _evidence_key() -> String:
+	if _game == null or not _game.has_method("incident_evidence_key"):
+		return ""
+	return str(_game.call("incident_evidence_key"))
 
 
 func can_resolve() -> bool:
@@ -872,6 +900,17 @@ func _update_readouts() -> void:
 	# method of the objective GameManager has just set and it is the only one of
 	# the two with a deadline.
 	if not _scan_complete and _required_camera >= 0:
+		# THE BAR IS NOT THE POINT (audit P0). An incident that reports signs gets
+		# no percentage: the line says what the post is showing, or that it has not
+		# been looked at yet. Same 2.5 s of watching underneath -- what changes is
+		# that the operator spends them reading a feed rather than a fill.
+		var evidence := _evidence_key()
+		if evidence != "":
+			if _watching_required():
+				_block.set_status(evidence, [], TaskBlock.OWNER_ANOMALY)
+			else:
+				_block.set_status("HUD_EVIDENCE_SEEK", [_required_camera + 1], TaskBlock.OWNER_ANOMALY)
+			return
 		_block.set_status("HUD_SCAN_PROGRESS", [100.0 * _scan_progress / SCAN_TIME], TaskBlock.OWNER_ANOMALY)
 		return
 	# Every key spelled at its own call site with its own arguments, rather than

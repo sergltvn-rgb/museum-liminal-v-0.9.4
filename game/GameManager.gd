@@ -86,6 +86,10 @@ const ANOMALIES := {
 		# because P2 of the audit checklist says not to scale before one slice has
 		# earned it. Read by _begin_anomaly() and _show_protocol().
 		"self_diagnosed": true,
+		# What the required CCTV post is expected to yield when the operator finally
+		# watches it. Its presence is what turns the scan from a progress bar into a
+		# reading -- see GameplayEnhancements._update_readouts().
+		"evidence": "HUD_EVIDENCE_TEMPORAL",
 		"color": Color(0.95, 0.68, 0.25),
 	},
 	"radiation_bloom": {
@@ -2264,6 +2268,16 @@ func _show_protocol(info: Dictionary, _accent: Color) -> void:
 	var am := _audio()
 	if am != null and am.has_method("play_sfx"):
 		am.play_sfx("terminal_beep", -6.0, 0.9)
+
+
+## The evidence line the running incident's CCTV post is expected to yield, or ""
+## for the nine incidents that still confirm by scan. A method rather than a
+## second table in the watcher: GameplayEnhancements owns the watching, this node
+## owns which anomaly is running and what that anomaly promises.
+func incident_evidence_key() -> String:
+	if not ANOMALIES.has(_anomaly_id):
+		return ""
+	return str((ANOMALIES[_anomaly_id] as Dictionary).get("evidence", ""))
 
 
 func _hide_protocol() -> void:

@@ -1314,6 +1314,11 @@ func _verify_incident_signs() -> void:
 		if not bool(info.get("self_diagnosed", false)):
 			continue
 		slice_count += 1
+		# The camera post owes a readable line too, or "signs instead of a bar" is
+		# only true of the terminal and the CCTV is still a fill with a percentage.
+		var evidence := str(info.get("evidence", ""))
+		if evidence == "" or not rows.has(evidence):
+			problems.append("%s promises no evidence line for its camera post" % id)
 		var readout := str(info.get("readout", ""))
 		var device_key := str((equipment[equip] as Dictionary).get("name", ""))
 		if not rows.has(readout) or not rows.has(device_key):

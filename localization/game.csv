@@ -129,6 +129,9 @@ HUD_EFFECT_TEMPORAL,TEMPORAL DRIFT: %.0f%%,ТЕМПОРАЛЬНЫЙ СДВИГ: 
 HUD_EFFECT_VOID,LIGHT CIRCUIT UNSTABLE,СВЕТОВОЙ КОНТУР НЕСТАБИЛЕН
 HUD_EFFECT_YELLOW,LIMINAL BACKGROUND: LAMP HUM,ЛИМИНАЛЬНЫЙ ФОН: ГУЛ ЛАМП
 HUD_ENTER_POCKET,ENTERING POCKET DIMENSION,ПЕРЕХОД В КАРМАННОЕ ИЗМЕРЕНИЕ
+HUD_EVIDENCE_CONFIRMED,SIGN RECORDED. THE DEVICE IS STILL YOUR CALL.,ПРИЗНАК ЗАФИКСИРОВАН. ПРИБОР ПО-ПРЕЖНЕМУ ЗА ВАМИ.
+HUD_EVIDENCE_SEEK,SIGNS UNCONFIRMED — WATCH CAM %02d,ПРИЗНАКИ НЕ ПОДТВЕРЖДЕНЫ — СМОТРИТЕ КАМЕРУ %02d
+HUD_EVIDENCE_TEMPORAL,THE CLOCK IN THIS POST IS RUNNING BACKWARDS,ЧАСЫ В ЭТОМ ПОСТУ ИДУТ НАЗАД
 HUD_FALL_RESPAWN,You slipped over the edge — back on solid ground.,Вы сорвались с края — возврат на твёрдую землю.
 HUD_FINISH_TRIAL_FIRST,Finish the current dimension first.,Сначала завершите текущее измерение.
 HUD_HINT_APPLY,E - apply %s to the anomaly,E - применить %s к аномалии
