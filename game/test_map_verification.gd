@@ -181,6 +181,7 @@ func _init() -> void:
 	_verify_localization()
 	_verify_incident_signs()
 	_verify_rift_shift()
+	_verify_curator_pace()
 
 	if _failed:
 		print("\n❌ VERIFICATION FAILED — see errors above")
@@ -1351,6 +1352,77 @@ func _verify_rift_shift() -> void:
 		_ok("Rift shift: the %d nearest lit fixtures go dark on the way out, announced" % count)
 	else:
 		_fail("Rift shift: %s" % "; ".join(problems))
+
+
+## THE CHASE HAS TO STAY A DECISION (audit 16.6 п. 4, corrected here).
+##
+## The audit claimed the night-3 Curator at 4.9 + 0.7 x 2 = 6.3 m/s outruns the
+## operator, reading GAIT_RUN_SPEED 6.0 as the player's sprint. It is not: that
+## constant is the Curator's own noise classifier, the threshold above which a
+## moving player counts as running. The real sprint is PlayerController's
+## run_speed, and it is 7.5. So the pace is sound and nothing needed changing --
+## but nothing was holding it either, and the two numbers live in files that do
+## not know about each other. This gate is that hold. Three rules:
+##
+##   1. Sprinting always gains ground, on every night, with a margin to spare.
+##   2. From the night it hunts, walking always loses ground -- otherwise the
+##      sprint, and the stamina it spends, is decoration.
+##   3. The null lantern keeps its promise: a slowed Curator falls below a walk,
+##      so carrying it means leaving without spending stamina at all.
+func _verify_curator_pace() -> void:
+	const CURATOR := "res://game/CuratorMonster.gd"
+	## Metres per second of headroom the sprint must keep over the fastest night.
+	## 1.0 is one second of sprinting buying a metre of gap -- thin enough to feel
+	## like a chase, wide enough that a doorway does not decide it.
+	const PACE_MARGIN := 1.0
+	var base: Variant = _script_constant(CURATOR, "BASE_SPEED")
+	var per_night: Variant = _script_constant(CURATOR, "SPEED_PER_NIGHT")
+	var lantern: Variant = _script_constant(CURATOR, "NULL_LANTERN_FACTOR")
+	var max_night: Variant = _script_constant("res://game/GameManager.gd", "MAX_NIGHT")
+	if typeof(base) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(per_night) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(lantern) not in [TYPE_FLOAT, TYPE_INT] \
+			or typeof(max_night) != TYPE_INT:
+		_fail("Curator pace: speed or night constants are missing")
+		return
+	# The player's speeds are exports, not constants, so the defaults have to be
+	# read off a real instance. It never enters the tree, so nothing runs.
+	var player_script: Variant = load("res://game/PlayerController.gd")
+	if player_script == null:
+		_fail("Curator pace: PlayerController.gd will not load")
+		return
+	var player: Node = player_script.new()
+	var run_speed := float(player.get("run_speed"))
+	var walk_speed := float(player.get("walk_speed"))
+	var stamina := float(player.get("max_stamina"))
+	var drain := float(player.get("stamina_drain_per_second"))
+	player.free()
+	var problems: Array[String] = []
+	var nights: Array[String] = []
+	var top := 0.0
+	for night in range(1, int(max_night) + 1):
+		var speed := float(base) + float(per_night) * float(night - 1)
+		top = maxf(top, speed)
+		nights.append("%.2f" % speed)
+		if speed > run_speed - PACE_MARGIN:
+			problems.append("night %d at %.2f m/s leaves the sprint (%.2f) under %.2f m/s of headroom"
+				% [night, speed, run_speed, PACE_MARGIN])
+		# It only hunts from the second night; the first one is the museum alone.
+		if night >= 2 and speed <= walk_speed:
+			problems.append("night %d at %.2f m/s does not out-walk the operator (%.2f)"
+				% [night, speed, walk_speed])
+	var slowed := top * float(lantern)
+	if slowed >= walk_speed:
+		problems.append("the lantern leaves %.2f m/s, at or above a walk (%.2f)" % [slowed, walk_speed])
+	if problems.is_empty():
+		# One full stamina bar of sprinting, and the ground it buys against the
+		# fastest night: the number the whole chase is balanced on.
+		var burst := stamina / maxf(drain, 0.001)
+		var gained := (run_speed - top) * burst
+		_ok("Curator pace: nights %s m/s vs sprint %.2f, walk %.2f, lantern %.2f; one bar buys %.1f m in %.1f s"
+			% ["/".join(nights), run_speed, walk_speed, slowed, gained, burst])
+	else:
+		_fail("Curator pace: %s" % "; ".join(problems))
 
 
 ## Catalogue-only, so it stands next to _verify_localization() instead of inside

@@ -44,3 +44,9 @@ bypass-wrapper.cjs
 # Assistant session logs (claude/): tens of MB of JSONL transcripts and
 # per-subagent dumps. Useful locally for post-mortems, worthless in history.
 claude/
+
+# Local MCP runtime logs.
+bridge.stdout.log
+bridge.stderr.log
+bypass-wrapper-rpc.log
+proxy.log
