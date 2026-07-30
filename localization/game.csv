@@ -159,6 +159,7 @@ HUD_TOOL_LANTERN,NULL LANTERN: the Curator is slowed near you,НУЛЬ-ФОНА�
 HUD_TOOL_LENS,LENS: rift %d m away,ЛИНЗА: разрыв в %d м
 HUD_TOOL_PRISM,PRISM: anomaly influence weakened,ПРИЗМА: влияние аномалии ослаблено
 HUD_TOOL_TAKEN,Device taken: %s,Взят прибор: %s
+HUD_TOOL_THROWN,Device thrown,Прибор брошен
 HUD_TOOL_THREAD,RETURN THREAD: %d m to the rift,НИТЬ ВОЗВРАТА: %d м до разрыва
 HUD_WATCH_BEARING_AHEAD,AHEAD OF YOU,ПРЯМО ПЕРЕД ВАМИ
 HUD_WATCH_BEARING_BEHIND,BEHIND YOU,У ВАС ЗА СПИНОЙ
@@ -222,6 +223,7 @@ SET_BIND_BELT,Belt slot,Слот пояса
 SET_BIND_BELT_CYCLE,Cycle belt,Перебор пояса
 SET_BIND_CROUCH,Crouch,Присесть
 SET_BIND_DROP,Drop device,Бросить прибор
+SET_BIND_THROW,Throw device,Метнуть прибор
 SET_BIND_INTERACT,Interact,Взаимодействие
 SET_BIND_MOVE,Movement,Движение
 SET_BIND_PAUSE,Pause,Пауза

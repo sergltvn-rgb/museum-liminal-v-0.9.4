@@ -60,6 +60,15 @@ func _ready() -> void:
 	_add_action("crouch", [_key(KEY_CTRL), _joy_button(JOY_BUTTON_RIGHT_STICK)])
 	_add_action("interact", [_key(KEY_E), _joy_button(JOY_BUTTON_X)])
 	_add_action("drop_item", [_key(KEY_G), _joy_button(JOY_BUTTON_B)])
+	# Throwing the held item is the operator's only aimed noise, and it spends
+	# the item to make it: see GameManager._throw_device().
+	#
+	# Keyboard and mouse only, deliberately. The pad audit in this header has no
+	# button left -- A/B/X/Y, both shoulders, both triggers, both sticks, BACK
+	# and START are all claimed, and the D-pad is the focus-navigation contract.
+	# Throwing is an optional verb (drop_item on B still empties the slot), so it
+	# waits for a chord rather than taking a binding the pad cannot spare.
+	_add_action("throw_item", [_key(KEY_Q), _mouse(MOUSE_BUTTON_RIGHT)])
 	_add_action("tablet", [_key(KEY_TAB), _joy_button(JOY_BUTTON_Y)])
 	_add_action("flashlight", [_key(KEY_F), _joy_button(JOY_BUTTON_RIGHT_SHOULDER)])
 	# "radar" has no reader anywhere in game/ (only "radar_scan" is queried), so

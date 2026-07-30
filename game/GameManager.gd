@@ -464,6 +464,8 @@ func _input(event: InputEvent) -> void:
 			_play_ending()
 	elif event.is_action_pressed("drop_item"):
 		_drop_device()
+	elif event.is_action_pressed("throw_item"):
+		_throw_device()
 	elif event.is_action_pressed("interact"):
 		_interact()
 	elif event.is_action_pressed("slot_next"):
@@ -1153,6 +1155,81 @@ func _drop_device() -> void:
 	body.global_position = _player.global_position + forward * 1.0 + Vector3(0, 0.35, 0)
 	_set_collision(body, true)
 	_sfx("drop")
+	# Setting a thing down at your feet is quiet on purpose: the loud version of
+	# this verb is _throw_device(), and it costs the same slot.
+
+
+## How far the operator can throw. Past this the item lands short rather than
+## sailing across the wing: a decoy the player cannot place is not a decision.
+const THROW_RANGE := 12.0
+
+## Cached so a throw does not walk the scene tree looking for the Curator.
+var _curator_node: Node = null
+
+
+## Throw the held item. It costs the same belt slot as dropping it, but the
+## noise is reported from WHERE IT LANDS instead of from under the player.
+##
+## That is the whole point of the verb, and the reason the Curator's hearing had
+## to carry a position: footsteps say "someone is there", a thrown object says
+## "someone is there" about a place the operator picked. It is the only noise in
+## the museum the player aims.
+func _throw_device() -> void:
+	if _carried_id == "" or _player == null or _camera == null:
+		return
+	var body: StaticBody3D = _devices.get(_carried_id)
+	# The active slot only, exactly as dropping does.
+	_belt[_belt_slot] = ""
+	_sync_belt()
+	if body == null:
+		return
+	var landing := _throw_landing()
+	body.get_parent().remove_child(body)
+	_map_root.add_child(body)
+	body.visible = true
+	body.scale = Vector3.ONE
+	body.rotation = Vector3.ZERO
+	body.global_position = landing
+	_set_collision(body, true)
+	_sfx("drop")
+	_report_noise(landing, CuratorMonster.NOISE_THROW)
+	_flash(tr("HUD_TOOL_THROWN"), UITheme.ON_SURFACE)
+
+
+## Where a thrown item comes to rest: along the camera until something stops it,
+## then down onto the floor. The item is a StaticBody3D and always has been, so
+## this resolves the arc geometrically instead of turning it into a rigid body
+## whose resting place no test could predict.
+func _throw_landing() -> Vector3:
+	var space := _camera.get_world_3d().direct_space_state
+	var from := _camera.global_position
+	var to := from - _camera.global_transform.basis.z * THROW_RANGE
+	var blockers: Array[RID] = []
+	if _player is PhysicsBody3D:
+		blockers.append((_player as PhysicsBody3D).get_rid())
+	var forward_query := PhysicsRayQueryParameters3D.create(from, to)
+	forward_query.exclude = blockers
+	var wall := space.intersect_ray(forward_query)
+	var reach: Vector3 = to
+	if not wall.is_empty():
+		# Stop short of the surface, or the item ends up inside the wall it hit.
+		reach = (wall["position"] as Vector3) + (from - to).normalized() * 0.3
+	var down_query := PhysicsRayQueryParameters3D.create(
+		reach + Vector3(0, 0.2, 0), reach - Vector3(0, 6.0, 0))
+	down_query.exclude = blockers
+	var ground := space.intersect_ray(down_query)
+	if ground.is_empty():
+		return reach
+	return (ground["position"] as Vector3) + Vector3(0, 0.18, 0)
+
+
+## Tell the Curator something was heard. Silent no-op when there is no Curator
+## in the scene, which is every night before the second one.
+func _report_noise(origin: Vector3, loudness: float) -> void:
+	if _curator_node == null or not is_instance_valid(_curator_node):
+		_curator_node = get_tree().get_root().find_child("The Curator", true, false)
+	if _curator_node != null and _curator_node.has_method("hear_noise"):
+		_curator_node.call("hear_noise", origin, loudness)
 
 
 func _raycast_body() -> Node:

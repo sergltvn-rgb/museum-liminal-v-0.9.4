@@ -178,6 +178,9 @@ const BINDING_ROWS := [
 	{"label": "SET_BIND_INTERACT", "actions": ["interact"]},
 	{"label": "SET_BIND_TABLET", "actions": ["tablet"]},
 	{"label": "SET_BIND_DROP", "actions": ["drop_item"]},
+	# The loud sibling of the row above, and the only aimed noise the operator
+	# has. A decoy the player is never told about is not a mechanic.
+	{"label": "SET_BIND_THROW", "actions": ["throw_item"]},
 	# Two rows for six actions, because that is how the player counts them: the
 	# number row is one control, cycling is another. Legends are read out of
 	# InputMap, so the wheel and R3 / BACK appear here without being transcribed

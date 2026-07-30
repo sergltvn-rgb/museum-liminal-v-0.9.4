@@ -172,6 +172,7 @@ func _init() -> void:
 		await _verify_crouch()
 		await _verify_curator_cover(map_root)
 		await _verify_route_covers(map_root, generated)
+		await _verify_noise_model(map_root)
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1344,6 +1345,9 @@ const CURATOR_EXPECTED_SEARCH := 6.0
 const CURATOR_EXPECTED_VISIBLE_CATCH := 1.25
 const CURATOR_EXPECTED_BLIND_CATCH := 0.7
 const CURATOR_SEARCH_MAX_TICKS := 420
+## A thrown device pulls the Curator this far in three seconds, measured at
+## 7.72 m; the floor leaves room for pathing noise but fails on a dead decoy.
+const CURATOR_DECOY_MIN_CLOSED := 5.0
 const CURATOR_SEARCH_TOLERANCE := 0.05
 ## One existing object per room: no new furniture, just a permanent contract
 ## that the night route keeps offering crouch-height cover.
@@ -1676,6 +1680,113 @@ func _verify_route_covers(map_root: Node, generated: Node) -> void:
 		_ok("Route covers: %s" % [", ".join(results)])
 	else:
 		_fail("Route covers: %s" % [", ".join(problems)])
+
+
+## The Curator hears rather than only sees: gait loudness falls off with range,
+## and a thrown device has to pull it away from the player it cannot see.
+## Distances below are one side of a threshold the model computes, so a change
+## to HEARING_THRESHOLD or NOISE_RANGE fails here instead of silently retuning
+## every stealth room.
+func _verify_noise_model(map_root: Node) -> void:
+	var player := get_first_node_in_group("player") as CharacterBody3D
+	var curator := map_root.get_node_or_null("The Curator") as CharacterBody3D
+	if curator == null:
+		curator = map_root.find_child("The Curator", true, false) as CharacterBody3D
+	if player == null or curator == null:
+		_fail("Curator hearing: player/Curator missing")
+		return
+
+	var player_transform := player.global_transform
+	var curator_transform := curator.global_transform
+	var player_processing := player.is_physics_processing()
+	var prior_controls := bool(player.get("controls_enabled"))
+	var prior_active := bool(curator.get("active"))
+	var prior_night: int = curator.get("night")
+	var prior_paused := paused
+	player.set("controls_enabled", false)
+	player.set_physics_process(false)
+	player.velocity = Vector3.ZERO
+	# Far past SIGHT_RANGE, so nothing below can be explained by sight.
+	player.global_position = Vector3(28.0, player.global_position.y, -4.5)
+	curator.call("reset_at", Vector3(-25.0, 0.0, -12.0))
+	curator.set("night", 2)
+	paused = false
+	curator.visible = true
+	curator.set("active", true)
+	await _spin(1)
+
+	var problems: Array[String] = []
+	var home := curator.global_position
+	if bool(curator.call("_can_see_player")):
+		problems.append("player visible from spawn")
+
+	# label, loudness, distance, expected
+	var cases := [
+		["run 15 m", 1.0, 15.0, true], ["run 16 m", 1.0, 16.0, false],
+		["walk 8 m", 0.55, 8.0, true], ["walk 9 m", 0.55, 9.0, false],
+		["crouch 0.5 m", 0.22, 0.5, false], ["crouch 4 m", 0.22, 4.0, false],
+		["throw 18 m", 1.6, 18.0, true], ["throw 20 m", 1.6, 20.0, false],
+	]
+	for entry: Array in cases:
+		var label := str(entry[0])
+		var loudness: float = entry[1]
+		var distance: float = entry[2]
+		var expected: bool = entry[3]
+		curator.call("hear_noise", home + Vector3(distance, 0.0, 0.0), loudness)
+		var heard := bool(curator.call("_consume_noise"))
+		if heard != expected:
+			problems.append("%s heard=%s" % [label, heard])
+
+	if absf(float(curator.call("_footstep_loudness"))) > 0.001:
+		problems.append("standing player is audible")
+
+	# The decoy: a device landing 8 m away must own the Curator's attention even
+	# though the player is 45 m in the other direction.
+	var decoy := home + Vector3(8.0, 0.0, 0.0)
+	paused = false
+	curator.set("active", true)
+	curator.call("hear_noise", decoy, 1.6)
+	await _spin(1)
+	var known: Vector3 = curator.get("_last_known")
+	var decoy_error := known.distance_to(decoy)
+	if decoy_error > 0.05:
+		problems.append("decoy target off by %.2f m" % decoy_error)
+
+	var before := curator.global_position.distance_to(decoy)
+	for _i in range(180):
+		paused = false
+		curator.set("active", true)
+		await physics_frame
+	var closed := before - curator.global_position.distance_to(decoy)
+	if closed < CURATOR_DECOY_MIN_CLOSED:
+		problems.append("decoy approach closed only %.2f m" % closed)
+
+	# And it has to give up, or one thrown device would pin it forever.
+	var forget := 0
+	while forget < CURATOR_SEARCH_MAX_TICKS and bool(curator.get("_has_last_known")):
+		paused = false
+		curator.set("active", true)
+		await physics_frame
+		forget += 1
+	if bool(curator.get("_has_last_known")):
+		problems.append("never forgot the decoy")
+
+	paused = prior_paused
+	player.global_transform = player_transform
+	curator.global_transform = curator_transform
+	player.velocity = Vector3.ZERO
+	curator.velocity = Vector3.ZERO
+	player.set("controls_enabled", prior_controls)
+	player.set_physics_process(player_processing)
+	curator.set("night", prior_night)
+	curator.set("active", prior_active)
+	curator.call("reset_at", curator_transform.origin)
+
+	if problems.is_empty():
+		_ok("Curator hearing: thresholds hold, decoy closed %.2f m, forgot in %.2f s"
+			% [closed, float(forget) / 60.0])
+	else:
+		_fail("Curator hearing: %s" % [", ".join(problems)])
 
 
 ## Returns top Y, widest X and widest Z across an object's real box colliders.

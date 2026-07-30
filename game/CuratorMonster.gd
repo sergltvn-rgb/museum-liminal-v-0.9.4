@@ -66,10 +66,35 @@ const PLAYER_SAMPLE_RATIOS := [0.12, 0.55, 0.92]
 const SIGHT_RANGE := 26.0
 ## Half-angle of the Curator's cone of attention, in degrees.
 const SIGHT_HALF_ANGLE_DEG := 62.0
-## Footsteps give the player away through cover -- but only above a crouch-walk
-## (2.1 m/s), which is what turns crouching into a decision rather than a pose.
-const HEARD_SPEED := 2.6
-const HEARD_DISTANCE := 12.0
+## Hearing is a loudness model, not a speed test. Every noise in the museum
+## arrives through hear_noise() carrying a POSITION and a loudness, and the
+## Curator walks to the position of the noise rather than to the player. That
+## one difference is what makes a thrown object a decoy instead of a second
+## pair of eyes: the old code heard a footstep and wrote down where the player
+## actually was, which no amount of throwing could ever mislead.
+##
+## Audibility falls off linearly: loudness * (1 - distance / NOISE_RANGE).
+## With the loudnesses below that comes out as
+##   run 1.00 -> 15.6 m, walk 0.55 -> 8.7 m, crouch 0.22 -> never,
+##   thrown object 1.60 -> 18.7 m.
+## The crouch is silent by construction -- 0.22 sits under the threshold even
+## at touching distance -- so crouching keeps its old contract without the
+## Curator comparing speeds to get there.
+const HEARING_THRESHOLD := 0.35
+const NOISE_RANGE := 24.0
+## Footstep loudness per gait. Keyed off the intervals PlayerController already
+## spaces steps by (0.31 running / 0.45 walking / 0.68 crouched).
+const NOISE_RUN := 1.0
+const NOISE_WALK := 0.55
+const NOISE_CROUCH := 0.22
+## A thrown object: the loudest thing the operator can make on purpose, and the
+## only noise they aim.
+const NOISE_THROW := 1.6
+## Gait cuts in m/s. The player walks at 4.5, runs at 7.5, crouch-walks at 2.1.
+const GAIT_RUN_SPEED := 6.0
+const GAIT_WALK_SPEED := 2.6
+## Below this the player is shuffling, not stepping, and makes no noise at all.
+const GAIT_SILENT_SPEED := 0.6
 ## Seconds spent on the last place the player was known to be before the
 ## Curator gives up knowing anything at all.
 const SEARCH_HOLD := 6.0
@@ -149,6 +174,13 @@ var _audio_manager: Node = null
 var _last_known := Vector3.ZERO
 var _has_last_known := false
 var _search_left := 0.0
+## The loudest noise reported since the last tick resolved one, and where it
+## came from. A noise is a moment, not a state: this is cleared every tick.
+var _noise_origin := Vector3.ZERO
+var _noise_loudness := 0.0
+## Where the last AUDIBLE noise came from. Separate from _noise_origin so a
+## quieter event arriving later cannot rewrite the place already believed in.
+var _heard_origin := Vector3.ZERO
 var _player_capsule: CapsuleShape3D = null
 
 
@@ -183,6 +215,9 @@ func reset_at(spawn: Vector3) -> void:
 	_has_last_known = false
 	_search_left = 0.0
 	_last_known = spawn
+	# A noise reported during the last night must not survive into this one.
+	_noise_loudness = 0.0
+	_heard_origin = spawn
 	velocity = Vector3.ZERO
 	# Spawn points are authored by hand. Some of them sit inside a prop or off
 	# the baked mesh entirely, and a Curator born there spends the night
@@ -234,8 +269,18 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var seen := _can_see_player()
-	if seen or _hears_player():
+	# The player's own gait enters by the same door as everything else, so a
+	# thrown object and a running operator are one mechanism at two loudnesses.
+	hear_noise(target, _footstep_loudness())
+	var heard := _consume_noise()
+	if seen:
 		_last_known = target
+		_has_last_known = true
+		_search_left = SEARCH_HOLD
+	elif heard:
+		# The point the SOUND came from, not the player who may be nowhere near
+		# it. Sight gets the body; hearing only ever gets a place.
+		_last_known = _heard_origin
 		_has_last_known = true
 		_search_left = SEARCH_HOLD
 	elif _has_last_known \
@@ -506,13 +551,48 @@ func _can_see_player() -> bool:
 	return false
 
 
-## Footsteps carry through cover, so a running player is found without sight.
-## This is why the crouch has a speed cost: 2.1 m/s stays under the threshold.
-func _hears_player() -> bool:
-	if global_position.distance_to(_player.global_position) > HEARD_DISTANCE:
+## Report a noise. This is the museum's one public ear: footsteps, thrown
+## objects and anything added later all come through here.
+##
+## The loudest event within a tick wins rather than the latest, so a footstep
+## landing in the same frame as a thrown bottle cannot quietly overwrite it.
+func hear_noise(origin: Vector3, loudness: float) -> void:
+	if loudness > _noise_loudness:
+		_noise_loudness = loudness
+		_noise_origin = origin
+
+
+## Resolve the pending noise against distance and the threshold, and clear it
+## either way -- an unheard noise is gone, not queued for when the Curator
+## wanders closer.
+func _consume_noise() -> bool:
+	var loudness := _noise_loudness
+	var origin := _noise_origin
+	_noise_loudness = 0.0
+	if loudness <= 0.0:
 		return false
-	var moved := Vector3(_player.velocity.x, 0.0, _player.velocity.z)
-	return moved.length() > HEARD_SPEED
+	var distance := global_position.distance_to(origin)
+	if distance >= NOISE_RANGE:
+		return false
+	if loudness * (1.0 - distance / NOISE_RANGE) < HEARING_THRESHOLD:
+		return false
+	_heard_origin = origin
+	return true
+
+
+## How loud the player's gait is this tick. Standing still is silent, and so is
+## being airborne: a jump carries no footfall.
+func _footstep_loudness() -> float:
+	if not is_instance_valid(_player) or not _player.is_on_floor():
+		return 0.0
+	var moved := Vector3(_player.velocity.x, 0.0, _player.velocity.z).length()
+	if moved < GAIT_SILENT_SPEED:
+		return 0.0
+	if moved > GAIT_RUN_SPEED:
+		return NOISE_RUN
+	if moved > GAIT_WALK_SPEED:
+		return NOISE_WALK
+	return NOISE_CROUCH
 
 
 ## True while the Curator hunts but has no idea where the player is.
