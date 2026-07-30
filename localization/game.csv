@@ -152,6 +152,7 @@ HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУ
 HUD_PROTO_SIGNS_HINT,Match the signs to what a device does. Storage labels every one of them.,"Сопоставьте признаки с тем, что делает прибор. На складе подписан каждый."
 HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
 HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
+HUD_RIFT_RETURN_SHIFT,SECTION DARK — THE BUILDING CHANGED WITHOUT YOU,СЕКЦИЯ ОБЕСТОЧЕНА — ЗДАНИЕ ИЗМЕНИЛОСЬ БЕЗ ВАС
 HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
 HUD_SOURCE_CONFIRMED,SOURCE CONFIRMED. PROTOCOL UNLOCKED.,ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.
 HUD_STAMINA,STAMINA,ВЫНОСЛИВОСТЬ

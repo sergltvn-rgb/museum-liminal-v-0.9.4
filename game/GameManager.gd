@@ -1122,6 +1122,7 @@ func _complete_trial() -> void:
 		_flash(tr("ADMIN_TEST_DONE"), UITheme.SUCCESS)
 		return
 	_resolve()
+	_museum_shifted_by_the_rift()
 
 
 func _pick_up(id: String) -> void:
@@ -1237,6 +1238,65 @@ func _throw_landing() -> Vector3:
 	if ground.is_empty():
 		return reach
 	return (ground["position"] as Vector3) + Vector3(0, 0.18, 0)
+
+
+## How many lit fixtures the rift takes with it when the operator steps back out.
+## Three, not the whole section: the way back has to stay walkable, and a museum
+## that goes fully black reads as a bug rather than as a change.
+const RIFT_SHIFT_LIGHTS := 3
+## Loudness the Curator hears at the point a rift closes. Above HEARING_THRESHOLD
+## 0.35 at any sane distance, below a thrown object's 1.6: coming back is loud,
+## but it is not an invitation.
+const RIFT_SHIFT_NOISE := 0.9
+
+
+## Where a fixture stands. Falls back to the local transform for lights that are
+## not in the tree, which is the only shape a gate can build one in.
+static func _light_point(node: Node3D) -> Vector3:
+	return node.global_position if node.is_inside_tree() else node.position
+
+
+## The `count` lit fixtures nearest `origin`, nearest first. Pure and static so
+## the gate can ask it the same question the night asks, without a map.
+static func rift_shift_targets(lights: Array, origin: Vector3, count: int) -> Array:
+	var lit: Array = []
+	for entry in lights:
+		var node := entry as Node3D
+		if node == null or not is_instance_valid(node) or not node.visible:
+			continue
+		lit.append(node)
+	var closer := func(a: Node3D, b: Node3D) -> bool:
+		return _light_point(a).distance_squared_to(origin) < _light_point(b).distance_squared_to(origin)
+	lit.sort_custom(closer)
+	return lit.slice(0, clampi(count, 0, lit.size()))
+
+
+## A CLOSED RIFT DOES NOT GIVE THE MUSEUM BACK UNCHANGED (audit 16.6 п. 15).
+##
+## A pocket dimension used to be the one place a shift could not touch: the
+## operator walked out into exactly the building they left, so the trial read as
+## a pause and the fear banked before it did not carry across. Two things change
+## on the way out now, both through systems that already exist. The three lit
+## fixtures nearest the exit go dark -- the section the operator knew is not the
+## section they return to. And the Curator hears the rift close, so on any night
+## it walks, the way back is no longer the way in.
+##
+## Called AFTER _resolve(), never before: _resolve() brings mains lights back at
+## 45% as the incident's reward, and a shift applied first would simply be undone
+## by it in the same frame.
+func _museum_shifted_by_the_rift() -> void:
+	if _player == null or _map == null:
+		return
+	var origin := _player.global_position
+	var doused := 0
+	var lights: Variant = _map.get("_powered_lights")
+	if lights is Array:
+		for node in rift_shift_targets(lights as Array, origin, RIFT_SHIFT_LIGHTS):
+			(node as Node3D).visible = false
+			doused += 1
+	_report_noise(origin, RIFT_SHIFT_NOISE)
+	if doused > 0:
+		_flash(tr("HUD_RIFT_RETURN_SHIFT"), UITheme.WARNING)
 
 
 ## Tell the Curator something was heard. Silent no-op when there is no Curator

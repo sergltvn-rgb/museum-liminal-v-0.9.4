@@ -180,6 +180,7 @@ func _init() -> void:
 
 	_verify_localization()
 	_verify_incident_signs()
+	_verify_rift_shift()
 
 	if _failed:
 		print("\n❌ VERIFICATION FAILED — see errors above")
@@ -1289,6 +1290,69 @@ func _verify_localization() -> void:
 ## answers; a single closure with no signs is the progress bar the slice exists
 ## to delete.
 ##
+## A CLOSED RIFT LEAVES THE MUSEUM CHANGED (audit 16.6 п. 15).
+##
+## The night calls GameManager.rift_shift_targets() with the map's live
+## _powered_lights; this asks the same function the same question with a
+## hand-built shelf of fixtures, so the rule is checked without a map or a
+## physics frame. Three things have to hold: only lit fixtures are eligible,
+## the nearest ones are the ones taken, and the count never exceeds
+## RIFT_SHIFT_LIGHTS. The flash key is checked too -- a shift the operator is
+## never told about is indistinguishable from a lighting bug.
+func _verify_rift_shift() -> void:
+	var script: Variant = load("res://game/GameManager.gd")
+	if script == null or not script.has_method("rift_shift_targets"):
+		_fail("Rift shift: GameManager exposes no rift_shift_targets()")
+		return
+	var limit: Variant = _script_constant("res://game/GameManager.gd", "RIFT_SHIFT_LIGHTS")
+	if typeof(limit) != TYPE_INT or int(limit) <= 0:
+		_fail("Rift shift: RIFT_SHIFT_LIGHTS is missing or not a positive count")
+		return
+	var count := int(limit)
+	# Distances 1, 2, 3, 4 and 5 metres from the exit. The 2 m fixture is already
+	# dark, so a correct answer skips it and reaches for the 3 m one instead.
+	var shelf: Array = []
+	for step in range(1, 6):
+		var light := OmniLight3D.new()
+		light.name = "Rift Shift Probe %d" % step
+		light.position = Vector3(float(step), 0.0, 0.0)
+		light.visible = step != 2
+		shelf.append(light)
+	var picked: Variant = script.call("rift_shift_targets", shelf, Vector3.ZERO, count)
+	var problems: Array[String] = []
+	if typeof(picked) != TYPE_ARRAY:
+		problems.append("rift_shift_targets() returned no array")
+	else:
+		var chosen: Array = picked
+		if chosen.size() != count:
+			problems.append("took %d fixtures, expected %d" % [chosen.size(), count])
+		var last := -1.0
+		for node in chosen:
+			var light := node as Node3D
+			if light == null:
+				problems.append("a taken entry is not a Node3D")
+				continue
+			if not light.visible:
+				problems.append("%s was already dark and was taken anyway" % light.name)
+			var here := light.position.x
+			if here < last:
+				problems.append("%s breaks the nearest-first order" % light.name)
+			last = here
+	# Never leave probes behind: these were never in the tree, so free() is the
+	# only thing that reclaims them.
+	for node in shelf:
+		(node as Node).free()
+	# _catalogue_rows() is keyed by localisation key, so membership is the whole
+	# question here.
+	var rows := _catalogue_rows()
+	if not rows.has("HUD_RIFT_RETURN_SHIFT"):
+		problems.append("HUD_RIFT_RETURN_SHIFT is missing from the catalogue")
+	if problems.is_empty():
+		_ok("Rift shift: the %d nearest lit fixtures go dark on the way out, announced" % count)
+	else:
+		_fail("Rift shift: %s" % "; ".join(problems))
+
+
 ## Catalogue-only, so it stands next to _verify_localization() instead of inside
 ## the world sweep: nothing here needs a built map or a physics frame.
 func _verify_incident_signs() -> void:
