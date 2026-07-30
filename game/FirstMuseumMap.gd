@@ -1470,11 +1470,20 @@ func _add_office_details(parent: Node) -> void:
 	# partitions above are 2.50 m and hide the player standing, the alarm pedestal
 	# is 1.45 m wide and hides a shoulder. So crouching in the room the stealth kit
 	# was built for changed nothing. This credenza tops out at 1.15 -- crouch and
-	# the Curator's line from its 2.12 m eye breaks, stand and it does not. It stays
-	# near the south wall but leaves the doorway's 0.75 m visual-clearance gate.
-	_box(parent, "Office Records Credenza", Vector3(-25.0, 0.575, 5.90),
+	# the Curator's line from its 2.12 m eye breaks, stand and it does not.
+	#
+	# z 6.30 -> 5.90 -> 5.55. The second move came from a player who could not walk
+	# into Equipment Storage. The 2.68 m lid spans the whole 1.80 m opening at
+	# (-25, 7), so the only way through was the strip between the lid and the wall:
+	# 6.825 - 6.18 = 0.645 m against a 0.70 m capsule. The doorway was shut by
+	# furniture. The old gate missed it because it measured a RADIUS from the
+	# opening's centre point (0.820 m, over its 0.75 m floor) while the player needs
+	# a CORRIDOR. At z 5.55 that strip is 0.995 m and the radius is 1.17 m; the
+	# crouch probe moved with it (test_map_verification, 5.20 -> 4.85) so the
+	# sightline it measures is geometrically the same one.
+	_box(parent, "Office Records Credenza", Vector3(-25.0, 0.575, 5.55),
 		Vector3(2.60, 1.15, 0.52), Color(0.165, 0.175, 0.185), 0.0, 0.2)
-	_box(parent, "Office Records Credenza Lid", Vector3(-25.0, 1.165, 5.90),
+	_box(parent, "Office Records Credenza Lid", Vector3(-25.0, 1.165, 5.55),
 		Vector3(2.68, 0.03, 0.56), Color(0.28, 0.30, 0.32), 0.0, 0.5, false)
 
 	OfficeProps.build_watcher_office(parent as Node3D, Vector3(-25, 0, -2.4),

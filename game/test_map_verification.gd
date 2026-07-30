@@ -68,6 +68,16 @@ const STORAGE_DOOR_CENTERS := [
 const DOOR_VISUAL_CLEARANCE := 0.75
 const DOOR_CLEARANCE_BOTTOM := 0.15
 const DOOR_CLEARANCE_TOP := 2.2
+## A radius from the opening's centre point is NOT a corridor, and a player who
+## could not walk into Equipment Storage proved it: Office Records Credenza Lid
+## measured 0.820 m from the centre -- over the visual gate above -- while
+## spanning the whole opening and leaving 0.645 m between itself and the wall,
+## against a 0.70 m capsule. So also measure the channel a body walks down:
+## capsule width plus a shoulder of slack, a metre of run-up either side. All
+## three service doorways sit in walls that run along X, so the channel runs
+## along Z.
+const DOOR_WALK_WIDTH := 0.90
+const DOOR_WALK_DEPTH := 1.00
 
 ## Owner of the office wall's panel -> feed layout (stage 10.3).
 const MONITOR_WALL_SCRIPT := "res://game/MonitorWall.gd"
@@ -554,6 +564,7 @@ func _verify(map_root: Node) -> void:
 func _verify_storage_door_clearance(generated: Node) -> void:
 	var problems: Array[String] = []
 	var measured: Array[float] = []
+	var scanned := 0
 	var meshes := generated.find_children("*", "MeshInstance3D", true, false)
 	for center in STORAGE_DOOR_CENTERS:
 		var nearest := INF
@@ -582,10 +593,31 @@ func _verify_storage_door_clearance(generated: Node) -> void:
 		measured.append(nearest)
 		if nearest < DOOR_VISUAL_CLEARANCE:
 			problems.append("%s has %s at %.3f m" % [center, nearest_name, nearest])
+		# The walking channel. Rendered geometry rather than colliders, for the
+		# same reason the radius above uses it: several museum props are drawn
+		# without a body, and a doorway a player reads as shut is shut.
+		var channel := AABB(
+			Vector3(center.x - DOOR_WALK_WIDTH * 0.5, DOOR_CLEARANCE_BOTTOM,
+				center.z - DOOR_WALK_DEPTH),
+			Vector3(DOOR_WALK_WIDTH,
+				DOOR_CLEARANCE_TOP - DOOR_CLEARANCE_BOTTOM,
+				DOOR_WALK_DEPTH * 2.0))
+		for other in meshes:
+			var walker := other as MeshInstance3D
+			if walker == null or walker.mesh == null:
+				continue
+			scanned += 1
+			var walk_box := walker.global_transform * walker.get_aabb()
+			if not channel.intersects(walk_box):
+				continue
+			var mid := walk_box.get_center()
+			problems.append("%s cannot be walked through, %s stands in the %.2f m channel at (%.2f %.2f %.2f)"
+				% [center, walker.name, DOOR_WALK_WIDTH, mid.x, mid.y, mid.z])
 	if problems.is_empty():
-		_ok("Storage door visuals: %d openings clear by %.3f/%.3f/%.3f m (gate %.2f m)"
+		_ok("Storage door visuals: %d openings clear by %.3f/%.3f/%.3f m (gate %.2f m), %d meshes weighed against the %.2f x %.2f m walking channels"
 			% [STORAGE_DOOR_CENTERS.size(), measured[0], measured[1], measured[2],
-				DOOR_VISUAL_CLEARANCE])
+				DOOR_VISUAL_CLEARANCE, scanned, DOOR_WALK_WIDTH,
+				DOOR_WALK_DEPTH * 2.0])
 	else:
 		_fail("Storage door visuals: %s (gate %.2f m)"
 			% [", ".join(problems), DOOR_VISUAL_CLEARANCE])
@@ -1753,7 +1785,7 @@ const CROUCH_LID_CLEARANCE := 1.25
 const CROUCH_HEIGHT_TOLERANCE := 0.02
 ## Live stealth-kit gate behind the office credenza. Y comes from the actual
 ## bodies; only the authored floor-plan coordinates are fixed here.
-const CURATOR_COVER_PLAYER_XZ := Vector2(-25.0, 5.2)
+const CURATOR_COVER_PLAYER_XZ := Vector2(-25.0, 4.85)
 const CURATOR_COVER_WATCHER_XZ := Vector2(-25.0, 9.0)
 const CURATOR_EXPECTED_SEARCH := 6.0
 const CURATOR_EXPECTED_VISIBLE_CATCH := 1.25
