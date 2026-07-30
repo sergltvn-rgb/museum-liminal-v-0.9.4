@@ -370,6 +370,12 @@ func _physics_process(delta: float) -> void:
 		# broken one; a walking one is a museum that is still inhabited, and its
 		# footsteps are information the player can use.
 		_patrol(delta)
+		# ... and it puts a hand on the lockers it walks past. Reported live: a
+		# player who climbed in before ever being seen was ignored, because the
+		# only code that opens a door lives in the SEARCH branch below and needs
+		# a last known position to aim at. A locker that is safe as long as you
+		# are never spotted is not a decision, it is a corner to park in.
+		_check_passing_hide_spot(delta)
 		return
 
 	var goal := _last_known
@@ -460,10 +466,24 @@ const SHAKE_RADIUS := 1.5
 const HIDE_CHECK_RANGE := 9.0
 ## How close to the locker's own approach point counts as a hand on the handle.
 const HIDE_CHECK_ARRIVED := 1.0
+## How close the round has to pass a locker for the Curator to try the door on
+## its way by. Deliberately tighter than HIDE_CHECK_ARRIVED's search radius: on
+## patrol it is doing rounds, not hunting, so it opens what is under its hand
+## and nothing it would have to walk over to.
+const PATROL_CHECK_RANGE := 2.6
+## Seconds before the same locker is worth opening again on the round. Long
+## enough that a player watching the round can use a just-checked locker on
+## purpose, short enough that no locker is safe for a whole night.
+const PATROL_CHECK_COOLDOWN := 45.0
 
 ## Lockers already opened during this search, by instance id. Cleared when the
 ## Curator gives up on the last known position.
 var _checked_spots := {}
+## Seconds left before a locker is worth trying again on patrol, by instance id.
+## Deliberately separate from `_checked_spots`: that one is the memory of one
+## hunt and gets wiped whenever the Curator forgets the player, and reusing it
+## here would let a single patrol check make a locker safe until the next chase.
+var _patrol_checked := {}
 
 var _stuck_left := 0.0
 var _stuck_anchor := Vector3.ZERO
@@ -483,6 +503,30 @@ func _hide_spot_to_check() -> Node:
 			best_distance = distance
 			best = spot
 	return best
+
+
+## Try the door of a locker the round walks past. At most one per tick, so the
+## Curator never sweeps a row of them in a single frame, and an occupied one is
+## handed to the same code the search path uses: the door swings, GameManager
+## sees it standing open and puts the player back on their feet in front of it.
+func _check_passing_hide_spot(delta: float) -> void:
+	for id in _patrol_checked.keys():
+		_patrol_checked[id] = float(_patrol_checked[id]) - delta
+		if float(_patrol_checked[id]) <= 0.0:
+			_patrol_checked.erase(id)
+	for node in get_tree().get_nodes_in_group("hide_spot"):
+		var spot := node as Node3D
+		if spot == null or _patrol_checked.has(spot.get_instance_id()):
+			continue
+		var approach: Vector3 = spot.call("approach_point")
+		if global_position.distance_to(approach) > PATROL_CHECK_RANGE:
+			continue
+		_patrol_checked[spot.get_instance_id()] = PATROL_CHECK_COOLDOWN
+		if bool(spot.call("check")):
+			_last_known = spot.call("hide_point")
+			_has_last_known = true
+			_search_left = SEARCH_HOLD
+		return
 
 
 ## Nearest point the navigation mesh can actually stand on. Returns the input

@@ -1878,6 +1878,23 @@ func _verify_crouch() -> void:
 const HIDE_APPROACH_TOLERANCE := 0.6
 
 
+## The box a locker door has to swing into and a player has to walk through: one
+## metre out from the door face, the full outer width of the shell, from 0.05 m
+## to 1.95 m up. Built from the locker's own transform, so it turns with it.
+func _doorway_volume(spot: Node3D) -> AABB:
+	var half_width := HideSpot.INTERIOR.x * 0.5 + HideSpot.WALL
+	var near_z := -(HideSpot.INTERIOR.z * 0.5 + HideSpot.WALL)
+	var far_z := -(HideSpot.INTERIOR.z * 0.5 + 1.0)
+	var low := Vector3(INF, INF, INF)
+	var high := Vector3(-INF, -INF, -INF)
+	for local in [Vector3(-half_width, 0.05, near_z), Vector3(half_width, 0.05, near_z),
+			Vector3(-half_width, 1.95, far_z), Vector3(half_width, 1.95, far_z)]:
+		var point: Vector3 = spot.to_global(local)
+		low = Vector3(minf(low.x, point.x), minf(low.y, point.y), minf(low.z, point.z))
+		high = Vector3(maxf(high.x, point.x), maxf(high.y, point.y), maxf(high.z, point.z))
+	return AABB(low, high - low)
+
+
 ## A LOCKER MUST BE ENTERABLE, OPAQUE AND SEARCHABLE
 ##
 ## Three separate facts make a hiding place, and scenery passes none of them:
@@ -1885,6 +1902,9 @@ const HIDE_APPROACH_TOLERANCE := 0.6
 ## door and lives when that door is open, and the Curator's own check() hands
 ## back an occupant. The approach point is measured against the baked navigation
 ## mesh, because a locker the Curator cannot walk up to can never be searched.
+## The doorway itself is measured twice over: with rays at four heights, and
+## against raw mesh geometry, because a prop with no collider blocks a door just
+## as thoroughly as one with a collider and no ray will ever find it.
 func _verify_hide_spots() -> void:
 	# This script is a SceneTree, not a Node: groups and the world come off self
 	# and off `root`, exactly as the other world checks in this file do it.
@@ -1913,6 +1933,11 @@ func _verify_hide_spots() -> void:
 	var cleared := 0
 	var reachable := 0
 	var handed_over := 0
+	# A check that finds nothing and says nothing is indistinguishable from a
+	# check that never ran, so the mesh sweep below reports how much geometry it
+	# looked at and what the closest thing to each door actually is.
+	var scanned := 0
+	var neighbours: Array[String] = []
 	for node in spots:
 		var spot := node as Node3D
 		var inside: Vector3 = spot.call("hide_point") + Vector3.UP * (capsule.height * 0.5)
@@ -1939,6 +1964,54 @@ func _verify_hide_spots() -> void:
 			var where: Vector3 = open_hit["position"]
 			problems.append("%s stays opaque with its door open, the ray dies on %s at (%.2f %.2f %.2f)"
 				% [spot.name, "nothing" if blocker == null else blocker.name, where.x, where.y, where.z])
+
+		# The ray above leaves the eye at 1.6 m and flies straight over furniture.
+		# Reported live: a locker with a waist-high cabinet parked against its door,
+		# invisible to a single chest-height ray and impossible to walk into. The
+		# doorway is now measured at four heights, from shin to eye, with the door
+		# still open from the check above.
+		for height in [0.25, 0.6, 1.1, 1.6]:
+			var from_point: Vector3 = approach + Vector3.UP * height
+			var to_point: Vector3 = spot.call("hide_point") + Vector3.UP * height
+			var door_query := PhysicsRayQueryParameters3D.create(from_point, to_point)
+			door_query.collision_mask = 1
+			var door_hit := space.intersect_ray(door_query)
+			if door_hit.is_empty():
+				continue
+			var stopper := door_hit["collider"] as Node
+			var stop_at: Vector3 = door_hit["position"]
+			problems.append("%s cannot be walked into at %.2f m, %s stands in the doorway at (%.2f %.2f %.2f)"
+				% [spot.name, height, "nothing" if stopper == null else stopper.name, stop_at.x, stop_at.y, stop_at.z])
+
+		# Rays only find colliders, and a prop can hide a door perfectly well with
+		# nothing but a mesh -- several props in this museum are deliberately
+		# collider-free so they cost the aisle beside them nothing. Reported live:
+		# a cabinet standing over a locker door that every ray above flew through.
+		# So the swing volume in front of the door is also measured against raw
+		# geometry: 1.0 m out from the door face, the full width of the shell, from
+		# ankle to head.
+		var swing := _doorway_volume(spot)
+		var door_face: Vector3 = spot.to_global(Vector3(0.0, 1.0,
+			-(HideSpot.INTERIOR.z * 0.5 + HideSpot.WALL)))
+		var nearest_name := "nothing"
+		var nearest_distance := INF
+		for mesh_node in root.find_children("*", "MeshInstance3D", true, false):
+			var mesh := mesh_node as MeshInstance3D
+			if mesh == null or mesh.mesh == null or spot.is_ancestor_of(mesh):
+				continue
+			scanned += 1
+			var box: AABB = mesh.global_transform * mesh.get_aabb()
+			var centre := box.get_center()
+			var gap := door_face.distance_to(centre)
+			if gap < nearest_distance:
+				nearest_distance = gap
+				nearest_name = mesh.name
+			if not swing.intersects(box):
+				continue
+			problems.append("%s has %s standing over its door at (%.2f %.2f %.2f)"
+				% [spot.name, mesh.name, centre.x, centre.y, centre.z])
+		neighbours.append("%s: nearest %s at %.2f m" % [spot.name, nearest_name, nearest_distance])
+
 		spot.call("set_closed", true)
 		await _spin(2)
 
@@ -1959,8 +2032,8 @@ func _verify_hide_spots() -> void:
 	await _spin(2)
 
 	if problems.is_empty():
-		_ok("Hide spots: %d lockers, the capsule fits with %.2f m spare sideways and %.2f m overhead, %d block a sightline shut and %d clear it open, %d approach points on the navmesh, %d hand over an occupant"
-			% [spots.size(), width_slack, head_slack, blocked, cleared, reachable, handed_over])
+		_ok("Hide spots: %d lockers, the capsule fits with %.2f m spare sideways and %.2f m overhead, %d block a sightline shut and %d clear it open, %d approach points on the navmesh, %d hand over an occupant, %d meshes weighed against the doorways (%s)"
+			% [spots.size(), width_slack, head_slack, blocked, cleared, reachable, handed_over, scanned, ", ".join(neighbours)])
 	else:
 		_fail("Hide spots: %s" % [", ".join(problems)])
 

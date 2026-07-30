@@ -180,11 +180,22 @@ func check() -> bool:
 	return occupied
 
 
-## The player climbs in. Returns the point they should be standing at.
+## The player climbs in, or climbs back out. Returns the point they should be
+## standing at.
+##
+## Reported live: after one round trip the locker stayed wide open for good. The
+## old body was `set_closed(hidden)`, which is right on the way in and wrong on
+## the way out -- a door the player pulled shut behind them has no reason to hang
+## open once they leave. Leaving now shuts it, with one exception: while
+## `_open_left > 0` the Curator's `check()` is holding the door, and that hold is
+## the only way a player across the room can read which locker was searched.
 func take(hidden: bool) -> Vector3:
 	occupied = hidden
-	_open_left = 0.0
-	set_closed(hidden)
+	if hidden:
+		_open_left = 0.0
+		set_closed(true)
+	elif _open_left <= 0.0:
+		set_closed(true)
 	return hide_point()
 
 
