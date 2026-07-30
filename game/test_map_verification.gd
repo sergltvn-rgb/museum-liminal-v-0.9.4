@@ -174,6 +174,7 @@ func _init() -> void:
 		await _verify_route_covers(map_root, generated)
 		await _verify_noise_model(map_root)
 		await _verify_curator_states(map_root)
+		await _verify_hide_spots()
 		# Dead last: this one walks the player into the office and cuts the
 		# power, which is a world state no later check should have to expect.
 		await _verify_blackout(map_root, generated)
@@ -1869,6 +1870,98 @@ func _verify_crouch() -> void:
 			+ "stand-up refused under a %.2f m lid" % CROUCH_LID_CLEARANCE)
 	else:
 		_fail("Crouch: %s" % [", ".join(problems)])
+
+
+## How far a locker's approach point may sit from navigable floor. Doorways keep
+## 0.9 m of mesh, so anything inside this is a point the Curator can path to.
+const HIDE_APPROACH_TOLERANCE := 0.6
+
+
+## A LOCKER MUST BE ENTERABLE, OPAQUE AND SEARCHABLE
+##
+## Three separate facts make a hiding place, and scenery passes none of them:
+## the real player capsule fits inside, a sightline into it dies on the shut
+## door and lives when that door is open, and the Curator's own check() hands
+## back an occupant. The approach point is measured against the baked navigation
+## mesh, because a locker the Curator cannot walk up to can never be searched.
+func _verify_hide_spots() -> void:
+	# This script is a SceneTree, not a Node: groups and the world come off self
+	# and off `root`, exactly as the other world checks in this file do it.
+	var spots: Array = get_nodes_in_group("hide_spot")
+	if spots.size() < 2:
+		_fail("Hide spots: the map builds %d lockers, expected 2" % spots.size())
+		return
+	var player := get_first_node_in_group("player") as CharacterBody3D
+	var collision := player.get_node_or_null("Player Collision") as CollisionShape3D if player != null else null
+	var capsule := collision.shape as CapsuleShape3D if collision != null else null
+	if capsule == null:
+		_fail("Hide spots: the player capsule is missing")
+		return
+
+	var problems: Array[String] = []
+	var width_slack := HideSpot.INTERIOR.x - capsule.radius * 2.0
+	var head_slack := HideSpot.INTERIOR.y - capsule.height
+	if width_slack <= 0.0 or head_slack <= 0.0:
+		problems.append("the capsule does not fit: %.2f wide and %.2f tall against %.2f x %.2f"
+			% [capsule.radius * 2.0, capsule.height, HideSpot.INTERIOR.x, HideSpot.INTERIOR.y])
+
+	var world: World3D = root.world_3d
+	var space: PhysicsDirectSpaceState3D = world.direct_space_state
+	var nav_map: RID = world.navigation_map
+	var blocked := 0
+	var cleared := 0
+	var reachable := 0
+	var handed_over := 0
+	for node in spots:
+		var spot := node as Node3D
+		var inside: Vector3 = spot.call("hide_point") + Vector3.UP * (capsule.height * 0.5)
+		var approach: Vector3 = spot.call("approach_point")
+		var eye := approach + Vector3.UP * 1.6
+
+		spot.call("set_closed", true)
+		await _spin(2)
+		if not space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, inside)).is_empty():
+			blocked += 1
+		else:
+			problems.append("%s does not stop a sightline while shut" % spot.name)
+
+		spot.call("set_closed", false)
+		await _spin(2)
+		var open_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, inside))
+		if open_hit.is_empty():
+			cleared += 1
+		else:
+			# Name the blocker: an open locker that still hides its occupant is
+			# almost always a prop the placement walked into, and the name says
+			# which one without another run.
+			var blocker := open_hit["collider"] as Node
+			var where: Vector3 = open_hit["position"]
+			problems.append("%s stays opaque with its door open, the ray dies on %s at (%.2f %.2f %.2f)"
+				% [spot.name, "nothing" if blocker == null else blocker.name, where.x, where.y, where.z])
+		spot.call("set_closed", true)
+		await _spin(2)
+
+		var on_mesh := NavigationServer3D.map_get_closest_point(nav_map, approach)
+		var drift := Vector2(on_mesh.x - approach.x, on_mesh.z - approach.z).length()
+		if drift <= HIDE_APPROACH_TOLERANCE:
+			reachable += 1
+		else:
+			problems.append("%s stands %.2f m off the navigation mesh" % [spot.name, drift])
+
+		spot.call("take", true)
+		if bool(spot.call("check")):
+			handed_over += 1
+		else:
+			problems.append("%s keeps an occupant from a Curator opening it" % spot.name)
+		spot.call("take", false)
+		spot.call("set_closed", true)
+	await _spin(2)
+
+	if problems.is_empty():
+		_ok("Hide spots: %d lockers, the capsule fits with %.2f m spare sideways and %.2f m overhead, %d block a sightline shut and %d clear it open, %d approach points on the navmesh, %d hand over an occupant"
+			% [spots.size(), width_slack, head_slack, blocked, cleared, reachable, handed_over])
+	else:
+		_fail("Hide spots: %s" % [", ".join(problems)])
 
 
 ## CROUCHING BEHIND THE OFFICE CREDENZA MUST BREAK CONTACT

@@ -133,6 +133,9 @@ HUD_EVIDENCE_VOID,THE SHADOWS IN THIS POST FALL AWAY FROM THE LAMPS,ТЕНИ В 
 HUD_EVIDENCE_YELLOW,THE SAME DOOR NUMBER APPEARS TWICE IN THIS POST,ОДИН И ТОТ ЖЕ НОМЕР ДВЕРИ ВИДЕН В ЭТОМ ПОСТУ ДВАЖДЫ
 HUD_FALL_RESPAWN,You slipped over the edge — back on solid ground.,Вы сорвались с края — возврат на твёрдую землю.
 HUD_FINISH_TRIAL_FIRST,Finish the current dimension first.,Сначала завершите текущее измерение.
+HUD_HIDE_ENTER,The door is shut from inside,Дверь закрыта изнутри
+HUD_HIDE_FOUND,The door is pulled open,Дверь распахнули снаружи
+HUD_HIDE_LEAVE,You climb back out,Ты выбираешься наружу
 HUD_HINT_APPLY,E - apply %s to the anomaly,E - применить %s к аномалии
 HUD_HINT_CARRYING,Carrying: %s (G - drop),В руках: %s (G - бросить)
 HUD_HINT_TAKE,E - take: %s,E - взять: %s
@@ -215,6 +218,7 @@ PROP_CRATE_DO_NOT_OPEN,DO NOT OPEN,НЕ ВСКРЫВАТЬ
 PROP_EXHIBIT_9_TAG,EXHIBIT 9,ЭКСПОНАТ 9
 PROP_STORAGE_BAY_CONSUMABLES,CONSUMABLES,РАСХОДНЫЕ МАТЕРИАЛЫ
 PROP_STORAGE_BAY_SPARES,SPARE PARTS,ЗАПЧАСТИ
+PROP_HIDE_LOCKER,STAFF LOCKER,ШКАФ ПЕРСОНАЛА
 PROP_STORAGE_BAY_TOOLS,HAND TOOLS,РУЧНОЙ ИНСТРУМЕНТ
 PROP_STORAGE_HAZARD_PLACARD,DO NOT OPEN,НЕ ВСКРЫВАТЬ
 PROP_STORAGE_SIGN_CHARGING,CHARGING STATIONS,ЗАРЯДНЫЕ СТАНЦИИ

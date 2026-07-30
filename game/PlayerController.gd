@@ -36,6 +36,11 @@ extends CharacterBody3D
 # is up. GameManager.player_controls_allowed() is the authority on the last case:
 # nothing here or elsewhere may assign true on a hunch.
 var controls_enabled := true
+# Legs off, head on. Hiding inside a locker (HideSpot) must not also take the
+# mouse away: the whole point of the mechanic is watching the room through the
+# slats while unable to run, and `controls_enabled = false` would blind the
+# player at the exact moment they most need to look.
+var movement_locked := false
 
 var _pitch := 0.0
 var _step_timer := 0.0
@@ -141,6 +146,11 @@ func _physics_process(delta: float) -> void:
 		_jump_buffer_left = 0.0
 		velocity = velocity.project(local_up)+velocity.slide(local_up).move_toward(Vector3.ZERO,ground_deceleration*delta)
 		move_and_slide(); return
+	if movement_locked:
+		_jump_buffer_left = 0.0
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
 	_jump_buffer_left = jump_buffer_time if Input.is_action_just_pressed("jump") else maxf(0.0,_jump_buffer_left-delta)
 	var input_dir := Input.get_vector("move_left","move_right","move_forward","move_back")
 	_update_crouch()

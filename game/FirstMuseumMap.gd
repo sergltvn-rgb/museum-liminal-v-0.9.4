@@ -1768,6 +1768,44 @@ func _add_storage_props(parent: Node) -> void:
 	# otherwise identified only by the shape of the tools missing from it.
 	StorageProps.bay_sign(root, Vector3(-20.5, 0, 8.6), 0.0,
 		tr("PROP_STORAGE_BAY_TOOLS"))
+	_add_hide_spots(root)
+
+
+## The two places the player can stop being visible (audit 16.6 п. 5).
+##
+## Storage: the 4.7 m gap between the two pairs of equipment benches (x
+## -27.35..-22.65) is the one strip of this room that is clear from the south
+## wall inwards. The locker stands against that wall with its back at z 7.05 and
+## its door at z 8.05, and its 1.20 m width lands at x -27.20..-26.00 -- 0.15 m
+## clear of the west bench and 0.10 m clear of the Office door gap at x
+## -25.90..-24.10.
+##
+## Office: the west wall, in the one gap it has. Measured occupants of that wall
+## are Server Rack 0 (z -5.62..-3.98), Server Rack 1 (z -3.48..-1.83), the
+## bookcase in the north-west corner (z about -6.0) and the Stabilization Locker
+## (z 2.95..5.95). That leaves z -1.83..2.95, and the locker takes the middle of
+## it, turned -90 degrees so its depth runs along X and its width along Z:
+## x -34.35..-33.35, z -0.10..1.10, with 1.7 m of clear wall either side.
+##
+## Two placements were measured and thrown away before this one, both caught by
+## the gate rather than by eye:
+##   * z -3.60..-2.40 walked into Server Rack 1 -- the sightline into the open
+##     locker died on 'Server Rack 1 Collision' at (-33.13 1.57 -3.00);
+##   * x -35.00..-34.00 buried the back of the shell in the wall, because the
+##     west face here is not the usual x -34.65 but the Causality Wing E sealed
+##     door standing proud of it at x -34.42.
+## Hence x -33.85 as the origin: the back panel lands at -34.35, 0.07 m clear of
+## that door, and the front face at -33.35.
+##
+## Both numbers are asserted by test_map_verification._verify_hide_spots(), which
+## sweeps the player capsule inside each shell and fires a sight ray at it from
+## outside: a locker nobody fits in, or one that does not stop the Curator's
+## eye, is not a hiding place.
+func _add_hide_spots(root: Node3D) -> void:
+	HideSpot.build(root, "Storage Hide Locker", Vector3(-26.6, 0.0, 7.55), 180.0,
+		tr("PROP_HIDE_LOCKER"))
+	HideSpot.build(root, "Office Hide Locker", Vector3(-33.85, 0.0, 0.5), -90.0,
+		tr("PROP_HIDE_LOCKER"))
 
 
 func _add_exhibits(parent: Node) -> void:

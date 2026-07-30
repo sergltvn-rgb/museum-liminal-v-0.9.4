@@ -373,6 +373,26 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var goal := _last_known
+	# Hiding is only a mechanic if it can be searched. While searching, the
+	# Curator diverts to the nearest locker it has not opened yet within
+	# HIDE_CHECK_RANGE of the spot it lost the player at, and opens it. An
+	# occupied one hands the player back: the door swings, GameManager turns the
+	# player's legs on again and the chase restarts from a metre and a half away.
+	if state == State.SEARCH:
+		var spot := _hide_spot_to_check()
+		if spot != null:
+			goal = spot.call("approach_point")
+			if global_position.distance_to(goal) < HIDE_CHECK_ARRIVED:
+				_checked_spots[spot.get_instance_id()] = true
+				if bool(spot.call("check")):
+					_last_known = spot.call("hide_point")
+					_has_last_known = true
+					_search_left = SEARCH_HOLD
+					goal = _last_known
+	elif not _has_last_known and not _checked_spots.is_empty():
+		# Forgetting the player forgets which lockers were already looked in, so
+		# the same spot is not safe forever after one search.
+		_checked_spots.clear()
 	_repath_left -= delta
 	if _repath_left <= 0.0:
 		_repath_left = REPATH_INTERVAL
@@ -434,9 +454,35 @@ const NAV_STEP_HEIGHT := 0.45
 ## standing on navigable floor. It only ever moves while unobserved, so a shove
 ## of this size is invisible to the player.
 const SHAKE_RADIUS := 1.5
+## How far from the last known spot a locker is still worth opening. Wider than
+## SEARCH_ARRIVED because the player who broke line of sight and climbed in was
+## moving when contact broke, so the locker is never at the exact spot.
+const HIDE_CHECK_RANGE := 9.0
+## How close to the locker's own approach point counts as a hand on the handle.
+const HIDE_CHECK_ARRIVED := 1.0
+
+## Lockers already opened during this search, by instance id. Cleared when the
+## Curator gives up on the last known position.
+var _checked_spots := {}
 
 var _stuck_left := 0.0
 var _stuck_anchor := Vector3.ZERO
+
+
+## Nearest locker worth opening: closest to the last known position, within
+## HIDE_CHECK_RANGE of it, and not already opened during this search.
+func _hide_spot_to_check() -> Node:
+	var best: Node = null
+	var best_distance := HIDE_CHECK_RANGE
+	for node in get_tree().get_nodes_in_group("hide_spot"):
+		var spot := node as Node3D
+		if spot == null or _checked_spots.has(spot.get_instance_id()):
+			continue
+		var distance := spot.global_position.distance_to(_last_known)
+		if distance < best_distance:
+			best_distance = distance
+			best = spot
+	return best
 
 
 ## Nearest point the navigation mesh can actually stand on. Returns the input

@@ -415,6 +415,11 @@ func _initialize() -> void:
 func _process(delta: float) -> void:
 	if _map == null:
 		return
+	# The Curator opening the door is the only exit from a locker that is not the
+	# player's own. HideSpot swings it, this notices, and the player is pushed out
+	# already on their feet instead of dying standing still in the dark.
+	if _hidden_spot != null and not bool(_hidden_spot.call("is_closed")):
+		_leave_hiding(true)
 	match _state:
 		STATE_DAY:
 			if bool(_map.get("_blackout_done")):
@@ -1119,8 +1124,51 @@ func _sfx(sound: String, volume_db := 0.0) -> void:
 
 # --- Interaction (step 4) -------------------------------------------------
 
+## The locker the player is standing inside, or null. This node owns the fact:
+## HideSpot knows only that it is occupied, the Curator knows only what the door
+## told it, and nothing else reads the player's position to decide it.
+var _hidden_spot: Node = null
+
+
+## Climb in. The legs stop, the head does not: hiding blind would be a worse
+## trade than running, and the point of the locker is watching the room from
+## inside it.
+func _enter_hiding(spot: Node) -> void:
+	_hidden_spot = spot
+	var point: Vector3 = spot.call("take", true)
+	_player.global_position = point
+	(_player as CharacterBody3D).velocity = Vector3.ZERO
+	_player.set("movement_locked", true)
+	_flash(tr("HUD_HIDE_ENTER"), UITheme.ACCENT)
+	_sfx("terminal_beep")
+
+
+## Climb out, either by choice or because the door was opened for you.
+func _leave_hiding(found: bool) -> void:
+	var spot := _hidden_spot
+	_hidden_spot = null
+	if spot == null:
+		return
+	spot.call("take", false)
+	_player.global_position = spot.call("approach_point")
+	_player.set("movement_locked", false)
+	if found:
+		_flash(tr("HUD_HIDE_FOUND"), UITheme.DANGER)
+		_report_noise(_player.global_position, 1.0)
+	else:
+		_flash(tr("HUD_HIDE_LEAVE"), UITheme.MUTED)
+
+
 func _interact() -> void:
 	if _state == STATE_FAILED or _player == null or _trial_active:
+		return
+	# Inside a locker the interact key does one thing only, and it is the way out.
+	if _hidden_spot != null:
+		_leave_hiding(false)
+		return
+	var hide_target := HideSpot.owner_of(_raycast_body())
+	if hide_target != null and _carried_id == "" and _player.global_position.distance_to(hide_target.approach_point()) < HideSpot.USE_DISTANCE:
+		_enter_hiding(hide_target)
 		return
 	# Apply the carried device directly at the possessed exhibit.
 	if _carried_id != "" and _state == STATE_ANOMALY and _near(_incident_position(), APPLY_DISTANCE):
