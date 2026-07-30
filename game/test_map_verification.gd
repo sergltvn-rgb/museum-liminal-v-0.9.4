@@ -183,6 +183,7 @@ func _init() -> void:
 	_verify_rift_shift()
 	_verify_curator_pace()
 	_verify_wrong_tool_cost()
+	_verify_sign_matrix()
 
 	if _failed:
 		print("\n❌ VERIFICATION FAILED — see errors above")
@@ -1493,6 +1494,90 @@ func _verify_wrong_tool_cost() -> void:
 			float(noise), float(floor_left)])
 	else:
 		_fail("Wrong-tool cost: %s" % "; ".join(problems))
+
+
+## THE DISCRIMINATION MATRIX HAS TO STAY SOLVABLE (audit 16.6 п. 2).
+##
+## The matrix in GameManager.SIGNS is content, and content drifts: someone adds an
+## eleventh anomaly, reuses a memorable sign twice, and the wing quietly becomes
+## either unsolvable or free. Neither failure shows up in a playtest as a bug --
+## it shows up as a player who guesses. So the four invariants are checked here
+## rather than trusted to review.
+func _verify_sign_matrix() -> void:
+	## Three observations per anomaly: two would be the answer itself, four a list.
+	const SIGNS_PER_ANOMALY := 3
+	## No sign may belong to a single anomaly, or one glance names the device.
+	const MIN_ANOMALIES_PER_SIGN := 2
+	## Two anomalies may share at most one sign, which is what makes any PAIR of
+	## observations conclusive and the third sign a check against a misread.
+	const MAX_SHARED_SIGNS := 1
+	var anomalies: Variant = _script_constant("res://game/GameManager.gd", "ANOMALIES")
+	var signs: Variant = _script_constant("res://game/GameManager.gd", "SIGNS")
+	if typeof(anomalies) != TYPE_DICTIONARY or typeof(signs) != TYPE_DICTIONARY:
+		_fail("Sign matrix: GameManager exposes no anomaly or sign table")
+		return
+	var rows := _catalogue_rows()
+	if rows.is_empty():
+		_fail("Sign matrix: %s is empty or unreadable" % LOCALIZATION_CSV)
+		return
+	var problems: Array[String] = []
+	# Which anomalies each sign belongs to, built once and read three times below.
+	var owners := {}
+	var sets := {}
+	for id in anomalies:
+		var info: Dictionary = anomalies[id]
+		var list: Variant = info.get("signs", null)
+		if typeof(list) != TYPE_ARRAY or (list as Array).size() != SIGNS_PER_ANOMALY:
+			problems.append("%s does not carry %d signs" % [id, SIGNS_PER_ANOMALY])
+			continue
+		var unique := {}
+		for sign_id in (list as Array):
+			var key := str(sign_id)
+			if unique.has(key):
+				problems.append("%s lists %s twice" % [id, key])
+				continue
+			unique[key] = true
+			if not signs.has(key):
+				problems.append("%s names an unknown sign %s" % [id, key])
+				continue
+			if not owners.has(key):
+				owners[key] = [] as Array[String]
+			(owners[key] as Array).append(str(id))
+		sets[str(id)] = unique
+	# 2. A sign nobody shares is an answer key, and a sign nobody uses is a lie in
+	# the table.
+	for key in signs:
+		var count: int = (owners[key] as Array).size() if owners.has(key) else 0
+		if count < MIN_ANOMALIES_PER_SIGN:
+			problems.append("%s belongs to %d anomaly(ies)" % [key, count])
+		var row := str(signs[key])
+		if not rows.has(row):
+			problems.append("%s has no catalogue row" % row)
+			continue
+		var texts: PackedStringArray = rows[row]
+		for i in range(texts.size()):
+			if texts[i].strip_edges() == "":
+				problems.append("%s is empty in column %d" % [row, i])
+	# 3. Any two anomalies have to differ in at least two of their three signs.
+	var ids := sets.keys()
+	ids.sort()
+	var closest := SIGNS_PER_ANOMALY
+	for a in range(ids.size()):
+		for b in range(a + 1, ids.size()):
+			var left: Dictionary = sets[ids[a]]
+			var right: Dictionary = sets[ids[b]]
+			var shared := 0
+			for key in left:
+				if right.has(key):
+					shared += 1
+			closest = mini(closest, SIGNS_PER_ANOMALY - shared)
+			if shared > MAX_SHARED_SIGNS:
+				problems.append("%s and %s share %d signs" % [ids[a], ids[b], shared])
+	if problems.is_empty():
+		_ok("Sign matrix: %d anomalies over %d signs, every sign shared by %d+, closest pair still differs in %d of %d"
+			% [ids.size(), signs.size(), MIN_ANOMALIES_PER_SIGN, closest, SIGNS_PER_ANOMALY])
+	else:
+		_fail("Sign matrix: %s" % "; ".join(problems))
 
 
 ## Catalogue-only, so it stands next to _verify_localization() instead of inside

@@ -83,12 +83,14 @@ const ANOMALIES := {
 		"title": "ANOMALY_GRAVITY_TITLE",
 		"readout": "ANOMALY_GRAVITY_READOUT",
 		"equipment": "gravity_anchor",
+		"signs": ["dust_hangs", "objects_drift", "floor_slope"],
 		"color": Color(0.62, 0.35, 0.95),
 	},
 	"temporal_drift": {
 		"title": "ANOMALY_TEMPORAL_TITLE",
 		"readout": "ANOMALY_TEMPORAL_READOUT",
 		"equipment": "chrono_stabilizer",
+		"signs": ["clock_backwards", "sound_delay", "light_flicker"],
 		# THE VERTICAL SLICE (12.6 p.4). This one anomaly is not diagnosed for the
 		# operator: the terminal prints two independent signs and stops, and naming
 		# the device is the player's job. A flag rather than a rewrite of all ten,
@@ -105,50 +107,91 @@ const ANOMALIES := {
 		"title": "ANOMALY_RADIATION_TITLE",
 		"readout": "ANOMALY_RADIATION_READOUT",
 		"equipment": "containment_rod",
+		"signs": ["geiger_ticks", "sound_delay", "dust_hangs"],
 		"color": Color(0.35, 0.90, 0.35),
 	},
 	"void_rift": {
 		"title": "ANOMALY_VOID_TITLE",
 		"readout": "ANOMALY_VOID_READOUT",
 		"equipment": "field_emitter",
+		"signs": ["shadow_wrong", "cold_draft", "surfaces_transparent"],
 		"color": Color(0.25, 0.45, 0.95),
 	},
 	"echo_chamber": {
 		"title": "ANOMALY_ECHO_TITLE",
 		"readout": "ANOMALY_ECHO_READOUT",
 		"equipment": "resonance_tuner",
+		"signs": ["sound_delay", "door_repeats", "cold_draft"],
 		"color": Color(0.95, 0.42, 0.22),
 	},
 	"glass_bridge": {
 		"title": "ANOMALY_GLASS_TITLE",
 		"readout": "ANOMALY_GLASS_READOUT",
 		"equipment": "phase_prism",
+		"signs": ["surfaces_transparent", "reflection_lag", "floor_slope"],
 		"color": Color(0.78, 0.38, 0.92),
 	},
 	"mirror_maze": {
 		"title": "ANOMALY_MIRROR_TITLE",
 		"readout": "ANOMALY_MIRROR_READOUT",
 		"equipment": "spectral_lens",
+		"signs": ["reflection_lag", "door_repeats", "shadow_wrong"],
 		"color": Color(0.55, 0.78, 0.95),
 	},
 	"yellow_halls": {
 		"title": "ANOMALY_YELLOW_TITLE",
 		"readout": "ANOMALY_YELLOW_READOUT",
 		"equipment": "thread_spool",
+		"signs": ["door_repeats", "light_flicker", "dust_hangs"],
 		"color": Color(0.90, 0.80, 0.30),
 	},
 	"scrap_run": {
 		"title": "ANOMALY_SCRAP_TITLE",
 		"readout": "ANOMALY_SCRAP_READOUT",
 		"equipment": "mass_clamp",
+		"signs": ["objects_drift", "geiger_ticks", "surfaces_transparent"],
 		"color": Color(0.55, 0.90, 0.75),
 	},
 	"ascent": {
 		"title": "ANOMALY_ASCENT_TITLE",
 		"readout": "ANOMALY_ASCENT_READOUT",
 		"equipment": "thermal_chalk",
+		"signs": ["floor_slope", "cold_draft", "clock_backwards"],
 		"color": Color(0.95, 0.55, 0.65),
 	},
+}
+
+## THE DISCRIMINATION MATRIX (audit 16.6 п. 2).
+##
+## Every anomaly carries three signs, and the signs are shared: this table is the
+## whole reason the ten instruments are a diagnosis rather than a keyring. Four
+## invariants hold it up, and _verify_sign_matrix() fails the build on each:
+##
+##   1. Three signs per anomaly. Two would be an answer; four would be a list.
+##   2. No sign belongs to one anomaly alone -- otherwise a single observation
+##      names the device and the other two signs are set dressing.
+##   3. No two anomalies share more than ONE sign, which is the property that
+##      makes the puzzle solvable at all: any two signs already name exactly one
+##      anomaly, so the third is a check against a misread, not padding.
+##   4. Every sign has a catalogue row in both locales.
+##
+## The ids are internal; the values are translation keys. Signs are stated as
+## observations the operator can make in the wing -- never as instructions and
+## never naming a device, for the same reason the temporal readout stopped naming
+## one (see section 15 of the plan).
+const SIGNS := {
+	"dust_hangs": "SIGN_DUST_HANGS",
+	"objects_drift": "SIGN_OBJECTS_DRIFT",
+	"floor_slope": "SIGN_FLOOR_SLOPE",
+	"clock_backwards": "SIGN_CLOCK_BACKWARDS",
+	"sound_delay": "SIGN_SOUND_DELAY",
+	"light_flicker": "SIGN_LIGHT_FLICKER",
+	"geiger_ticks": "SIGN_GEIGER_TICKS",
+	"shadow_wrong": "SIGN_SHADOW_WRONG",
+	"cold_draft": "SIGN_COLD_DRAFT",
+	"surfaces_transparent": "SIGN_SURFACES_TRANSPARENT",
+	"door_repeats": "SIGN_DOOR_REPEATS",
+	"reflection_lag": "SIGN_REFLECTION_LAG",
 }
 
 # Короткое назначение ключевых приборов для экрана протокола (ключи перевода).

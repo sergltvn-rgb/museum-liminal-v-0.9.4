@@ -273,6 +273,18 @@ SET_TAB_CONTROLS,Controls,Управление
 SET_TAB_GRAPHICS,Graphics,Графика
 SET_VSYNC,Vertical sync,Вертикальная синхронизация
 SET_VSYNC_DESC,Eliminates screen tearing,Устраняет разрывы изображения
+SIGN_CLOCK_BACKWARDS,EVERY CLOCK IN THE ROOM RUNS BACKWARDS.,ВСЕ ЧАСЫ В ЗАЛЕ ИДУТ НАЗАД.
+SIGN_COLD_DRAFT,A COLD DRAUGHT MOVES AGAINST THE VENTS.,ХОЛОДНЫЙ СКВОЗНЯК ИДЁТ ПРОТИВ ВЕНТИЛЯЦИИ.
+SIGN_DOOR_REPEATS,THE SAME DOOR NUMBER APPEARS TWICE IN ONE CORRIDOR.,ОДИН И ТОТ ЖЕ НОМЕР ДВЕРИ ВСТРЕЧАЕТСЯ ДВАЖДЫ В КОРИДОРЕ.
+SIGN_DUST_HANGS,DUST HANGS IN THE AIR INSTEAD OF SETTLING.,ПЫЛЬ ВИСИТ В ВОЗДУХЕ ВМЕСТО ТОГО ЧТОБЫ ОСЕДАТЬ.
+SIGN_FLOOR_SLOPE,THE FLOOR READS LEVEL AND WALKS UPHILL.,ПОЛ ВЫГЛЯДИТ РОВНЫМ А ИДЁТСЯ В ГОРУ.
+SIGN_GEIGER_TICKS,THE BADGE COUNTER TICKS WITH NO SOURCE IN REACH.,СЧЁТЧИК НА БЕЙДЖЕ ЩЁЛКАЕТ БЕЗ ИСТОЧНИКА РЯДОМ.
+SIGN_LIGHT_FLICKER,THE LIGHTS FLICKER OUT OF STEP WITH EACH OTHER.,СВЕТИЛЬНИКИ МИГАЮТ ВРАЗНОБОЙ ДРУГ С ДРУГОМ.
+SIGN_OBJECTS_DRIFT,SMALL OBJECTS HAVE CREPT TO ONE WALL.,МЕЛКИЕ ПРЕДМЕТЫ СПОЛЗЛИ К ОДНОЙ СТЕНЕ.
+SIGN_REFLECTION_LAG,REFLECTIONS COPY THE MOVEMENT A MOMENT LATE.,ОТРАЖЕНИЯ ПОВТОРЯЮТ ДВИЖЕНИЕ С ЗАПОЗДАНИЕМ.
+SIGN_SHADOW_WRONG,SHADOWS FALL AWAY FROM THE LAMPS.,ТЕНИ ПАДАЮТ В СТОРОНУ ОТ ЛАМП.
+SIGN_SOUND_DELAY,SOUNDS ARRIVE ABOUT A SECOND LATE.,ЗВУКИ ПРИХОДЯТ ПРИМЕРНО НА СЕКУНДУ ПОЗЖЕ.
+SIGN_SURFACES_TRANSPARENT,SOLID SURFACES GO BRIEFLY TRANSPARENT.,ПЛОТНЫЕ ПОВЕРХНОСТИ НЕНАДОЛГО СТАНОВЯТСЯ ПРОЗРАЧНЫМИ.
 STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.
 STORY_END_01,"Three nights. The core holds, and wing by wing the constants settle back into their cases.","Три ночи. Ядро держит, и крыло за крылом постоянные величины возвращаются в свои витрины."
 STORY_END_02,The monitors go quiet one after another. Nothing walks the halls that the cameras can name.,"Мониторы гаснут один за другим. По залам не ходит ничего такого, что камеры сумели бы назвать."
