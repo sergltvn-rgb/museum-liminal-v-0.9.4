@@ -781,6 +781,29 @@ func _ensure_navigation() -> void:
 	call_deferred("_bake_navigation")
 
 
+## THE MAP'S GRID HAS TO MATCH THE MESH'S (found in a live run, 2026-07-30).
+##
+## A NavigationRegion3D bakes at the cell size given to its NavigationMesh, but
+## the navigation MAP it joins rasterises paths on a grid of its own, and
+## Godot's default is 0.25 / 0.25 -- coarser than the 0.15 / 0.10 baked in
+## _add_navigation(). Every launch printed the engine's own mismatch warning
+## twice per region, and the consequence is not cosmetic: a coarser map grid
+## rounds mesh edges away precisely at door openings, which is the 0.9 m of
+## navmesh that ceil(0.45 / 0.15) = 3 eroded cells per side leaves through a
+## DOOR_GAP door -- the width the Curator needs to leave a room at all.
+func _align_navigation_map() -> void:
+	if not is_instance_valid(_nav_region) or not _nav_region.is_inside_tree():
+		return
+	var mesh := _nav_region.navigation_mesh
+	if mesh == null:
+		return
+	var map: RID = _nav_region.get_world_3d().navigation_map
+	if not map.is_valid():
+		return
+	NavigationServer3D.map_set_cell_size(map, mesh.cell_size)
+	NavigationServer3D.map_set_cell_height(map, mesh.cell_height)
+
+
 ## Subscribe to the region's own completion signal, which is the only thing that
 ## can tell us when a queued rebake is allowed to start. Idempotent: both
 ## entry points call it, and _ensure_navigation() may adopt a region a previous
@@ -788,6 +811,10 @@ func _ensure_navigation() -> void:
 func _watch_bakes() -> void:
 	if not is_instance_valid(_nav_region):
 		return
+	# Both entry points reach the region through here, and by this point it is in
+	# the tree -- the one place where aligning the map costs nothing and cannot be
+	# missed by whichever path built the region.
+	_align_navigation_map()
 	if not _nav_region.bake_finished.is_connected(_on_nav_bake_finished):
 		_nav_region.bake_finished.connect(_on_nav_bake_finished)
 
