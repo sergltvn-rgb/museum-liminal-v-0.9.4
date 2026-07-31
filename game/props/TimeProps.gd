@@ -310,7 +310,7 @@ static func clock_bank(parent: Node3D, origin: Vector3, yaw_degrees := 0.0,
 	for i in range(faces.size()):
 		var f: Array = faces[i]
 		var col := i % 3
-		var row := i / 3
+		var row := int(i / 3.0)
 		wall_clock(root,
 			Vector3(-0.62 + float(col) * 0.62, 0.62 - float(row) * 0.62, 0.05),
 			0.24, int(f[0]), int(f[1]), 0.0, float(f[2]), bool(f[3]),

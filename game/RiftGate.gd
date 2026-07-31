@@ -70,6 +70,10 @@ static func build(parent: Node3D, gate_kind: String, origin: Vector3,
 	gate.rotation_degrees = Vector3(0.0, gate._pick_heading(preferred), 0.0)
 	gate._assemble(color)
 	gate.body_entered.connect(gate._on_body_entered)
+	# Opening the rift: DSGN VORTEX IN, baked at -20.0 dBFS RMS / -1.5 peak.
+	var am := parent.get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_at"):
+		am.play_at("rift_open", gate.global_position + Vector3(0.0, 1.2, 0.0), -2.0)
 	return gate
 
 
@@ -194,4 +198,8 @@ func _on_body_entered(body: Node3D) -> void:
 	if not body.is_in_group("player"):
 		return
 	crossed = true
+	# Stepping through: WHOOSH PASS SF LOW, baked at -17.4 dBFS RMS.
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_sfx"):
+		am.play_sfx("rift_cross", -2.0)
 	crossed_by.emit(body)

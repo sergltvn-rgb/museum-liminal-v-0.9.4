@@ -159,15 +159,16 @@ const STEP_SOUNDS := ["res://audio/footstep1.wav", "res://audio/footstep2.wav",
 	"res://audio/footstep3.wav"]
 ## The catch. This used to be land.wav dropped to 0.42 because res://audio/ had
 ## nothing better; curator_catch is a purpose-made impact stinger, so it plays at
-## its natural pitch. It decodes at -21.8 dBFS RMS / -4.6 dBFS peak, about 15 dB
-## hotter than the pitched-down landing thud it replaces, so the level has to
-## come down even though the sound gets louder: at CATCH_DISTANCE the player's
-## 3D gain is capped at max_db (+3), which puts -4 dB at -22.8 dBFS RMS out.
+## its natural pitch. The second take decodes at -13.8 dBFS RMS / 0.0 dBFS peak,
+## 7.4 dB hotter than the first (-21.2 / -3.0), with the peak already kissing
+## full scale, so the level has to come down even though the sound gets louder:
+## at CATCH_DISTANCE the player's 3D gain is capped at max_db (+3), which puts
+## -11 dB at -24.8 dBFS RMS out.
 ## That is within a decibel of fail.wav (-23.9 dBFS RMS, played at unity by
 ## GameManager a moment later), so the seize and the sting that follows it land
-## at the same weight, with 5.6 dB of peak headroom left between them.
-const CATCH_SOUND := "res://audio/generated/curator_catch.mp3"
-const CATCH_VOLUME_DB := -4.0
+## at the same weight, with 11 dB of peak headroom left between them.
+const CATCH_SOUND := "res://audio/generated/новые звуки/curator_catch2.mp3"
+const CATCH_VOLUME_DB := -11.0
 ## The breath. A real 5 s recording; the loop flag lives in its .import file.
 ## It decodes at -24.3 dBFS RMS / -3.3 dBFS peak, 10.2 dB quieter than the
 ## synthesised loop it replaces (-14.1 dBFS RMS, normalised to the ceiling), so

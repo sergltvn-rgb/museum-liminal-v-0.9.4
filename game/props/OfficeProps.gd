@@ -350,8 +350,8 @@ static func _shared_normal_noise() -> NoiseTexture2D:
 ## neither vertical nor axis-aligned (plant stems, cable slack).
 static func _aim(up: Vector3) -> Basis:
 	var y_axis := up.normalized()
-	var reference := Vector3.RIGHT if absf(y_axis.x) < 0.9 else Vector3.FORWARD
-	var x_axis := reference.cross(y_axis).normalized()
+	var ref_axis := Vector3.RIGHT if absf(y_axis.x) < 0.9 else Vector3.FORWARD
+	var x_axis := ref_axis.cross(y_axis).normalized()
 	return Basis(x_axis, y_axis, x_axis.cross(y_axis))
 
 

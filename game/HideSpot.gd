@@ -149,11 +149,24 @@ func approach_point() -> Vector3:
 func set_closed(closed: bool) -> void:
 	if _door_body == null:
 		return
+	var changed := is_closed() != closed
 	_door_body.visible = closed
 	_door_body.process_mode = Node.PROCESS_MODE_INHERIT
 	# collision_layer 0 is how a StaticBody3D stops existing for rays without
 	# being removed from the tree and rebuilt every time a door swings.
 	_door_body.collision_layer = 1 if closed else 0
+	if not changed:
+		return
+	# The hinge creaks: a recorded piece of hinge_creaks (1.4 s, -26.0 dBFS RMS
+	# / -11.9 peak). Full level when the Curator swings the door, so it reads
+	# across the room; quieter and pitched down when the player pulls it shut.
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("play_at"):
+		var at := global_position + Vector3(0.0, 1.2, 0.0)
+		if closed:
+			am.play_at("locker_creak", at, -8.0, 0.8)
+		else:
+			am.play_at("locker_creak", at, -2.0, 1.0)
 
 
 ## The locker for a body the interaction ray hit, or null. The ray lands on the

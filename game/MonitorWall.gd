@@ -115,6 +115,22 @@ func _ready() -> void:
 	# tablet and no pictures. The pause is honoured explicitly in _process instead,
 	# so a paused game still shows a frozen bank rather than a shimmering one.
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# The live bank hums: a 10 s steady cut of guitar pickup interference, baked
+	# at -28.0 dBFS RMS. At -10 dB it is a whisper you hear standing at the
+	# screens; mains-powered, so the blackout cuts it with the lights.
+	var hum := AudioStreamPlayer3D.new()
+	hum.name = "Monitor Hum"
+	hum.position = Vector3(0.0, 1.4, 0.15)
+	hum.unit_size = 1.8
+	hum.max_distance = 4.0
+	hum.volume_db = -10.0
+	hum.bus = "Ambience"
+	hum.stream = load("res://audio/monitor_static.wav")
+	if hum.stream is AudioStreamWAV:
+		(hum.stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+		hum.autoplay = true
+		hum.add_to_group("lamp_hum")
+		add_child(hum)
 
 
 func _process(delta: float) -> void:

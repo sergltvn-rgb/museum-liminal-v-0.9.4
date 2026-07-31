@@ -1241,15 +1241,17 @@ func _trigger_blackout() -> void:
 	# Sound: power-down thud, then the night ambience takes over.
 	var am := get_tree().get_first_node_in_group("audio_manager")
 	if am != null:
-		if am.has_method("play_sfx"):
-			# These two fire together on Master, so positive gain on samples that
-			# already sit near full scale drives the sum into clipping. Unity for
-			# the blackout hit and -3 dB for the power-down keeps the original
-			# 3 dB spread between them with no boost at all.
-			am.play_sfx("blackout", 0.0)
-			am.play_sfx("power_down", -3.0)
+		if am.has_method("play_path"):
+			# One recorded power-cut ride replaces the blackout + power-down pair:
+			# свет выключается decodes at -18.3 dBFS RMS / -1.2 dBFS peak, a 7.3 s
+			# swell-sag-decay that covers both jobs, so unity gain and nothing on
+			# top of it. The synthesised pair stays on disk for the rift echoes.
+			am.play_path("res://audio/generated/новые звуки/свет выключается.mp3", 0.0)
 	if is_instance_valid(_night_entrance_door):
 		create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN).tween_property(_night_entrance_door,"position:y",1.50,1.15)
+		# door_lock.wav: +5 dB through an envelope limiter at -1.0 dBFS took it
+		# from -28.3 to -26.3 dBFS RMS - the knock transient eats most of the
+		# lift, so a bigger move belongs on this play_at gain, not in the file.
 		if am!=null and am.has_method("play_at"):am.play_at("door_lock",Vector3(0,1.4,34.2),-2.0)
 	if am!=null and am.has_method("set_ambience"):
 		am.set_ambience("night")
@@ -1257,6 +1259,8 @@ func _trigger_blackout() -> void:
 	for l in _powered_lights:
 		if is_instance_valid(l):
 			l.visible = false
+	# The failing tubes die with the mains: their hum cuts out with the light.
+	get_tree().call_group("lamp_hum", "stop")
 	# Switching a Light3D off leaves its housing glowing: the office tube is an
 	# emissive mesh in its own right, measured still at emission 1.40 with the
 	# lamp already dark. Way-out signage keeps its glow on purpose (see the note
@@ -1716,6 +1720,23 @@ func _add_light_fittings(parent: Node) -> void:
 			[Vector3(24, soffit, -20.0), 0.0, 18.0]]:
 		_powered_lights.append_array(LightProps.lights_of(
 			LightProps.failing_tube(root, at[0], at[1], at[2])))
+
+	# The atrium intercom: quiet music from somewhere over the dome, baked at
+	# -30.0 dBFS RMS (music_spill_026). Mains-powered, so it dies in the
+	# blackout with everything else on the circuit.
+	var intercom := AudioStreamPlayer3D.new()
+	intercom.name = "Intercom Music"
+	intercom.position = Vector3(0.0, 6.0, 0.0)
+	intercom.unit_size = 8.0
+	intercom.max_distance = 30.0
+	intercom.volume_db = 0.0
+	intercom.bus = "Ambience"
+	intercom.stream = load("res://audio/music_spill.wav")
+	if intercom.stream is AudioStreamWAV:
+		(intercom.stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+		intercom.autoplay = true
+		intercom.add_to_group("lamp_hum")
+		root.add_child(intercom)
 
 	# Battery-backed. Held dark until _trigger_blackout().
 	for at: Array in [[Vector3(-3.5, 2.6, -14.65), 180.0],

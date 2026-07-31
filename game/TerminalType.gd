@@ -697,11 +697,11 @@ static func mono_report(names: Array[String] = DEFAULT_MONO_NAMES) -> Dictionary
 static func _is_monospaced(font: Font, size: int = UITheme.BODY) -> bool:
 	if font == null:
 		return false
-	var reference := font.get_string_size("0", HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
-	if reference <= 0.0:
+	var digit_width := font.get_string_size("0", HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	if digit_width <= 0.0:
 		return false
 	for glyph: String in ["i", "W", "M", "l", "."]:
 		if not is_equal_approx(font.get_string_size(
-				glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x, reference):
+				glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x, digit_width):
 			return false
 	return true

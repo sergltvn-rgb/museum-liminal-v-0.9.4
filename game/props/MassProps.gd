@@ -735,9 +735,9 @@ static func _aim(dir: Vector3) -> Basis:
 	var up: Vector3 = dir.normalized()
 	if up.length_squared() < 0.5:
 		return Basis.IDENTITY
-	var reference := Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.9 \
+	var ref_axis := Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.9 \
 		else Vector3.FORWARD
-	var x: Vector3 = reference.cross(up).normalized()
+	var x: Vector3 = ref_axis.cross(up).normalized()
 	return Basis(x, up, x.cross(up))
 
 

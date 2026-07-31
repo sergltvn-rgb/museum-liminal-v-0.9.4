@@ -73,6 +73,10 @@ const LAMP_FACE_META := "lamp_face"
 
 ## Name of the child attach_flicker() adds. flicker_of() looks it up.
 const FLICKER_NODE_NAME := "Fixture Flicker"
+## The dying-tube hum: a 24.0 s steady cut of a transformer recording, baked
+## down to -35.0 dBFS RMS and wrapped with a 1.5 s equal-power crossfade so
+## the loop has no seam. Loops through its .import flag.
+const LAMP_HUM_PATH := "res://audio/generated/новые звуки/звук ламп луп.mp3"
 
 # Fitting tints. Cold fluorescent for the public halls, warm halogen for the
 # exhibit rigs and the sconces, red for emergency gear, sodium-amber for the
@@ -475,6 +479,22 @@ static func failing_tube(parent: Node3D, origin: Vector3, yaw_degrees := 0.0,
 
 	if pattern != PATTERN_STEADY:
 		attach_flicker(root, pattern)
+	# The dying tube hums: +12 dB over the baked -35.0 dBFS RMS loop puts it
+	# at -23 dBFS RMS at the batten, level with the room tone at arm's length
+	# and gone by six metres, so it never drills into the player's ear. In
+	# lamp_hum so the blackout can cut it with the mains.
+	var hum := AudioStreamPlayer3D.new()
+	hum.name = "Lamp Hum"
+	hum.position = Vector3(0.58, -0.06, 0)
+	hum.stream = load(LAMP_HUM_PATH)
+	if hum.stream != null:
+		hum.unit_size = 2.2
+		hum.max_distance = 6.0
+		hum.volume_db = 12.0
+		hum.bus = "Ambience"
+		hum.autoplay = true
+		hum.add_to_group("lamp_hum")
+		arm.add_child(hum)
 	return root
 
 

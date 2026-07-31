@@ -158,11 +158,15 @@ func _physics_process(delta: float) -> void:
 	var wants_run := Input.is_action_pressed("sprint") and input_dir.length()>0.08 and not _exhausted and not crouching
 	if wants_run:
 		stamina=maxf(0.0,stamina-stamina_drain_per_second*delta); _recovery_delay=.7
-		if stamina<=0.0: _exhausted=true; wants_run=false
+		if stamina<=0.0:
+			_exhausted=true; wants_run=false
+			_set_panting(true)
 	else:
 		_recovery_delay=maxf(0.0,_recovery_delay-delta)
 		if _recovery_delay<=0.0: stamina=minf(max_stamina,stamina+stamina_recovery_per_second*delta)
-		if _exhausted and stamina>=max_stamina*.25: _exhausted=false
+		if _exhausted and stamina>=max_stamina*.25:
+			_exhausted=false
+			_set_panting(false)
 	var speed := run_speed if wants_run else (crouch_speed if crouching else walk_speed)
 	var forward := (-camera.global_transform.basis.z).slide(local_up).normalized()
 	var right := camera.global_transform.basis.x.slide(local_up).normalized()
@@ -346,6 +350,13 @@ func return_to_last_safe_position()->void:
 ## Stamina as 0..1. The block hides the bar entirely at full, so a player who is
 ## not sprinting never sees a gauge pegged at 100% -- a bar that never moves is
 ## furniture, and this one now appears exactly when it has something to say.
+## The pant loop answers the exhausted flag the moment it flips, not the HUD.
+func _set_panting(on: bool) -> void:
+	var am := get_tree().get_first_node_in_group("audio_manager")
+	if am != null and am.has_method("set_panting"):
+		am.set_panting(on)
+
+
 func stamina_ratio() -> float:
 	return clampf(stamina / maxf(max_stamina, 1.0), 0.0, 1.0)
 

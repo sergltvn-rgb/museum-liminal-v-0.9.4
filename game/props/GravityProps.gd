@@ -417,10 +417,10 @@ static func build_levitating_column(parent: Node3D, origin: Vector3,
 			FIELD, 1.0)
 		lens.rotation_degrees = head.rotation_degrees
 		# Clamp on the collar, tied back to the foot of its mast.
-		var clamp := _box(root, "Collar Clamp %d" % i,
+		var collar := _box(root, "Collar Clamp %d" % i,
 			dir * 0.470 + Vector3(0, 0.755, 0), Vector3(0.12, 0.09, 0.16),
 			STEEL, 0.0, 0.6)
-		clamp.rotation_degrees = head.rotation_degrees
+		collar.rotation_degrees = head.rotation_degrees
 		_link(root, "Clamp Tie %d" % i, dir * 0.530 + Vector3(0, 0.755, 0),
 			dir * 0.745 + Vector3(0, 0.755, 0), 0.022, STEEL, 0.0, 0.6)
 	_torus(root, "Capture Ring", Vector3(0, 2.320, 0), 0.74, 0.84, STEEL, 0.0, 0.6)
@@ -739,10 +739,10 @@ static func _basis_along(direction: Vector3) -> Basis:
 	if up.length_squared() < 0.000001:
 		up = Vector3.UP
 	up = up.normalized()
-	var reference := Vector3.RIGHT
-	if absf(up.dot(reference)) > 0.9:
-		reference = Vector3.FORWARD
-	var x_axis := up.cross(reference).normalized()
+	var ref_axis := Vector3.RIGHT
+	if absf(up.dot(ref_axis)) > 0.9:
+		ref_axis = Vector3.FORWARD
+	var x_axis := up.cross(ref_axis).normalized()
 	var z_axis := x_axis.cross(up).normalized()
 	return Basis(x_axis, up, z_axis)
 

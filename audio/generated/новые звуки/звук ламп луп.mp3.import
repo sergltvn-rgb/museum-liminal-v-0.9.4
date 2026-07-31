@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://o9uor6j9te8du"
+path="res://.godot/imported/звук ламп луп.mp3-3d60e382b5b8e6c034e0ba0bbbb66fb5.mp3str"
+
+[deps]
+
+source_file="res://audio/generated/новые звуки/звук ламп луп.mp3"
+dest_files=["res://.godot/imported/звук ламп луп.mp3-3d60e382b5b8e6c034e0ba0bbbb66fb5.mp3str"]
+
+[params]
+
+loop=true
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

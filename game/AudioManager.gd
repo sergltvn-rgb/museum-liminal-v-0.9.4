@@ -15,7 +15,8 @@ extends Node
 ##
 ## Sounds: ambience_day, ambience_night, anomaly_hum, alarm (loops);
 ## blackout, footstep1..3, land, pickup, drop, terminal_beep, tablet_click,
-## tablet_open, resolve, fail, menu_move, menu_select (one-shots).
+## tablet_open, resolve, fail, menu_move, menu_select, locker_creak,
+## alien_texture (one-shots).
 ## Music: set_music_active(bool) and set_tension(0..1) - see the music block
 ## below. Do not put a capitalised word in quotes anywhere in res://game unless
 ## it really is a translation key: test_map_verification's localization sweep
@@ -33,7 +34,7 @@ extends Node
 ## so its footsteps cannot be stolen mid-step by a door or a pickup.
 
 const AUDIO_DIR := "res://audio/"
-const LOOPED := ["ambience_day", "ambience_night", "anomaly_hum", "alarm"]
+const LOOPED := ["ambience_day", "ambience_night", "anomaly_hum", "alarm", "exhausted_breath", "seismic_hum"]
 const SFX_POOL_SIZE := 8
 
 const BUS_MASTER := "Master"
@@ -66,7 +67,8 @@ const MUSIC_TENSION_PATH := MUSIC_DIR + "music_tension.mp3"
 ##
 ## Reference: ambience_night.wav is -13.5 dBFS RMS and plays at -10 dB, so the
 ## night room tone sits at about -23.5 dBFS RMS. Everything below is placed
-## against that.
+## against that. (The boilerroom loop arrived at -16.5; a +3 dB lift through an
+## envelope limiter at -1.0 dBFS put it back on the reference.)
 ##
 ## bed_museum_night decodes at -36.2 dBFS RMS (peak -24.6), which is very quiet
 ## material, so it needs gain rather than trim: +5 dB puts it at -31.2 dBFS RMS,
@@ -195,6 +197,19 @@ var _stinger: AudioStreamPlayer
 ## Night-layer duck while the catch stinger is out. 1.0 = no duck.
 var _duck := 1.0
 
+## The locker breath loop and the blackout ride: recordings that live outside
+## the res://audio/<name>.wav pattern, so they load by full path.
+## дыхание в шкафу decodes at -33.4 dBFS RMS / -10.7 dBFS peak: +4 dB lands the
+## breaths at about -29 dBFS RMS, just under the night room tone (-23.5), so
+## the player hears their own breathing in the locker without it fighting the
+## room tone outside.
+const HIDE_BREATH_PATH := "res://audio/generated/новые звуки/дыхание в шкафу.mp3"
+const HIDE_BREATH_DB := 4.0
+
+var _hide_breath: AudioStreamPlayer
+var _panting: AudioStreamPlayer
+var _rumble: AudioStreamPlayer3D
+
 
 func _ready() -> void:
 	add_to_group("audio_manager")
@@ -209,6 +224,9 @@ func _ready() -> void:
 	_alarm = AudioStreamPlayer.new()
 	_alarm.name = "Alarm"
 	_alarm.volume_db = -9.0
+	# The siren is the recorded тревога loop now (9.06 s, seamless fold): -19.1
+	# dBFS RMS / -3.8 dBFS peak, about 4 dB under the synth alarm it replaced
+	# (-15.3) - the operator asked for it quieter.
 	# The alarm loops like a bed but behaves like an event: it is the game
 	# shouting at the operator, so it belongs with the SFX it competes against
 	# rather than with the room tone a later duck is meant to pull down.
@@ -239,6 +257,21 @@ func _ready() -> void:
 	_stinger.name = "Music Stinger"
 	_stinger.bus = BUS_MUSIC
 	add_child(_stinger)
+	_hide_breath = AudioStreamPlayer.new()
+	_hide_breath.name = "Hide Breath"
+	_hide_breath.volume_db = HIDE_BREATH_DB
+	_hide_breath.bus = BUS_SFX
+	add_child(_hide_breath)
+	_panting = AudioStreamPlayer.new()
+	_panting.name = "Panting"
+	_panting.bus = BUS_SFX
+	add_child(_panting)
+	_rumble = AudioStreamPlayer3D.new()
+	_rumble.name = "Anomaly Rumble"
+	_rumble.unit_size = 5.0
+	_rumble.max_db = -6.0
+	_rumble.bus = BUS_AMBIENCE
+	add_child(_rumble)
 	set_ambience("day")
 
 
@@ -612,7 +645,7 @@ func play_sfx(sound: String, volume_db := 0.0, pitch := 1.0) -> void:
 	p.play()
 
 
-func play_at(sound: String, world_position: Vector3, volume_db := 0.0) -> void:
+func play_at(sound: String, world_position: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	var stream := _stream(sound)
 	if stream == null:
 		return
@@ -621,10 +654,13 @@ func play_at(sound: String, world_position: Vector3, volume_db := 0.0) -> void:
 	p.global_position = world_position
 	p.stream = stream
 	p.volume_db = volume_db
+	p.pitch_scale = pitch
 	p.play()
 
 
 func footstep(running := false) -> void:
+	# Real stone steps (0.30 s cuts), RMS-matched 1:1 to the synth ticks they
+	# replaced: -35.7 / -42.0 / -40.0 dBFS, peaks -13.5 / -18.0 / -15.5.
 	var volume := -13.0 if running else -16.0
 	play_sfx("footstep%d" % (randi() % 3 + 1), volume, randf_range(0.9, 1.1))
 
@@ -664,11 +700,69 @@ func set_alarm(on: bool) -> void:
 		_alarm.stop()
 
 
+## The anomaly sounds twice: the geofon drone and, 4 dB under it, a seismic
+## rumble (a steady 12 s cut of Cabinet_Metal_Rumble, baked -24.0 dBFS RMS) -
+## the rift shakes the fittings around the exhibit, not just the air.
 func set_anomaly_hum(on: bool, world_position := Vector3.ZERO) -> void:
 	if on:
 		_hum.global_position = world_position
 		_hum.stream = _stream("anomaly_hum")
 		if _hum.stream != null and not _hum.playing:
 			_hum.play()
+		_rumble.global_position = world_position
+		_rumble.stream = _stream("seismic_hum")
+		if _rumble.stream != null and not _rumble.playing:
+			_rumble.play()
 	else:
 		_hum.stop()
+		_rumble.stop()
+
+
+## The locker breath, looping while the player hides. GameManager starts it on
+## _enter_hiding() and stops it on every way out. The loop flag comes from the
+## file's .import, so the stream is used as-is.
+func set_hide_breath(on: bool) -> void:
+	if on:
+		if _hide_breath.playing:
+			return
+		if _hide_breath.stream == null:
+			if not ResourceLoader.exists(HIDE_BREATH_PATH):
+				push_warning("AudioManager: missing %s - the locker stays quiet" % HIDE_BREATH_PATH)
+				return
+			_hide_breath.stream = load(HIDE_BREATH_PATH)
+		if _hide_breath.stream != null:
+			_hide_breath.play()
+	else:
+		_hide_breath.stop()
+
+
+## Exhausted sprint breathing. The pant loop is baked at -20.0 dBFS RMS, so
+## at 0 dB it sits over the room tone while the player is gassed - it IS the
+## warning. PlayerController flips it with the exhausted flag.
+func set_panting(on: bool) -> void:
+	if on:
+		if _panting.playing:
+			return
+		_panting.stream = _stream("exhausted_breath")
+		if _panting.stream != null:
+			_panting.play()
+	else:
+		_panting.stop()
+
+
+## play_sfx() for a full resource path, for one-offs that do not follow the
+## res://audio/<name>.wav pattern (the generated recordings live in
+## res://audio/generated/). Same pool, same round-robin.
+func play_path(path: String, volume_db := 0.0) -> void:
+	if not ResourceLoader.exists(path):
+		push_warning("AudioManager: missing %s" % path)
+		return
+	var stream := load(path) as AudioStream
+	if stream == null:
+		return
+	var p := _pool[_pool_index]
+	_pool_index = (_pool_index + 1) % _pool.size()
+	p.stream = stream
+	p.volume_db = volume_db
+	p.pitch_scale = 1.0
+	p.play()

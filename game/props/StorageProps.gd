@@ -176,7 +176,7 @@ static func shelving_bay(parent: Node3D, origin: Vector3, facing_deg: float,
 		var index: int = slot - first_slot
 		if index < 0 or index > 11:
 			continue
-		var dy: float = decks[3 - (index / 3)]
+		var dy: float = decks[3 - int(index / 3.0)]
 		var cx: float = slot_xs[index % 3]
 		var askew: bool = slot == last_slot
 		var crate := _box(root, "Crate %02d" % slot,

@@ -1155,6 +1155,9 @@ func _cleanup()->void:
 	# an abort or a fall.
 	var am:=get_tree().get_first_node_in_group("audio_manager")
 	if am!=null:
+		# The way back is the way in, quieter and slower: rift_return is the
+		# cross whoosh baked -22.0 dBFS RMS and varisped to 75%.
+		if am.has_method("play_sfx"): am.play_sfx("rift_return", -4.0)
 		if am.has_method("stop_context"): am.stop_context()
 		if am.has_method("set_music_active"): am.set_music_active(true)
 	# A hidden CanvasLayer draws nothing, but the frame would keep ticking at

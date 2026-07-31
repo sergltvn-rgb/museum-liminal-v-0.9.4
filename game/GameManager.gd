@@ -669,6 +669,10 @@ func _resolve() -> void:
 			am.set_alarm(false)
 		if am.has_method("set_anomaly_hum"):
 			am.set_anomaly_hum(false)
+		if am.has_method("set_hide_breath"):
+			am.set_hide_breath(false)
+		if am.has_method("set_panting"):
+			am.set_panting(false)
 		if am.has_method("play_sfx"):
 			am.play_sfx("resolve")
 	_anomalies_left -= 1
@@ -764,6 +768,10 @@ func _fail() -> void:
 			am.set_alarm(false)
 		if am.has_method("set_anomaly_hum"):
 			am.set_anomaly_hum(false)
+		if am.has_method("set_hide_breath"):
+			am.set_hide_breath(false)
+		if am.has_method("set_panting"):
+			am.set_panting(false)
 		if am.has_method("play_sfx"):
 			am.play_sfx("fail")
 		if am.has_method("play_music_stinger"):
@@ -1143,13 +1151,22 @@ func _enter_hiding(spot: Node) -> void:
 	(_player as CharacterBody3D).velocity = Vector3.ZERO
 	_player.set("movement_locked", true)
 	_flash(tr("HUD_HIDE_ENTER"), UITheme.ACCENT)
-	_sfx("terminal_beep")
+	var am := _audio()
+	if am != null and am.has_method("set_hide_breath"):
+		am.set_hide_breath(true)
+	# The anomaly hums back when you hide: a 3.5 s texture accent (-14.4 dBFS
+	# RMS), -12 dB puts it level with the room tone for a moment.
+	if am != null and am.has_method("play_sfx"):
+		am.play_sfx("alien_texture", -12.0)
 
 
 ## Climb out, either by choice or because the door was opened for you.
 func _leave_hiding(found: bool) -> void:
 	var spot := _hidden_spot
 	_hidden_spot = null
+	var am := _audio()
+	if am != null and am.has_method("set_hide_breath"):
+		am.set_hide_breath(false)
 	if spot == null:
 		return
 	spot.call("take", false)

@@ -977,7 +977,7 @@ func _build_hint(cap: String, label_key: String) -> Control:
 
 func _clock_text(seconds: float) -> String:
 	var total := int(seconds) % 86400
-	return "%02d:%02d" % [total / 3600, (total % 3600) / 60]
+	return "%02d:%02d" % [int(total / 3600.0), int((total % 3600) / 60.0)]
 
 
 func _integrity_percent() -> int:

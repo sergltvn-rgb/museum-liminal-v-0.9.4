@@ -2203,6 +2203,19 @@ func _verify_curator_cover(map_root: Node) -> void:
 		player.global_position.z), Vector3.UP)
 	curator.call("_resolve_player")
 
+	# GameplayEnhancements oscillates the player scale while an anomaly is
+	# live, and these probes run inside real frames where that driver ticks.
+	# Freeze it and pin the scale at 1.0, or the capsule heights read below
+	# are whatever the oscillator happened to be doing that frame.
+	var enhancements := get_first_node_in_group("gameplay_enhancements")
+	var enhancements_processing := false
+	if enhancements != null:
+		enhancements_processing = enhancements.is_processing()
+		enhancements.set_process(false)
+	scaler.call("set_target", 1.0)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+
 	scaler.call("set_crouch", false)
 	scaler.call("_process", 1.0)
 	scaler.call("_process", 1.0)
@@ -2259,6 +2272,8 @@ func _verify_curator_cover(map_root: Node) -> void:
 	scaler.call("set_crouch", false)
 	scaler.call("_process", 1.0)
 	scaler.call("_process", 1.0)
+	if enhancements != null:
+		enhancements.set_process(enhancements_processing)
 	player.global_transform = player_transform
 	camera.global_transform = camera_transform
 	curator.global_transform = curator_transform
@@ -2316,6 +2331,19 @@ func _verify_route_covers(map_root: Node, generated: Node) -> void:
 	curator.velocity = Vector3.ZERO
 	curator.call("_resolve_player")
 
+	# GameplayEnhancements oscillates the player scale while an anomaly is
+	# live, and the cover probes stand next to the exhibits those anomalies
+	# radiate from. Freeze the driver and pin the scale at 1.0, or a cover
+	# is measured against a capsule the oscillator was mid-swing on.
+	var enhancements := get_first_node_in_group("gameplay_enhancements")
+	var enhancements_processing := false
+	if enhancements != null:
+		enhancements_processing = enhancements.is_processing()
+		enhancements.set_process(false)
+	scaler.call("set_target", 1.0)
+	scaler.call("_process", 1.0)
+	scaler.call("_process", 1.0)
+
 	var problems: Array[String] = []
 	var results: Array[String] = []
 	for cover in ROUTE_COVERS:
@@ -2365,6 +2393,8 @@ func _verify_route_covers(map_root: Node, generated: Node) -> void:
 	scaler.call("set_crouch", false)
 	scaler.call("_process", 1.0)
 	scaler.call("_process", 1.0)
+	if enhancements != null:
+		enhancements.set_process(enhancements_processing)
 	player.global_transform = player_transform
 	curator.global_transform = curator_transform
 	player.velocity = Vector3.ZERO

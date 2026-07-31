@@ -211,8 +211,11 @@ static func _shape_for(mesh: Mesh, use_trimesh: bool) -> Shape3D:
 	# approximation of one, so it is tighter, never looser. That matters here:
 	# test_blocker_regressions asserts the Atrium -> Time Wing B doorway still
 	# admits the player capsule, and a looser hull is what would break it.
-	var shape: Shape3D = mesh.create_trimesh_shape() if use_trimesh \
-		else mesh.create_convex_shape(true, false)
+	var shape: Shape3D
+	if use_trimesh:
+		shape = mesh.create_trimesh_shape()
+	else:
+		shape = mesh.create_convex_shape(true, false)
 	cache[mesh] = shape
 	return shape
 

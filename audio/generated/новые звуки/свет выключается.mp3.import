@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsuva86yclcpp"
+path="res://.godot/imported/свет выключается.mp3-49c87e0c9116255cd0179fe06434f265.mp3str"
+
+[deps]
+
+source_file="res://audio/generated/новые звуки/свет выключается.mp3"
+dest_files=["res://.godot/imported/свет выключается.mp3-49c87e0c9116255cd0179fe06434f265.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
