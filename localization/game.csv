@@ -206,6 +206,7 @@ MENU_SUBTITLE_FMT,%s · RELEASE 1.0 · PROLOGUE AND 10 DIMENSIONS,%s · RELEASE 
 MENU_SUBTITLE_SHIFT,night shift,ночная смена
 MENU_TITLE,THE FIRST MUSEUM,ПЕРВЫЙ МУЗЕЙ
 MENU_TUTORIAL,Tutorial,Обучение
+MENU_REWATCH_DRIVE,Rewatch the arrival,Пересмотреть заезд
 OBJ_BLACKOUT,The power is out. Something is happening in the atrium...,Питание пропало. Что-то происходит в атриуме...
 OBJ_CCTV_CONFIRM,%s: confirm the source via %s in the security office (%.1f sec.).,%s: подтвердите источник через %s в офисе охраны (%.1f сек.).
 OBJ_CORE_UNSTABLE,"The anomaly is contained, but the core is unstable. The next surge is close...","Аномалия устранена, но ядро нестабильно. Следующий выброс близко..."

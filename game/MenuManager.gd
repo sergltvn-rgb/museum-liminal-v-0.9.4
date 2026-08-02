@@ -355,6 +355,31 @@ func _open_tutorial() -> void:
 	get_tree().change_scene_to_file(TUTORIAL_SCENE)
 
 
+## Пересмотр вступительного заезда — единственного куска игры, который игрался
+## ровно один раз за сохранение и не имел никакого способа вернуться, кроме
+## полного сброса прогресса ниже. Здесь не трогается ни ночь, ни обучение:
+## ставится один флаг story/drive_replay, который читает
+## FirstMuseumMap._drive_should_play() при следующей загрузке карты и снимает
+## _on_drive_finished() по окончании или пропуске.
+##
+## load() перед записью обязателен, и это не перестраховка: в этом же файле
+## лежат tutorial/done, tutorial/skipped, story/prologue_seen и intro/seen —
+## свежий ConfigFile стёр бы все четыре и показал игроку всю открывающую
+## цепочку заново вместо одного заезда. По этой же причине флаг живёт в
+## museum_progress.cfg, а не в museum_save.cfg: тот перезаписывается целиком при
+## каждой смене ночи.
+##
+## Сразу за записью идёт _start_game(): катсцена запускается из _ready() карты,
+## так что кнопка, которая только ставит флаг, выглядела бы как кнопка, которая
+## ничего не делает.
+func _rewatch_drive() -> void:
+	var config := ConfigFile.new()
+	config.load(TUTORIAL_PROGRESS_PATH)
+	config.set_value("story", "drive_replay", true)
+	config.save(TUTORIAL_PROGRESS_PATH)
+	_start_game()
+
+
 func _reset_progress() -> void:
 	var config := ConfigFile.new()
 	config.set_value("progress", "night", 1)
@@ -589,6 +614,7 @@ func _build_main_page() -> void:
 
 	for entry: Array in [
 			["MENU_TUTORIAL", _open_tutorial],
+			["MENU_REWATCH_DRIVE", _rewatch_drive],
 			["MENU_SETTINGS", _open_settings],
 			["MENU_FEEDBACK", _open_feedback_menu]]:
 		_main_focus.append(_make_secondary(column, String(entry[0]), entry[1]))

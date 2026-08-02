@@ -1021,6 +1021,9 @@ func _add_world_env(parent: Node) -> void:
 	# Density 0.08 was near-opaque past ~15 m in Godot 4; 0.025 keeps the
 	# far walls readable while still eating the corridors.
 	# Off for the bright daytime intro; _trigger_blackout() turns it on.
+	# Значения ниже — только ночные умолчания. Реальный набор выбирает
+	# _apply_fog_profile() в конце этой функции и на каждой смене сцены:
+	# туман больше не выключен днём наглухо.
 	env.fog_enabled = false
 	env.fog_light_color = Color(0.05, 0.05, 0.065)
 	env.fog_light_energy = 0.6
@@ -1079,6 +1082,10 @@ func _add_world_env(parent: Node) -> void:
 	world_env.name = "World Environment"
 	world_env.environment = env
 	parent.add_child(world_env)
+
+	# Карта строится днём, и заезд начинается через несколько кадров после
+	# сборки, так что день — правильное начальное состояние.
+	_apply_fog_profile()
 
 	# Bright afternoon sun; _trigger_blackout() dims it to moonlight.
 	var sun := DirectionalLight3D.new()
@@ -1145,6 +1152,75 @@ func _add_world_env(parent: Node) -> void:
 	# Faintly glowing skylight glass so the beam has a visible source.
 	_box(parent, "Atrium Skylight Glass", Vector3(0, WALL_HEIGHT - 0.02, 0),
 		Vector3(3.4, 0.05, 3.4), Color(0.45, 0.52, 0.72), 1.1)
+
+
+## Три профиля тумана, и единственное место, где они записаны.
+##
+## ДО ЭТОГО ТУМАНА ДНЁМ НЕ БЫЛО ВООБЩЕ. _add_world_env() собирал
+## Environment с fog_enabled = false, а единственным, кто включал туман, был
+## _trigger_blackout(). А он срабатывает, когда игрок уже вошёл в офис
+## охраны — то есть весь заезд по дороге, весь двор и весь вестибюль
+## игрались в абсолютно прозрачном воздухе, где лес и горы за ним
+## читались как плоские декорации без воздушной перспективы.
+##
+## ПРОФИЛЬ ЗАЕЗДА — самый плотный из трёх, и это осознанно. Трасса
+## _drive_track идёт от x 236 до стоянки, то есть камера всё время смотрит
+## вдоль дороги на десятки метров вперёд, а это единственные кадры игры
+## с такой глубиной сцены. Плотность 0.011 при такой дальности съедает
+## дальние банды леса, но оставляет читаемыми мост, остановку и фасад
+## в последнем кадре — три вещи, ради которых заезд вообще снят.
+##
+## Объёмный туман в заезде плотнее ночного (0.030 против 0.022) и светлее
+## по альбедо: анизотропия 0.55, заданная в _add_world_env и общая для всех
+## трёх профилей, рассеивает свет вперёд от источника, и именно она
+## превращает фары седана и фонари вдоль дороги в видимые конусы.
+##
+## Дневной профиль нарочно слабый и без объёмного тумана: после заезда
+## игрок идёт пешком по двору и вестибюлю, где всё ближе 15 м, и там
+## заездная плотность читалась бы как грязное стекло, а не как воздух.
+##
+## Ночной набор — буквально те же числа, что стояли в _add_world_env до
+## этой правки, так что после блэкаута картинка не изменилась ни на
+## единицу. Перекраску тумана под аномалию делает GameManager поверх
+## этих значений и в эту функцию не вмешивается; повторный вызов
+## _apply_fog_profile() её сбросит, поэтому ночью его зовёт только
+## SettingsManager — ровно тогда, когда игрок меняет качество.
+##
+## Объёмный туман везде проходит через allow_volumetric_fog() (пресет
+## качества >= 2). Без SettingsManager в дереве — то есть в голом запуске
+## сцены из тестов — считаем, что разрешён, как это уже делал
+## _trigger_blackout().
+func _apply_fog_profile() -> void:
+	if _environment == null:
+		return
+	var settings := get_tree().get_first_node_in_group("settings_manager")
+	var volumetric: bool = settings == null or settings.allow_volumetric_fog()
+
+	if _blackout_done:
+		_environment.fog_enabled = true
+		_environment.fog_light_color = Color(0.05, 0.05, 0.065)
+		_environment.fog_light_energy = 0.6
+		_environment.fog_density = 0.025
+		_environment.volumetric_fog_enabled = volumetric
+		_environment.volumetric_fog_density = 0.022
+		_environment.volumetric_fog_albedo = Color(0.62, 0.66, 0.78)
+		return
+
+	if _drive_playing:
+		_environment.fog_enabled = true
+		_environment.fog_light_color = Color(0.74, 0.77, 0.81)
+		_environment.fog_light_energy = 1.0
+		_environment.fog_density = 0.016
+		_environment.volumetric_fog_enabled = volumetric
+		_environment.volumetric_fog_density = 0.038
+		_environment.volumetric_fog_albedo = Color(0.80, 0.83, 0.88)
+		return
+
+	_environment.fog_enabled = true
+	_environment.fog_light_color = Color(0.78, 0.81, 0.85)
+	_environment.fog_light_energy = 1.0
+	_environment.fog_density = 0.0065
+	_environment.volumetric_fog_enabled = false
 
 
 func _add_room_lights(parent: Node) -> void:
@@ -1314,9 +1390,9 @@ func _trigger_blackout() -> void:
 	# Night sky + creeping fog.
 	if _environment != null:
 		_environment.ambient_light_energy = 0.18
-		_environment.fog_enabled = true
-		var settings := get_tree().get_first_node_in_group("settings_manager")
-		_environment.volumetric_fog_enabled = settings == null or settings.allow_volumetric_fog()
+		# _blackout_done выставлен в начале этой функции, так что сюда придёт
+		# ночной профиль — те же числа, что были зашиты здесь раньше.
+		_apply_fog_profile()
 		_environment.adjustment_saturation = 0.72
 		_environment.adjustment_brightness = 0.86
 		var sky_mat := _environment.sky.sky_material as ProceduralSkyMaterial
@@ -3072,7 +3148,13 @@ func _prologue_should_play() -> bool:
 
 ## The arrival drive opens the whole chain and carries its own flag for the
 ## same reason the prologue does: each piece must be retirable on its own.
+## story/drive_replay обходит обе проверки — и ночь, и drive_seen. Пересмотр
+## нужен именно тому, кто заезд уже видел, и на любой ночи, поэтому обычный
+## гейт здесь не годится. Флаг ставит MenuManager._rewatch_drive(), снимает
+## _on_drive_finished(), так что он срабатывает ровно один раз за нажатие.
 func _drive_should_play() -> bool:
+	if _seen_flag("story", "drive_replay"):
+		return true
 	return _intro_saved_night() <= 1 and not _seen_flag("story", "drive_seen")
 
 
@@ -3104,6 +3186,18 @@ func _mark_seen(section: String, key := "seen") -> void:
 	config.save(INTRO_PROGRESS_PATH)
 
 
+## Обратная операция для одноразовых запросов вроде story/drive_replay.
+## load() здесь по той же причине, что и в _mark_seen: в файле лежат
+## tutorial/done, tutorial/skipped и флаги обеих катсцен, и свежий
+## ConfigFile стёр бы их. Отсутствующий файл — уже нужное состояние.
+func _clear_seen(section: String, key := "seen") -> void:
+	var config := ConfigFile.new()
+	if config.load(INTRO_PROGRESS_PATH) != OK:
+		return
+	config.set_value(section, key, false)
+	config.save(INTRO_PROGRESS_PATH)
+
+
 # --- Starting and chaining ---------------------------------------------------
 
 
@@ -3130,6 +3224,8 @@ func _start_opening() -> void:
 			_drive_car = generated.find_child("Player Car", true, false) as Node3D
 		if _drive_car != null:
 			_drive_playing = true
+			# Порядок важен: профиль читает _drive_playing.
+			_apply_fog_profile()
 			_play(_drive_shots(), _on_drive_finished)
 			return
 	if _prologue_should_play():
@@ -3152,7 +3248,12 @@ func _play(shots: Array, on_finished: Callable) -> void:
 func _on_drive_finished(_skipped: bool) -> void:
 	_cutscene = null
 	_drive_playing = false
+	# Заезд кончился — возвращаемся к дневной дымке двора.
+	_apply_fog_profile()
 	_mark_seen("story", "drive_seen")
+	# Пересмотр — одноразовый: снимаем запрос сразу, иначе заезд начнёт играть
+	# при каждом входе в музей. Снимается и при пропуске, ровно как drive_seen.
+	_clear_seen("story", "drive_replay")
 	# Whether the drive ran out or was skipped at the first frame, the fiction
 	# afterwards is the same: the car stands in its bay. Snap it there so the
 	# prologue's forecourt shots never catch it hanging halfway down the road.

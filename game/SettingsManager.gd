@@ -188,8 +188,15 @@ func _apply_quality() -> void:
 		env.ssr_enabled = quality_preset >= 1
 		env.ssil_enabled = quality_preset >= 2
 		env.glow_enabled = quality_preset >= 1
-		var is_night := bool(museum.get("_blackout_done"))
-		env.volumetric_fog_enabled = quality_preset >= 2 and is_night
+		# Профиль тумана принадлежит карте: у неё их три (день, заезд, ночь)
+		# и только она знает, какой из них сейчас верен. Раньше здесь стояло
+		# жёсткое "объёмный туман только ночью", и любое применение настроек
+		# во время заезда мгновенно гасило его туман.
+		if museum.has_method("_apply_fog_profile"):
+			museum.call("_apply_fog_profile")
+		else:
+			var is_night := bool(museum.get("_blackout_done"))
+			env.volumetric_fog_enabled = quality_preset >= 2 and is_night
 
 
 func _apply_ui_scale() -> void:
