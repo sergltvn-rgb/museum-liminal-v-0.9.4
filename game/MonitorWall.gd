@@ -233,9 +233,11 @@ func _feed_quad(anchor: MeshInstance3D, panel: int) -> MeshInstance3D:
 	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var material := StandardMaterial3D.new()
 	# Unshaded: the picture is a light source in the fiction, and the office is
-	# dark. Nearest filtering because the 256x192 pixels are the CCTV look.
+	# dark. Фильтрация линейная: фид теперь 768x576 (SecurityCameraTablet.FEED_SIZE),
+	# и nearest на маленьком настенном экране давал бы только алиасинг, а не
+	# крупный честный пиксель.
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	material.albedo_color = Color(0.82, 0.92, 0.88)
 	quad.material_override = material
 	_bank.add_child(quad)

@@ -785,21 +785,15 @@ func _build_ui() -> void:
 	_build_room_panel()
 
 
-## HUD-sized surface. UITheme.apply_panel() is deliberately not used: it hands
-## back panel_raised(), whose PAD+4 content margins would inflate these fixed
-## widths. Same tokens, tighter, exactly as PlayerController's stamina panel
-## already does for the same reason.
-func _surface() -> StyleBoxFlat:
-	return UITheme.stylebox(UITheme.SURFACE_RAISED, UITheme.BORDER,
-		UITheme.BORDER_WIDTH, UITheme.RADIUS_SM)
-
-
+## HUD-sized instrument surface. The shared InstrumentPanel variation carries
+## the tight margins these fixed-width readouts need, so this screen declares
+## semantics instead of rebuilding the same StyleBox locally.
 func _panel_container(node_name: String) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.name = node_name
+	panel.theme_type_variation = &"InstrumentPanel"
 	panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_theme_stylebox_override("panel", _surface())
 	return panel
 
 
@@ -809,7 +803,7 @@ func _build_map_panel() -> void:
 	_stack.add_child(_map_panel)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	UITheme.apply_gap(box, UITheme.GAP_ROW)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_panel.add_child(box)
 
@@ -831,7 +825,7 @@ func _build_bearing_panel() -> void:
 	_stack.add_child(_bearing_panel)
 
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	UITheme.apply_gap(row, UITheme.GAP_BLOCK)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bearing_panel.add_child(row)
 
@@ -845,7 +839,7 @@ func _build_bearing_panel() -> void:
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_theme_constant_override("separation", 2)
+	UITheme.apply_gap(column, UITheme.GAP_TIGHT)
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(column)
 
@@ -866,7 +860,7 @@ func _build_room_panel() -> void:
 	_stack.add_child(_room_panel)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
+	UITheme.apply_gap(box, UITheme.GAP_TIGHT)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_room_panel.add_child(box)
 

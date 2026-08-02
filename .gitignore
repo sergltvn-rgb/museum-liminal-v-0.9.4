@@ -71,3 +71,6 @@ tools/tmp_*
 # --import) and the terrain is procedural anyway. Kept on disk so the editor
 # stops asking, excluded from history so nobody ships a broken binary addon.
 addons/terrabrush/
+ 
+# уменьшенные копии референсов для просмотра агентом 
+references/**/small/ 

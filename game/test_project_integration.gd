@@ -35,10 +35,23 @@ func _run() -> void:
 	var player: Node = get_first_node_in_group("player")
 	if player != null:
 		_check(player.get("max_stamina") != null, "player stamina available")
+	var theme := load("res://ui/museum_theme.tres") as Theme
+	_check(theme != null, "shared museum theme loads")
+	if theme != null:
+		for variation: StringName in [&"TerminalPanel", &"CCTVPanel", &"WarningPanel",
+				&"InstrumentPanel"]:
+			_check(theme.get_type_variation_base(variation) == &"Panel",
+				"%s inherits Panel" % variation)
+			_check(theme.has_stylebox(&"panel", variation),
+				"%s supplies its panel style" % variation)
 	var tablet: Node = scene.get_node_or_null("SecurityCameraTablet")
 	if tablet != null:
 		var cameras: Array = tablet.get("_cams")
 		_check(cameras.size() == 11, "eleven CCTV feeds available")
+		var frame: Node = tablet.get("_frame")
+		var backdrop := frame.get_node_or_null("Backdrop") as Control if frame != null else null
+		_check(backdrop != null and backdrop.theme_type_variation == &"CCTVPanel",
+			"CCTV workstation selects CCTVPanel")
 	_finish()
 
 

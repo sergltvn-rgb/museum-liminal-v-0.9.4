@@ -740,6 +740,47 @@ func unlock_wing(wing: String) -> void:
 	_bake_navigation()
 
 
+## ГРУППА ГЕРМОСТВОРОК ОФИСА. GameManager ищет двери по ней, а не по именам узлов.
+const OFFICE_DOOR_GROUP := "office_door"
+
+
+## Гермостворки на трёх проёмах офиса (механика FNaF).
+##
+## Восточный проём — дорога из атриума, ею Куратор приходит чаще всего.
+## Северный и южный ведут в Архив и на Склад. Запереться во всех трёх на всю
+## ночь нельзя: каждая закрытая створка тратит питание, и в этом весь выбор.
+func _add_office_doors(parent: Node) -> void:
+	_add_office_door(parent, "Office Door East", Vector3(-15, 0, 0), "z", 1.0, -1.0)
+	_add_office_door(parent, "Office Door North", Vector3(-25, 0, -7), "x", 1.0, 1.0)
+	_add_office_door(parent, "Office Door South", Vector3(-25, 0, 7), "x", 1.0, -1.0)
+
+
+func _add_office_door(parent: Node, door_name: String, origin: Vector3,
+		axis: String, button_side: float, inside: float) -> void:
+	var door_script := load("res://game/OfficeDoor.gd") as GDScript
+	if door_script == null:
+		return
+	# Скрипт ИНСТАНЦИРУЕТСЯ, а не вешается на готовый Node3D — та же причина,
+	# что у MonitorWall: set_script() не включает _process у узла, построенного
+	# без него, и створка молча перестала бы ездить.
+	var door := door_script.new() as Node3D
+	door.name = door_name
+	door.position = origin
+	door.call("configure", axis, DOOR_GAP, button_side, inside)
+	parent.add_child(door)
+	door.add_to_group(OFFICE_DOOR_GROUP)
+
+
+## Публичная пересборка навмеша. Дверь офиса меняет проходимость музея на
+## ходу, и это единственный внешний повод заказать bake после старта. Очередь на
+## один одновременный bake живёт внутри _bake_navigation(), поэтому частые нажатия
+## кнопки безопасны: лишние запросы схлопываются в один флаг.
+func request_navigation_rebake() -> void:
+	if _nav_region == null:
+		return
+	_bake_navigation()
+
+
 # --- Navigation ------------------------------------------------------------
 # The Curator paths through the museum with a NavigationAgent3D, which needs a
 # baked navigation mesh. Geometry is parsed from static colliders, which is
@@ -1011,10 +1052,19 @@ const OFFICE_NIGHT_MAX_Z := 6.6
 func _add_world_env(parent: Node) -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
+	# Retro lighting pass (visual block 9).
+	# The reference look is a cheap night camera: almost no fill light, hard
+	# pools of lamp light, and everything between them falling to black.
+	# Ambient used to be a full 1.0 of sky light, which flattened every
+	# shadow into readable grey. 0.42 keeps shapes legible without lifting
+	# the darkness, and a dirty green tint replaces part of the blue sky
+	# contribution so unlit surfaces read as swamp green, not daylight.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.0
+	env.ambient_light_energy = 0.42
+	env.ambient_light_sky_contribution = 0.55
+	env.ambient_light_color = Color(0.10, 0.12, 0.09)
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 1.3
+	env.tonemap_white = 1.15
 	_environment = env
 
 	# Liminal depth: a faint fog that swallows the far ends of rooms.
@@ -1038,33 +1088,37 @@ func _add_world_env(parent: Node) -> void:
 	env.volumetric_fog_anisotropy = 0.55
 	env.volumetric_fog_gi_inject = 0.4
 
+	# Glow is kept only for genuine light sources (tubes, neon, screens).
+	# The old 0.9 threshold let ordinary bright walls bloom, which reads as
+	# a modern render. 1.15 means: nothing glows unless it is a lamp.
 	env.glow_enabled = true
-	env.glow_intensity = 0.28
-	env.glow_strength = 0.62
-	env.glow_bloom = 0.05
-	env.glow_hdr_threshold = 0.9
+	env.glow_intensity = 0.16
+	env.glow_strength = 0.50
+	env.glow_bloom = 0.0
+	env.glow_hdr_threshold = 1.15
 
 	# Grade: slightly desaturated, a touch more contrast -- dead-mall mood.
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 0.94
-	env.adjustment_contrast = 1.08
-	env.adjustment_brightness = 1.0
+	# Dirty, washed-out palette: swamp green, faded beige, grey, dim yellow.
+	# Lower saturation plus higher contrast is what separates a period look
+	# from a modern one -- colour is drained, but light and dark are harsh.
+	env.adjustment_saturation = 0.76
+	env.adjustment_contrast = 1.20
+	env.adjustment_brightness = 0.96
 
+	# Contact shadow in corners is the one modern effect the retro look
+	# still wants: it grounds low-poly geometry that has no baked detail.
 	env.ssao_enabled = true
-	env.ssao_radius = 1.0
-	env.ssao_intensity = 1.5
-	env.ssao_power = 1.2
-	# Screen-space reflections and indirect light give polished floors and
-	# exhibit cases depth without the cost of full realtime GI.
-	env.ssr_enabled = true
-	env.ssr_max_steps = 32
-	env.ssr_fade_in = 0.12
-	env.ssr_fade_out = 1.8
-	env.ssr_depth_tolerance = 0.18
-	env.ssil_enabled = true
-	env.ssil_radius = 3.0
-	env.ssil_intensity = 0.75
-	env.ssil_sharpness = 0.9
+	env.ssao_radius = 0.8
+	env.ssao_intensity = 2.0
+	env.ssao_power = 1.5
+	# Screen-space reflections and screen-space indirect light are switched
+	# off on purpose. Both were fighting the flat materials: SSR put glossy
+	# mirror streaks on floors that are meant to be matte, and SSIL bounced
+	# fill light into shadows that should stay black. Turning them off also
+	# buys back frame time (counts towards the optimisation block).
+	env.ssr_enabled = false
+	env.ssil_enabled = false
 
 	var sky_material := ProceduralSkyMaterial.new()
 	sky_material.sky_top_color = Color(0.28, 0.46, 0.80)
@@ -1091,8 +1145,8 @@ func _add_world_env(parent: Node) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-52, 25, 0)
-	sun.light_energy = 1.4
-	sun.light_color = Color(1.0, 0.96, 0.86)
+	sun.light_energy = 1.15
+	sun.light_color = Color(0.96, 0.94, 0.84)
 	sun.shadow_enabled = true
 	sun.light_angular_distance = 1.0
 	parent.add_child(sun)
@@ -1102,15 +1156,18 @@ func _add_world_env(parent: Node) -> void:
 	var office_light := OmniLight3D.new()
 	office_light.name = "Office Fluorescent Hum"
 	office_light.position = Vector3(-25, 2.7, 0)
-	office_light.light_energy = 1.7
-	office_light.omni_range = 12.0
-	office_light.light_color = Color(0.85, 0.9, 1.0)
+	# Sickly fluorescent green-yellow, not the clean blue-white of an office
+	# ceiling panel. Range pulled in so the tube lights its own desk and
+	# leaves the rest of the room to the darkness.
+	office_light.light_energy = 1.9
+	office_light.omni_range = 9.0
+	office_light.light_color = Color(0.88, 0.95, 0.72)
 	office_light.shadow_enabled = true
 	parent.add_child(office_light)
 	_office_light = office_light
 	_powered_lights.append(office_light)
 	_box(parent, "Office Fluorescent Tube", Vector3(-25, WALL_HEIGHT - 0.08, 0),
-		Vector3(2.4, 0.07, 0.45), Color(0.82, 0.88, 0.95), 1.4)
+		Vector3(2.4, 0.07, 0.45), Color(0.86, 0.93, 0.70), 1.6)
 
 	# Red atrium emergency light.
 	var atrium_light := OmniLight3D.new()
@@ -3767,6 +3824,9 @@ func build_map() -> void:
 	_add_drive_set(map_root)
 	_add_cameras(map_root)
 	_add_locked_doors(map_root)
+	# Створки офиса строятся ДО _add_navigation: их коллайдеры обязаны быть в
+	# дереве к первому bake, иначе ночь начнётся с навмеша, не знающего о дверях.
+	_add_office_doors(map_root)
 	_add_player_spawn(map_root)
 	_add_navigation(map_root)
 

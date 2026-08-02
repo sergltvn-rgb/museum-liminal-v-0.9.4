@@ -17,10 +17,104 @@ extends Node
 # Controls: E - take device / read terminal / apply at the dome,
 #           G - drop the carried device, ENTER - retry after a fail.
 
-const ACCIDENT_DELAY := 4.0
-const NIGHT_TIMER := 240.0
+## Одна модель индикатора на весь музей — см. game/props/StatusLamp.gd.
+const Lamp := preload("res://game/props/StatusLamp.gd")
+
+## ТЕМП НОЧИ. События шли впритык: четыре секунды от входа в зал до прорыва
+## и две с половиной минуты на всю смену не оставляли времени ни пройтись по
+## музею, ни сесть за компьютер и прочитать отчёт. Страх живёт в паузе перед
+## событием, а не в его скорости: пауза увеличена, ночь — тоже.
+const ACCIDENT_DELAY := 9.0
+const NIGHT_TIMER := 300.0
 const INTERACT_DISTANCE := 2.8
 const APPLY_DISTANCE := 3.4
+
+## ПИТАНИЕ ОФИСА (механика FNaF). Ночь длится NIGHT_TIMER = 240 с, и цифры ниже
+## подобраны так, чтобы аккуратная смена укладывалась, а ночь за запертыми
+## дверями — нет:
+##   базовый расход   0.20 %/с -> 48 % за ночь (мониторы, свет, вентиляция);
+##   закрытая створка 0.28 %/с -> 67 % за ночь ЗА КАЖДУЮ дверь;
+##   работа за столом 0.10 %/с -> 24 % за ночь.
+## Отсюда баланс: одну дверь можно держать закрытой около половины смены, все
+## три — минуту с небольшим. Кончилось питание — створки поднимаются сами.
+##
+## ПИТАНИЕ ПОКА ВЫКЛЮЧЕНО. Счётчик заряда вводит второй таймер поверх ночи
+## и третье окно на столе раньше, чем игрок разобрался с первыми двумя. Вся
+## механика остаётся в коде целиком и включается одной строкой ниже, когда
+## двери и компьютер будут обжиты: вырезать её значило бы писать заново.
+## При false: заряд не тратится, окно питания не создаётся, створки всегда
+## под напряжением — кнопка у двери работает всю ночь и ничего не стоит.
+const POWER_ENABLED := false
+const POWER_FULL := 100.0
+const POWER_BASE_DRAIN := 0.20
+const POWER_DOOR_DRAIN := 0.28
+const POWER_DESK_DRAIN := 0.10
+const POWER_BAR_CELLS := 20
+## Кратно шагу сетки стола (DesktopShell.WALLPAPER_GRID = 32): окно произвольного
+## размера кончается посреди клетки и читается как перекошенное.
+const POWER_WINDOW_SIZE := Vector2(512, 288)
+## Тот же размер в долях стола: 512 / 1600 и 288 / 844. Доля главнее пикселей —
+## при large_text стол ужимается, см. DesktopWindow.desk_fraction.
+const POWER_WINDOW_FRACTION := Vector2(0.32, 0.3412)
+## Журнал — вторая, МАЛЕНЬКАЯ программа стола. Он занимает место окна
+## питания, пока питание выключено (POWER_ENABLED): стол из одного
+## большого окна читается как полноэкранная панель, а не как рабочее место.
+## Размер кратен сетке обоев (32) — иначе рамка режет клетку пополам.
+const LOG_WINDOW_SIZE := Vector2(512, 352)
+## Доля стола: 512 / 1600 и 352 / 844. С питанием в одной колонке, вместе
+## 0.7583 высоты — колонка встаёт целиком при любом масштабе интерфейса.
+const LOG_WINDOW_FRACTION := Vector2(0.32, 0.4171)
+## Места окон на столе, в долях его же размера. Объявлены рядом, потому
+## что это одна раскладка, а не три независимых числа: протокол держит левый
+## верх, CCTV ложится под ним в ту же колонку, журнал встаёт правым столбцом.
+##
+## Без объявленного места окна раскладывались поиском свободной клетки в
+## порядке открытия — и журнал, открываемый первым, в итоге уезжал вниз,
+## оставляя пустой прямоугольник в правом верхнем углу. При крупном тексте
+## тот же поиск случайно совпадал с замыслом — раскладка, верная по совпадению,
+## это та же ошибка, просто пока не видная. См. DesktopWindow.desk_anchor.
+const PROTOCOL_WINDOW_ANCHOR := Vector2(0.0, 0.0)
+const CCTV_WINDOW_ANCHOR := Vector2(0.0, 0.6825)
+const LOG_WINDOW_ANCHOR := Vector2(0.68, 0.0)
+## Сколько записей держит журнал. Старые уходят сверху: в окне такого
+## размера больше всё равно не видно, а прокрутка мышью в PS1-каноне лишняя.
+const LOG_MAX_LINES := 10
+## ОКНО НАБЛЮДЕНИЯ. Свободная полоса стола под протоколом: 1088 x 268 при
+## 1600 x 900. Ширина кратна шагу сетки обоев (32), высота выбрана по
+## остатку колонки -- окно занимает подвал стола целиком, без щели.
+const CCTV_WINDOW_SIZE := Vector2(1088, 268)
+## Та же полоса в долях стола: 1088 / 1600 и 268 / 844. Доля главнее пикселей,
+## см. DesktopWindow.desk_fraction.
+const CCTV_WINDOW_FRACTION := Vector2(0.68, 0.3175)
+## Ширина колонки постов. Одиннадцать строк перечня не должны ужимать кадр:
+## картинка -- главное в этом окне, список -- подпись к ней.
+const CCTV_LIST_WIDTH := 232.0
+## Откуда берётся перечень постов. Тот же приём, что и с планом музея: таблица
+## читается из константы скрипта, без создания планшета.
+const CCTV_CAM_SOURCE := "res://game/SecurityCameraTablet.gd"
+const CCTV_CAM_CONSTANT := 'CAMS'
+## Поднятый планшет CCTV тоже ест питание. Без этого камеры были
+## бесплатными, и оптимальной игрой было смотреть в них всю ночь напролёт.
+## Ночь — это размен обзора на ресурс, а не бесконечное наблюдение.
+const POWER_TABLET_DRAIN := 0.16
+## Пороги предупреждений. Обесточивание не должно сваливаться без предупреждения:
+## игрок, который не смотрел в окно питания, иначе узнаёт о цене своих решений
+## в тот самый момент, когда свет уже погас и створки ушли вверх.
+const POWER_WARN_LEVEL := 30.0
+const POWER_CRITICAL_LEVEL := 12.0
+
+## Кнопка двери жмётся с меньшего расстояния, чем прочее: она висит вплотную
+## к проёму, а большая дистанция позволяла бы жать её, стоя уже ПОД створкой.
+const DOOR_BUTTON_DISTANCE := 2.2
+## Значение обязано совпадать с FirstMuseumMap.OFFICE_DOOR_GROUP.
+const OFFICE_DOOR_GROUP := "office_door"
+## Имя узла створки — служебное и английское; игроку в окне питания показывается
+## сторона света из каталога локализации.
+const DOOR_NAME_KEYS := {
+	"Office Door East": "DESK_DOOR_EAST",
+	"Office Door North": "DESK_DOOR_NORTH",
+	"Office Door South": "DESK_DOOR_SOUTH",
+}
 
 # --- Kill plane -------------------------------------------------------------
 # Every legitimate walkable surface in this game has its top face at y = 0.0:
@@ -45,7 +139,9 @@ const FALL_SAFE_MAX_Y := 20.0
 # Night progression: nights 2-3 open the locked wings and stack anomalies.
 const MAX_NIGHT := 3
 const SAVE_PATH := "user://museum_save.cfg"
-const CALM_TIME := 12.0
+## Тишина между происшествиями. Двенадцать секунд — это ровно дорога из офиса
+## в атриум и обратно, то есть ноль спокойного времени на самом деле.
+const CALM_TIME := 24.0
 ## THE PRICE OF GUESSING (audit 16.6 п. 3). Seconds burned per wrong device,
 ## multiplied by the attempt number: 8 / 16 / 24 against a 170 s third night, so
 ## three guesses eat a quarter of it. WRONG_TOOL_NOISE sits above a run (1.0) and
@@ -319,8 +415,54 @@ var _protocol_layer: CanvasLayer = null
 var _protocol_frame: TerminalFrame = null
 var _proto_item: Label = null
 var _proto_purpose: Label = null
-var _proto_status: Label = null
-var _protocol_time := 0.0
+## The report grid of the protocol page (block 10, reference 01). These replace
+## the single _proto_status Label, which printed four "CAPTION: value" rows as
+## one centred blob out of HUD_PROTO_STATUS.
+var _proto_event: Label = null
+var _proto_wing: Label = null
+var _proto_carrier: Label = null
+var _proto_stability: Control = null
+var _proto_symptoms: VBoxContainer = null
+var _proto_plan: Control = null
+## РАБОЧЕЕ МЕСТО (блок 10). Отчёт больше не встаёт перед лицом игрока, где бы
+## тот ни стоял: он лежит окном на компьютере в офисе, и за ним надо прийти.
+## Вместе с тем показом исчез и _protocol_time — десять секунд, после которых экран
+## гас сам. На столе ничего не гаснет по таймеру: окно закрывает человек.
+var _desktop: DesktopShell = null
+var _protocol_window: DesktopWindow = null
+## Игрок сидит за монитором: мышь свободна, ходьба заблокирована, спина —
+## к двери. Цена информации теперь измеряется временем вдали от залов.
+var _at_workstation := false
+
+## Заряд аварийного контура в процентах. Тратится всю ночь, а не только в тревогу.
+var _power := POWER_FULL
+## Питание кончилось: створки подняты, кнопки мертвы, до утра как есть.
+var _power_out := false
+## Ступень уже отзвучавшего предупреждения: 0 — норма, 1 — мало, 2 — критично.
+## Хранится именно ступень, а не флаги: иначе предупреждение срабатывало бы
+## каждый кадр вокруг порога и превратилось бы в мигалку.
+var _power_stage := 0
+var _power_window: DesktopWindow = null
+var _power_readout: Label = null
+var _power_bar: Label = null
+## Строка текущего расхода. Без неё шкала показывала ТОЛЬКО остаток, и цена
+## закрытой створки была невидима до тех пор, пока не кончится вся ночь.
+var _power_drain: Label = null
+var _power_doors: Label = null
+var _log_window: DesktopWindow = null
+var _log_label: Label = null
+var _log_lines: PackedStringArray = PackedStringArray()
+var _cctv_window: DesktopWindow = null
+var _cctv_list: Label = null
+var _cctv_feed: TextureRect = null
+## Какой пост показан в окне. Смена поста -- дело следующего цикла; сейчас
+## окно держит первый и честно об этом говорит меткой в перечне.
+var _cctv_index := 0
+## Какой фид окно ДЕРЖИТ прямо сейчас, или -1. Хранится отдельно от _cctv_index:
+## окно может смотреть на пост, но не держать его -- свёрнутым или брошенным.
+var _cctv_held := -1
+var _cctv_cams: Array = []
+var _cctv_cams_loaded := false
 
 # Тестовая консоль (F9): выбор измерения для проверки. Не влияет на прогресс.
 var _admin_layer: CanvasLayer = null
@@ -440,10 +582,15 @@ func _process(delta: float) -> void:
 		STATE_ANOMALY:
 			_time_left -= delta
 			_pulse += delta
-			if _protocol_time > 0.0:
-				_protocol_time -= delta
-				if _protocol_time <= 0.0:
-					_hide_protocol()
+			# Часы в строке состояния рабочего стола идут только пока на них смотрят:
+			# это тот же остаток смены, что и в таймере задачи, но сказанный языком
+			# служебной системы, а не HUD.
+			if _at_workstation and _desktop != null:
+				_desktop.set_status(_night, _time_left)
+				# Свернуть и развернуть окно можно в любой момент, и сигнала
+				# об этом наружу нет. Сверка дешёвая: пока состояние не
+				# изменилось, она выходит на первой же строке.
+				_sync_cctv_feed()
 			if _task != null:
 				_task.set_timer(_time_left, _timer_urgent(), TaskBlock.OWNER_NIGHT)
 			if is_instance_valid(_anomaly_light):
@@ -459,6 +606,10 @@ func _process(delta: float) -> void:
 	# would freeze the player a few lines later, and the teleport would thaw them
 	# again behind the fail overlay. Running it last means the freeze is already
 	# in place when the capture happens.
+	# Питание тратится во всех ночных состояниях, а не только в тревоге: свет и
+	# мониторы горят и в тишине. Стоит ПЕРЕД _update_hint(), чтобы подсказка
+	# у кнопки в тот же кадр знала, что дверь уже мертва.
+	_drain_power(delta)
 	_check_kill_plane()
 	_update_hint()
 	# After _update_hint(), which reads the current orientation step: advancing
@@ -532,10 +683,10 @@ func _input(event: InputEvent) -> void:
 	if _trial_active:
 		return
 	_teach_watch(event)
-	if _protocol_layer != null and _protocol_layer.visible and (event.is_action_pressed("confirm") or event.is_action_pressed("interact")):
-		# Dismissing the protocol by hand is the orientation's proof that the
-		# player actually read it; letting it time out proves nothing. That is
-		# why the flag is set here and not inside _hide_protocol().
+	if _at_workstation and (event.is_action_pressed("confirm") or event.is_action_pressed("interact")):
+		# Встать из-за монитора может только сам игрок: экран больше не гаснет
+		# по таймеру. Сам уход и есть доказательство, что отчёт прочитан, —
+		# поэтому флаг стоит здесь, а не внутри _hide_protocol().
 		_teach_protocol_read = true
 		_hide_protocol()
 		get_viewport().set_input_as_handled()
@@ -1210,6 +1361,15 @@ func _interact() -> void:
 			_flash(tr("HUD_BELT_FULL"), UITheme.WARNING)
 		else:
 			_pick_up(str(target.get_meta("equipment_id")))
+		return
+	# Кнопка гермостворки проверяется ДО компьютера: если игрок тянется к кнопке,
+	# когда в коридоре шаги, он точно не садиться хотел.
+	if _toggle_nearest_door():
+		return
+	# Сесть за компьютер охраны. Доступно всегда, а не только в тревогу: рабочее
+	# место, которое включается только по сирене, не читается как рабочее место.
+	if _near(WORKSTATION_POS, INTERACT_DISTANCE):
+		_enter_workstation()
 		return
 	# Read the terminal.
 	if _near(TERMINAL_POS, INTERACT_DISTANCE) and _anomaly_id != "" and _state == STATE_ANOMALY:
@@ -1897,20 +2057,13 @@ func _build_terminal() -> void:
 
 	# Power lamp on the bezel's bottom rail. Small, constant, and the one part of
 	# the device that is lit while the screen is idle.
-	var lamp := MeshInstance3D.new()
-	lamp.name = "Anomaly Terminal Power Lamp"
-	var lamp_mesh := BoxMesh.new()
-	lamp_mesh.size = Vector3(0.05, 0.02, 0.02)
-	lamp.mesh = lamp_mesh
-	lamp.position = Vector3(0.58, 0.01, -0.05)
-	var lamp_mat := StandardMaterial3D.new()
-	lamp_mat.albedo_color = Color(0.2, 0.9, 0.55)
-	lamp_mat.emission_enabled = true
-	lamp_mat.emission = Color(0.25, 1.0, 0.6)
-	lamp_mat.emission_energy_multiplier = 2.2
-	lamp.material_override = lamp_mat
-	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(lamp)
+	#
+	# ТОТ ЖЕ ИНДИКАТОР, ЧТО И ВЕЗДЕ. Здесь был свой брусок 0.05 × 0.02 со
+	# своим кислотно-зелёным (0.2, 0.9, 0.55) — единственный такой цвет в
+	# игре, мимо канонной палитры. Теперь — штатная лампа станции, цвет «норма».
+	Lamp.build(root, "Anomaly Terminal Power Lamp",
+		Vector3(0.58, 0.01, -0.03), Lamp.COL_OK, Lamp.ENERGY_ON,
+		Vector3(0, 0, 1), 1.4)
 
 	# Cable dropping off the casing into the console body.
 	var cable := MeshInstance3D.new()
@@ -2014,7 +2167,7 @@ func _build_test_admin() -> void:
 	_admin_frame.visible = true
 	_admin_frame.set_title("ADMIN_TITLE")
 	var layout := _admin_frame.body_column()
-	layout.add_theme_constant_override("separation", 10)
+	UITheme.apply_gap(layout, UITheme.GAP_BLOCK)
 	# The console's own header label is gone: the frame's masthead and title row
 	# say the same thing one type step louder and in the same place on every
 	# screen in the game.
@@ -2034,8 +2187,9 @@ func _build_test_admin() -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 10)
+	# Wider across than down on purpose: the two columns are separate choices,
+	# while a column of buttons reads as one list.
+	UITheme.apply_gap(grid, UITheme.PAD_X, UITheme.GAP_BLOCK)
 	scroll.add_child(grid)
 	for id: String in ANOMALIES.keys():
 		var info: Dictionary = ANOMALIES[id]
@@ -2060,7 +2214,7 @@ func _build_test_admin() -> void:
 		button.pressed.connect(_admin_select_dimension.bind(id))
 		grid.add_child(button)
 	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 14)
+	UITheme.apply_gap(footer, UITheme.GAP_SECTION)
 	layout.add_child(footer)
 	var close := Button.new()
 	close.text = tr("ADMIN_CLOSE")
@@ -2274,6 +2428,20 @@ const HUD_TASK_LAYER := 199
 ## MUST SIT BELOW the proximity alert (320) -- the Curator does not wait for the
 ## briefing to end -- and below every takeover, the trial frame and the menus.
 const SCREEN_LAYER := 210
+
+## КОМПЬЮТЕР В ОФИСЕ. Точка банки мониторов из OfficeProps.build_watcher_office(),
+## которую FirstMuseumMap ставит в (-25, 0, -2.4). Отдельная от TERMINAL_POS:
+## терминал тревоги кричит одну строку, а за компьютер садятся читать.
+const WORKSTATION_POS := Vector3(-25.0, 1.3, -2.38)
+
+## Размер окна протокола на рабочем столе. Крупное: внутри лежит целый
+## TerminalFrame со своим BEZEL, сеткой полей и тремя строками признаков.
+## Размер тоже кратен сетке стола — см. POWER_WINDOW_SIZE.
+const PROTOCOL_WINDOW_SIZE := Vector2(1088, 576)
+## Доля стола: 1088 / 1600 и 576 / 844. Вместе с правой колонкой (0.32) ровно
+## единица по ширине — два окна в строку без просвета и без нахлёста
+## и при 1600x844, и при ужатом large_text столе.
+const PROTOCOL_WINDOW_FRACTION := Vector2(0.68, 0.6825)
 ## The fail and win pages: takeovers that end the incident.
 ## MUST SIT ABOVE the whole HUD (110, 199), both raisable screens (200, 210) and
 ## the proximity alert (320): the run is over and none of them has anything left
@@ -2484,29 +2652,132 @@ func _refresh_win_label() -> void:
 # and the terminal screen in the office. It simply stopped being UI chrome.
 func _build_protocol_screen() -> void:
 	_protocol_layer = CanvasLayer.new()
-	_protocol_layer.name = "Protocol Screen"
+	_protocol_layer.name = "Workstation"
 	_protocol_layer.layer = SCREEN_LAYER
 	_protocol_layer.visible = false
 	add_child(_protocol_layer)
-	_protocol_frame = _build_terminal_frame("Containment Protocol", _protocol_layer)
+
+	# РАБОЧИЙ СТОЛ, А НЕ ОВЕРЛЕЙ. Протокол — это одна из программ компьютера
+	# в офисе (референс 02 прямо требует наложения окон), поэтому кадр терминала
+	# живёт ВНУТРИ окна, а не на весь экран. Собранная ниже сетка отчёта
+	# переехала целиком: меняется оправа, а не содержание.
+	_desktop = DesktopShell.new()
+	_desktop.name = "Desktop"
+	_protocol_layer.add_child(_desktop)
+
+	_protocol_frame = TerminalFrame.new()
+	_protocol_frame.name = "Containment Protocol"
+	_protocol_window = _desktop.open_window("protocol", "DESK_TITLE_PROTOCOL",
+		_protocol_frame, PROTOCOL_WINDOW_SIZE, PROTOCOL_WINDOW_FRACTION,
+		PROTOCOL_WINDOW_ANCHOR)
+	# До первого происшествия отчёту нечего показывать: окно свёрнуто в панель
+	# задач, а не пустует на экране — пустая форма читается как поломка системы.
+	_desktop.minimize_window(_protocol_window)
 	# The masthead is TerminalFrame's own default (HUD_PROTO_HEADER), which is the
 	# very row this screen used to print by hand as its first label. The title is
 	# set per incident by _show_protocol() to the anomaly's name.
 	var column := _protocol_frame.body_column()
-	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	# A report starts at the left margin. The page used to centre every line,
+	# which is what made four different readings look like one paragraph.
+	column.alignment = BoxContainer.ALIGNMENT_BEGIN
+	# THE REPORT GRID (block 10, reference 01). What this page was: four centred
+	# lines, one of them a four-row "CAPTION: value" blob printed inside a single
+	# Label out of HUD_PROTO_STATUS. The reference prints an incident as a report
+	# -- captions in a fixed left column, values on their own grid, a segmented
+	# stability readout, then the signs. The blob is gone and nothing it said was
+	# lost: night is the frame's own status chip, the zone and the device are
+	# fields below, and the pickup point is what HUD_PROTO_TAKE already says.
+	_proto_event = _protocol_frame.add_report_field(column, "TERM_FIELD_EVENT")
+	_proto_wing = _protocol_frame.add_report_field(column, "TERM_FIELD_WING")
+	_proto_carrier = _protocol_frame.add_report_field(column, "TERM_FIELD_CARRIER")
+	_proto_stability = _protocol_frame.add_stability_bar(column, "TERM_FIELD_STABILITY")
+
+	_protocol_frame.add_report_section(column, "TERM_SECTION_SYMPTOMS")
+	# Rebuilt per incident by _show_protocol(): one page node is reused for every
+	# anomaly, so last incident's signs would otherwise still be standing on it.
+	_proto_symptoms = VBoxContainer.new()
+	_proto_symptoms.name = "Symptoms"
+	_proto_symptoms.add_theme_constant_override("separation", TerminalFrame.ROW_GAP)
+	_proto_symptoms.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(_proto_symptoms)
+
+	_protocol_frame.add_report_section(column, "TERM_SECTION_PROTOCOL")
 	var need := _terminal_line(column, UITheme.LABEL, UITheme.MUTED)
+	need.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_protocol_frame.add_glitch_target(need, "HUD_PROTO_TAKE")
 	# The one thing the player has to leave the screen remembering. Not a glitch
 	# target: a device name with a quarter of its characters replaced is the exact
 	# information this page exists to deliver.
 	_proto_item = _terminal_line(column, UITheme.TITLE, UITheme.ACCENT)
+	_proto_item.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_proto_purpose = _terminal_line(column, UITheme.BODY, UITheme.ON_SURFACE)
-	_proto_status = _terminal_line(column, UITheme.BODY, UITheme.MUTED)
-	_proto_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_proto_purpose.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	# THE SIXTH BLOCK OF REFERENCE 01. The page says what happened, how bad it is
+	# and what to carry; the plan is the only thing on it that says WHERE. It goes
+	# last because that is the order the reference reads in, and because it is the
+	# block a player consults on the way out of the office rather than while
+	# taking the reading.
+	_proto_plan = _protocol_frame.add_floor_plan(column, "TERM_SECTION_PLAN")
+
 	# Not a glitch target either, and for the fail page's reason: this is the line
 	# that says which key puts the screen down.
 	var footer := _terminal_line(column, UITheme.LABEL, UITheme.MUTED)
+	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	footer.text = tr("HUD_PROTO_FOOTER")
+
+
+# --- The floor plan on the protocol page ------------------------------------
+
+## Owner of the eleven room rectangles. Read, never written, never copied.
+const PLAN_ROOM_SOURCE := "res://game/SecurityCameraTablet.gd"
+## The constant to pull out of it. Single-quoted so tools/check_localization.py
+## does not read a bare upper-case literal as a missing catalogue key -- the same
+## dodge, for the same reason, as game/Compass.gd's ROOM_CONSTANT.
+const PLAN_ROOM_CONSTANT := 'ROOMS'
+
+var _plan_rooms: Array = []
+var _plan_rooms_loaded := false
+
+
+## The room table, lifted out of the shipping script at runtime.
+##
+## NOT COPIED, and for the reason game/Compass.gd gives where it does the same
+## thing: SecurityCameraTablet.ROOMS is the one table, game/test_map_verification
+## pins it to the geometry FirstMuseumMap actually builds, and a plan that has
+## drifted from the building is worse than no plan, because the player believes
+## it and then walks the wrong way. Loaded once -- it is a script constant and
+## cannot move while the game runs -- and an empty result is survivable: the
+## block hides itself and the rest of the report is unaffected.
+func _floor_plan_rooms() -> Array:
+	if _plan_rooms_loaded:
+		return _plan_rooms
+	_plan_rooms_loaded = true
+	var source := load(PLAN_ROOM_SOURCE) as GDScript
+	if source == null:
+		push_warning("GameManager: room table unavailable (%s did not load)"
+			% PLAN_ROOM_SOURCE)
+		return _plan_rooms
+	var table: Variant = source.get_script_constant_map().get(PLAN_ROOM_CONSTANT, null)
+	if table is Array:
+		_plan_rooms = table as Array
+	else:
+		push_warning("GameManager: %s has no usable room table" % PLAN_ROOM_SOURCE)
+	return _plan_rooms
+
+
+## Point the plan at the incident. Called from _show_protocol(), which is the one
+## moment either the night gate or the incident's position can have moved.
+##
+## The mark is the ANOMALY, not the player. This is a containment report about an
+## event somewhere in the building, and the page is read at a desk; where the
+## reader is standing is the compass's question, and the compass answers it with
+## a live plan of its own.
+func _refresh_protocol_plan() -> void:
+	if _protocol_frame == null or _proto_plan == null:
+		return
+	var origin := _incident_position()
+	_protocol_frame.set_floor_plan(_proto_plan, _floor_plan_rooms(), _night,
+		Vector2(origin.x, origin.z), _state == STATE_ANOMALY)
 
 
 func _show_protocol(info: Dictionary, _accent: Color) -> void:
@@ -2531,10 +2802,33 @@ func _show_protocol(info: Dictionary, _accent: Color) -> void:
 		_proto_purpose.text = tr("HUD_PROTO_SIGNS_HINT")
 	else:
 		_proto_purpose.text = tr(hint_key) if hint_key != "" else ""
-	_proto_status.text = Loc.fmt("HUD_PROTO_STATUS", [_night, _incident_name()])
-	_raise_terminal(_protocol_frame)
-	_protocol_layer.visible = true
-	_protocol_time = 10.0
+	_proto_event.text = tr(str(info["title"]))
+	_proto_wing.text = _incident_name()
+	# The carrier is the device the protocol assigns. On a self-diagnosed incident
+	# there is not one yet, and the field says so rather than going blank: an
+	# empty value reads as a broken readout, which is the wrong kind of wrong.
+	_proto_carrier.text = tr("TERM_VALUE_UNCLASSIFIED") if self_diagnosed else equip_name.to_upper()
+	# Stability is the inverse of how far the night has gone -- the same number
+	# the frame's own integrity meter is reading, stated about the incident
+	# instead of about the signal.
+	_protocol_frame.set_stability(_proto_stability, 1.0 - _night_corruption())
+	_rebuild_protocol_symptoms(info)
+	_refresh_protocol_plan()
+	# Экран НЕ поднимается сам. Отчёт кладётся в окно на рабочем столе и
+	# ждёт того, кто вернётся в офис и сядет за монитор. Состояние ночи
+	# вталкивается вручную по той же причине, по которой это делает _raise_terminal():
+	# кадр без этого показал бы состояние на момент прошлого показа.
+	_push_terminal_state(_protocol_frame)
+	_protocol_frame.modulate.a = 1.0
+	_protocol_frame.visible = true
+	# ОКНО НЕ ВЫПРЫГИВАЕТ. Отчёт встаёт в очередь появления рабочего стола:
+	# сначала сирена и терминал, и только потом машина поднимает программу.
+	if _desktop != null and _protocol_window != null:
+		_desktop.reveal_window(_protocol_window)
+	# Запись в журнал делается ДАЖЕ если окно журнала ещё не открыто:
+	# станция пишет события сама, а не только когда на неё смотрят, иначе
+	# прорыв, случившийся в коридоре, в журнале никогда бы не появился.
+	_log_event("DESK_LOG_BREACH")
 	var am := _audio()
 	if am != null and am.has_method("play_sfx"):
 		am.play_sfx("terminal_beep", -6.0, 0.9)
@@ -2567,11 +2861,393 @@ func _incident_signs_text(info: Dictionary) -> String:
 	return "\n".join(lines)
 
 
+## The signs of the running incident as report rows, rebuilt on every raise.
+##
+## Composed from SIGNS, exactly like _incident_signs_text(), so the office
+## screen and this page cannot drift apart -- and so no future edit can put a
+## device name in here without deleting a sign to make room for it.
+func _rebuild_protocol_symptoms(info: Dictionary) -> void:
+	if _proto_symptoms == null or _protocol_frame == null:
+		return
+	for child in _proto_symptoms.get_children():
+		_proto_symptoms.remove_child(child)
+		child.queue_free()
+	for sign_id in (info.get("signs", []) as Array):
+		var key := str(SIGNS.get(str(sign_id), ""))
+		if key == "":
+			continue
+		_protocol_frame.add_report_symptom(_proto_symptoms,
+			TerminalFrame.MARK_PRESENT, tr(key))
+	# An incident whose CCTV post has not given up its evidence yet is not fully
+	# reported, and the page says which state it is in with a marker and a
+	# sentence -- never with a colour on its own.
+	if incident_evidence_key() != "":
+		_protocol_frame.add_report_symptom(_proto_symptoms,
+			TerminalFrame.MARK_UNKNOWN, tr("TERM_VALUE_CONFIRM_REQUIRED"))
+
+
+## СЕСТЬ ЗА КОМПЬЮТЕР.
+##
+## Мышь освобождается, потому что окна на столе таскаются и переключаются
+## курсором, а ходьба блокируется: человек за монитором не бегает по музею.
+## Это и есть цена чтения — время спиной к двери, пока Куратор где-то ходит.
+func _enter_workstation() -> void:
+	if _protocol_layer == null or _at_workstation:
+		return
+	_at_workstation = true
+	_protocol_layer.visible = true
+	if _desktop != null:
+		_desktop.set_status(_night, _time_left)
+	# Окно питания — вторая программа на столе и единственное место, где видно
+	# цену закрытых дверей. Пока питание выключено (POWER_ENABLED), стол
+	# остаётся на одну программу легче.
+	if POWER_ENABLED:
+		_ensure_power_window()
+		_refresh_power_window()
+	# Журнал поднимается всегда: это второе окно стола и единственное
+	# место, где видно, что станция жила, пока оператор ходил по музею.
+	# Он же встаёт в очередь появления, а не выпрыгивает вместе с протоколом.
+	_ensure_log_window()
+	# Наблюдение — третья программа стола. Она поднимается в ту же очередь, по
+	# одному окну за раз, и берёт кадр только сейчас, когда за столом сидят.
+	_ensure_cctv_window()
+	_sync_cctv_feed()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _player != null:
+		_player.set("movement_locked", true)
+	_sfx("terminal_beep")
+
+
+## Отойти от компьютера. Зовётся и вручную, и из сбросов ночи, и перед
+## входом в разлом — отсюда проверки на null и повторный вызов.
 func _hide_protocol() -> void:
-	_protocol_time = 0.0
 	if _protocol_layer != null:
 		_protocol_layer.visible = false
-	_lower_terminal(_protocol_frame)
+	if _protocol_frame != null:
+		# Скрытый кадр с ненулевой порчей продолжал бы перерисовываться на своей
+		# GLITCH_HZ ради картинки, которую никто не видит (см. _lower_terminal).
+		_protocol_frame.set_corruption(0.0)
+	if not _at_workstation:
+		return
+	_at_workstation = false
+	# Встал из-за стола — камера отдана. Забытый фид стоит столько же, сколько
+	# поднятый планшет, и при этом ничего никому не показывает.
+	_sync_cctv_feed()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if _player != null:
+		_player.set("movement_locked", false)
+
+
+## Все гермостворки офиса. Ищутся по группе, а не по именам узлов: карта вправе
+## переставить или добавить дверь, и это не должно ломать ни кнопку, ни счёт питания.
+func _office_doors() -> Array:
+	return get_tree().get_nodes_in_group(OFFICE_DOOR_GROUP)
+
+
+## Ближайшая кнопка створки, если до неё можно дотянуться.
+func _door_at_hand() -> Node:
+	if _player == null or not is_instance_valid(_player):
+		return null
+	var best: Node = null
+	var best_distance := DOOR_BUTTON_DISTANCE
+	for door in _office_doors():
+		if not door.has_method("button_position"):
+			continue
+		var distance: float = _player.global_position.distance_to(
+			door.call("button_position"))
+		if distance <= best_distance:
+			best_distance = distance
+			best = door
+	return best
+
+
+## Нажатие кнопки створки. Возвращает true, если кнопка была под рукой — тогда
+## _interact() на этом и заканчивается.
+func _toggle_nearest_door() -> bool:
+	var door := _door_at_hand()
+	if door == null:
+		return false
+	# Обесточенная створка отказывает ГРОМКО. Молчащая кнопка читается как
+	# сломанная игра, а не как проигранный ресурс.
+	if _power_out:
+		_flash(tr("HUD_DOOR_NO_POWER"), UITheme.DANGER)
+		_sfx("terminal_beep", -6.0)
+		return true
+	var want_closed := not bool(door.call("is_closed"))
+	if not bool(door.call("set_closed", want_closed)):
+		return true
+	_sfx("door_lock", -3.0)
+	_flash(tr("HUD_DOOR_SHUT") if want_closed else tr("HUD_DOOR_OPEN"),
+		UITheme.WARNING if want_closed else UITheme.MUTED)
+	# Створка меняет проходимость музея: без пересборки навмеша Куратор пройдёт
+	# сквозь закрытую дверь, как сквозь пустой проём.
+	if _map != null and _map.has_method("request_navigation_rebake"):
+		_map.call("request_navigation_rebake")
+	# Лязг слышно: закрываться под носом у Куратора — не бесплатно.
+	_report_noise(door.call("button_position"), 0.7)
+	_refresh_power_window()
+	_log_event("DESK_LOG_DOOR_SHUT" if want_closed else "DESK_LOG_DOOR_OPEN")
+	return true
+
+
+## Расход питания за кадр. Днём, после смены и в испытании расхода нет: счётчик
+## описывает именно ночную смену в этом здании, а не абстрактное время.
+func _drain_power(delta: float) -> void:
+	if not POWER_ENABLED:
+		return
+	if _power_out or _trial_active:
+		return
+	if _state == STATE_DAY or _state == STATE_FAILED or _state == STATE_WIN \
+			or _state == STATE_NIGHT_DONE:
+		return
+	var drain := _power_drain_rate()
+	_power = maxf(0.0, _power - drain * delta)
+	_warn_on_power_drop()
+	if _power <= 0.0:
+		_power_out = true
+		_cut_power()
+	# Окно перерисовывается только пока за ним сидят: строить текст каждый кадр
+	# для невидимого экрана — та же ошибка, что глитч скрытого кадра.
+	if _at_workstation:
+		_refresh_power_window()
+
+
+## Расход в процентах в секунду прямо сейчас. Вынесено отдельно, потому что
+## теперь эту же цифру показывает окно питания. Две разные формулы расхода —
+## гарантированно врущий прибор.
+func _power_drain_rate() -> float:
+	var drain := POWER_BASE_DRAIN
+	for door in _office_doors():
+		if door.has_method("is_closed") and bool(door.call("is_closed")):
+			drain += POWER_DOOR_DRAIN
+	if _at_workstation:
+		drain += POWER_DESK_DRAIN
+	if _camera_tablet_open():
+		drain += POWER_TABLET_DRAIN
+	return drain
+
+
+## Предупреждение срабатывает ОДИН раз на ступень и только на падение заряда.
+func _warn_on_power_drop() -> void:
+	var stage := 0
+	if _power <= POWER_CRITICAL_LEVEL:
+		stage = 2
+	elif _power <= POWER_WARN_LEVEL:
+		stage = 1
+	if stage <= _power_stage:
+		return
+	_power_stage = stage
+	if stage == 2:
+		_flash(tr("HUD_POWER_CRITICAL"), UITheme.DANGER)
+		_sfx("terminal_beep", -2.0)
+	else:
+		_flash(tr("HUD_POWER_LOW"), UITheme.WARNING)
+		_sfx("terminal_beep", -8.0)
+
+
+## Свет погас. Створки поднимаются сами — это не наказание, а смысл всей
+## системы: запереться навсегда нельзя, можно только купить время.
+func _cut_power() -> void:
+	for door in _office_doors():
+		if door.has_method("set_powered"):
+			door.call("set_powered", false)
+	_flash(tr("HUD_POWER_OUT"), UITheme.DANGER)
+	_sfx("door_lock", 1.0)
+
+
+## ОКНО ПИТАНИЯ НА РАБОЧЕМ СТОЛЕ.
+##
+## Вторая программа десктопа после протокола, и именно она делает двери выбором,
+## а не кнопкой «не умирать»: цена видна только тут.
+func _ensure_power_window() -> void:
+	if not POWER_ENABLED:
+		return
+	if _desktop == null or _power_window != null:
+		return
+	var column := VBoxContainer.new()
+	column.name = "Power Column"
+	UITheme.apply_gap(column, UITheme.GAP_BLOCK)
+	_power_readout = Label.new()
+	_power_readout.name = "Power Readout"
+	TerminalType.apply_readout(_power_readout)
+	column.add_child(_power_readout)
+	_power_bar = Label.new()
+	_power_bar.name = "Power Bar"
+	TerminalType.apply_readout(_power_bar, UITheme.BODY)
+	column.add_child(_power_bar)
+	_power_drain = Label.new()
+	_power_drain.name = "Power Drain"
+	TerminalType.apply_readout(_power_drain, UITheme.BODY)
+	column.add_child(_power_drain)
+	var caption := Label.new()
+	caption.name = "Doors Caption"
+	caption.text = tr("DESK_POWER_DOORS")
+	TerminalType.apply_label(caption)
+	column.add_child(caption)
+	_power_doors = Label.new()
+	_power_doors.name = "Doors Readout"
+	TerminalType.apply_readout(_power_doors, UITheme.BODY)
+	column.add_child(_power_doors)
+	_power_window = _desktop.open_window("power", "DESK_TITLE_POWER", column,
+		POWER_WINDOW_SIZE, POWER_WINDOW_FRACTION)
+
+
+func _refresh_power_window() -> void:
+	if _power_readout == null or _power_bar == null or _power_doors == null:
+		return
+	_power_readout.text = Loc.fmt("DESK_POWER_LEVEL", [_power])
+	# Шкала собирается из символов, а не из цветной полоски: тревога никогда не
+	# передаётся одним цветом, а в Departure Mono нет блочных глифов — только ASCII.
+	var filled: int = clampi(roundi(_power / POWER_FULL * POWER_BAR_CELLS),
+		0, POWER_BAR_CELLS)
+	_power_bar.text = "[%s%s]" % ["#".repeat(filled), ".".repeat(POWER_BAR_CELLS - filled)]
+	# Расход показывается в процентах ЗА МИНУТУ, а не за секунду: в секундах
+	# это сотые доли, в которых никто не считает оставшееся время ночи.
+	if _power_drain != null:
+		_power_drain.text = Loc.fmt("DESK_POWER_DRAIN", [_power_drain_rate() * 60.0])
+	var lines := PackedStringArray()
+	for door in _office_doors():
+		var shut: bool = door.has_method("is_closed") and bool(door.call("is_closed"))
+		var key: String = str(DOOR_NAME_KEYS.get(door.name, ""))
+		var title := tr(key) if key != "" else str(door.name)
+		lines.append("%s %s" % ["[x]" if shut else "[ ]", title])
+	_power_doors.text = "\n".join(lines)
+
+
+## ОКНО ЖУРНАЛА СОБЫТИЙ.
+##
+## Окно протокола говорит, ЧТО случилось. Журнал — В КАКОМ ПОРЯДКЕ и
+## КОГДА, и это единственное место, где видно событие, произошедшее за
+## спиной: сообщение в HUD гаснет через несколько секунд, запись — нет.
+func _ensure_log_window() -> void:
+	if _desktop == null or _log_window != null:
+		return
+	var column := VBoxContainer.new()
+	column.name = "Log Column"
+	UITheme.apply_gap(column, UITheme.GAP_ROW)
+	_log_label = Label.new()
+	_log_label.name = "Log Readout"
+	_log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	TerminalType.apply_readout(_log_label, UITheme.BODY)
+	column.add_child(_log_label)
+	_log_window = _desktop.open_window("log", "DESK_TITLE_LOG", column,
+		LOG_WINDOW_SIZE, LOG_WINDOW_FRACTION, LOG_WINDOW_ANCHOR)
+	_log_event("DESK_LOG_BOOT")
+
+
+## Запись в журнал. Время берётся с тех же часов смены, что и в верхней
+## строке стола: две разные шкалы времени на одном экране читаются как сбой.
+func _log_event(key: String) -> void:
+	var total := int(maxf(0.0, _time_left))
+	_log_lines.append("%02d:%02d %s" % [total / 60, total % 60, tr(key)])
+	while _log_lines.size() > LOG_MAX_LINES:
+		_log_lines.remove_at(0)
+	_refresh_log_window()
+
+
+func _refresh_log_window() -> void:
+	if _log_label == null:
+		return
+	# Пустой журнал говорит об этом словами: пустое окно неотличимо от
+	# сломанной программы.
+	_log_label.text = tr("DESK_LOG_EMPTY") if _log_lines.is_empty() \
+		else "\n".join(_log_lines)
+
+
+## ОКНО НАБЛЮДЕНИЯ.
+##
+## Референс 04: слева перечень постов, справа текущий кадр. Аналоговый шум
+## лежит ТОЛЬКО на видеопотоке — его наводит сам фид; подписи и рамка окна
+## остаются резкими, иначе окно читается как сломанное, а не как камера.
+##
+## Кадр стоит денег. Фид рисуется, только пока его кто-то держит
+## (SecurityCameraTablet.feed_texture), и не более FEED_BUDGET_PER_FRAME за
+## кадр на всю сцену — поэтому окно берёт РОВНО ОДИН фид и отдаёт его, стоит
+## оператору свернуть программу или отойти от стола.
+func _ensure_cctv_window() -> void:
+	if _desktop == null or _cctv_window != null:
+		return
+	var row := HBoxContainer.new()
+	row.name = "CCTV Row"
+	UITheme.apply_gap(row, UITheme.GAP_BLOCK)
+	_cctv_list = Label.new()
+	_cctv_list.name = "Post List"
+	_cctv_list.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_cctv_list.custom_minimum_size = Vector2(CCTV_LIST_WIDTH, 0.0)
+	TerminalType.apply_readout(_cctv_list, UITheme.CAPTION)
+	row.add_child(_cctv_list)
+	_cctv_feed = TextureRect.new()
+	_cctv_feed.name = "Feed"
+	# Кадр 4:3 растягивается по месту, но не по-разному по осям: сплющенная
+	# камера — это уже другая комната, а не та же под другим углом.
+	_cctv_feed.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_cctv_feed.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_cctv_feed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cctv_feed.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(_cctv_feed)
+	_cctv_window = _desktop.open_window("cctv", "DESK_TITLE_CCTV", row,
+		CCTV_WINDOW_SIZE, CCTV_WINDOW_FRACTION, CCTV_WINDOW_ANCHOR)
+	_refresh_cctv_window()
+
+
+## Перечень постов. Тот же язык признаков, что и у створок в окне питания:
+## [+] — этот пост на экране, [ ] — пост есть, но сейчас не показан.
+func _refresh_cctv_window() -> void:
+	if _cctv_list == null:
+		return
+	var lines: PackedStringArray = PackedStringArray()
+	var cams := _cctv_cameras()
+	for i in range(cams.size()):
+		var cam: Dictionary = cams[i]
+		var key := str(cam.get("label", ""))
+		var title := tr(key) if key != "" else ""
+		lines.append("%s %s  %s" % [
+			"[+]" if i == _cctv_index else "[ ]",
+			str(cam.get("id", "")), title])
+	_cctv_list.text = "\n".join(lines)
+
+
+## Таблица постов из константы скрипта планшета. Читается один раз и без
+## создания узла: перечень нужен окну и с опущенным планшетом.
+func _cctv_cameras() -> Array:
+	if _cctv_cams_loaded:
+		return _cctv_cams
+	_cctv_cams_loaded = true
+	var script: Script = load(CCTV_CAM_SOURCE)
+	if script == null:
+		return _cctv_cams
+	var constants := script.get_script_constant_map()
+	if constants.has(CCTV_CAM_CONSTANT):
+		_cctv_cams = constants[CCTV_CAM_CONSTANT]
+	return _cctv_cams
+
+
+## Взять или отдать кадр. Вся стоимость окна собрана здесь, в одном месте:
+## пока желаемое состояние совпадает с текущим, функция выходит сразу, и её
+## не жалко звать каждый кадр.
+func _sync_cctv_feed() -> void:
+	var tablet := _camera_tablet()
+	var want := -1
+	if tablet != null and _at_workstation and _cctv_window != null \
+			and is_instance_valid(_cctv_window) and _cctv_window.visible:
+		want = _cctv_index
+	if want == _cctv_held:
+		return
+	if _cctv_held >= 0 and tablet != null \
+			and tablet.has_method("release_feed"):
+		tablet.call("release_feed", _cctv_held)
+	_cctv_held = -1
+	if _cctv_feed != null:
+		_cctv_feed.texture = null
+	if want < 0 or tablet == null or not tablet.has_method("feed_texture"):
+		return
+	var tex: Texture2D = tablet.call("feed_texture", want)
+	if tex == null:
+		return
+	_cctv_held = want
+	if _cctv_feed != null:
+		_cctv_feed.texture = tex
 
 
 func _update_hint() -> void:
@@ -2599,6 +3275,8 @@ func _update_hint() -> void:
 		# was not before, so the prompt used to be suppressed while carrying.
 		# One ray per frame, the same one _interact() would cast on the next press.
 		var target := _raycast_body()
+		# Один поиск кнопки на кадр, тот же, что сделает _interact() по нажатию.
+		var door_here := _door_at_hand()
 		if target != null and target.is_in_group("equipment") and _free_belt_slot() >= 0:
 			hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
 		elif _carried_id != "":
@@ -2607,6 +3285,13 @@ func _update_hint() -> void:
 				hint = Loc.fmt("HUD_HINT_APPLY", [carried_name])
 			else:
 				hint = Loc.fmt("HUD_HINT_CARRYING", [carried_name])
+		elif door_here != null:
+			# Подсказка называет действие, а не состояние: состояние и так видно по
+			# створке и лампе перед глазами.
+			hint = tr("HUD_HINT_DOOR_OPEN") if bool(door_here.call("is_closed")) \
+				else tr("HUD_HINT_DOOR_CLOSE")
+		elif _near(WORKSTATION_POS, INTERACT_DISTANCE):
+			hint = tr("HUD_HINT_WORKSTATION")
 		elif _state == STATE_ANOMALY and _near(TERMINAL_POS, INTERACT_DISTANCE):
 			hint = tr("HUD_HINT_TERMINAL")
 	# The orientation's key legend falls in behind the interaction prompts rather
@@ -3111,7 +3796,12 @@ func _teach_process(delta: float) -> void:
 	if _teach_index >= _teach_steps.size():
 		_teach_finish(true)
 		return
-	_sfx("resolve", -8.0)
+	# NOT "resolve". That sting is the sound of a rift being closed, and playing
+	# it here meant the very first walk or jump of a playthrough announced itself
+	# with the game's biggest reward cue -- confusing, because nothing had been
+	# resolved yet. An orientation step ticking over is a small acknowledgement,
+	# so it gets a small one: a quiet, high terminal blip.
+	_sfx("terminal_beep", -14.0)
 	_teach_show()
 
 

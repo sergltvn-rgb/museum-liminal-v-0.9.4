@@ -8,8 +8,9 @@ extends RefCounted
 ## (which carries a full driver-POV interior).
 ##
 ## SELF-CONTAINED BY DESIGN, like every other file in game/props: primitives,
-## StandardMaterial3D and a static material cache only. Nothing here preloads
-## or references another project script.
+## StandardMaterial3D and a static material cache only, with one deliberate
+## exception -- TreeLib, which serves the baked L-system tree meshes. Trees are
+## the one prop that cannot be primitives without costing a node per branch.
 ##
 ## ---------------------------------------------------------------------------
 ## LOCAL FRAME
@@ -43,6 +44,10 @@ extends RefCounted
 # either. Warm lamp glow matches FacadeProps' COL_LAMP_GLOW family.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+
+# Preloaded rather than reached through its global class name: the capture and
+# audit tools run as bare --script, where class_name registration is absent.
+const TreeLib := preload("res://game/props/TreeLib.gd")
 
 const COL_GRASS := Color(0.31, 0.36, 0.27)
 const COL_EARTH := Color(0.36, 0.30, 0.22)
@@ -304,87 +309,36 @@ static func _shared_normal_noise() -> NoiseTexture2D:
 
 
 # ===========================================================================
-# Trees — three species, each with seeded variation so no two copies of the
-# same builder read as clones: scale, yaw, crown asymmetry and (for the
-# birch) the bark-mark pattern all come from the per-tree RNG.
+# Trees — three species, baked from the PlantGenerator addon's L-system by
+# tools/bake_trees.gd and served by TreeLib.
+#
+# The builders keep their old signatures, so every caller (drive set, grounds,
+# forecourt) is untouched. What changed is what they produce: a single
+# MeshInstance3D carrying a real branching skeleton, instead of the seven-plus
+# cones and spheres each tree used to cost. Seeded yaw, scale and lean now live
+# in TreeLib so both planting paths vary copies the same way.
+#
+# For stands of many trees prefer TreeLib.build_field(), which collapses them
+# into chunked MultiMesh batches.
 # ===========================================================================
 
 
-## Broadleaf oak: a leaning two-piece trunk, one heavy bough and a cluster of
-## 4-5 crown spheres pushed off-axis by the seed. ~9-11 m tall at scale 1.
+## Broadleaf oak: heavy trunk, wide branching crown. ~10.5 m at scale 1.
 static func build_oak(parent: Node3D, origin: Vector3, seed_value: int,
 		vis := 160.0) -> Node3D:
-	var rng := _rng(seed_value)
-	var s := rng.randf_range(0.8, 1.2)
-	var root := _root(parent, "Oak Tree", origin, rng.randf_range(0.0, 360.0))
-	var lean := rng.randf_range(2.0, 7.0)
-	var lower := _cone(root, "Trunk Lower", Vector3(0, 1.5 * s, 0),
-		0.34 * s, 0.26 * s, 3.0 * s, COL_BARK_OAK, vis)
-	lower.rotation_degrees.z = lean
-	var upper := _cone(root, "Trunk Upper", Vector3(0.28 * s, 3.9 * s, 0),
-		0.24 * s, 0.14 * s, 2.4 * s, COL_BARK_OAK, vis)
-	upper.rotation_degrees.z = lean + rng.randf_range(4.0, 9.0)
-	var bough := _cone(root, "Bough", Vector3(-0.5 * s, 3.4 * s, 0.3 * s),
-		0.13 * s, 0.06 * s, 1.9 * s, COL_BARK_OAK, vis)
-	bough.rotation_degrees = Vector3(rng.randf_range(15.0, 30.0), 0.0, -38.0)
-	var crowns := 4 + (seed_value % 2)
-	for i in range(crowns):
-		var a := TAU * float(i) / float(crowns) + rng.randf_range(-0.4, 0.4)
-		var r := rng.randf_range(0.5, 1.15) * s
-		_sphere(root, "Crown %d" % i,
-			Vector3(0.25 * s + cos(a) * r, (5.6 + rng.randf_range(-0.5, 0.9)) * s,
-				sin(a) * r),
-			rng.randf_range(1.15, 1.75) * s, COL_LEAF_OAK, vis)
-	_sphere(root, "Crown Top", Vector3(0.3 * s, 6.9 * s, 0.0),
-		rng.randf_range(1.0, 1.3) * s, COL_LEAF_OAK, vis)
-	return root
+	return TreeLib.build(parent, "oak", origin, seed_value, vis)
 
 
-## Conifer pine: straight trunk and 3-4 cone tiers that shrink upward, each
-## tier nudged slightly off the axis so the silhouette is not a lathe.
+## Conifer pine: straight leader with down-swept whorls. ~12 m at scale 1.
 static func build_pine(parent: Node3D, origin: Vector3, seed_value: int,
 		vis := 160.0) -> Node3D:
-	var rng := _rng(seed_value)
-	var s := rng.randf_range(0.8, 1.3)
-	var root := _root(parent, "Pine Tree", origin, rng.randf_range(0.0, 360.0))
-	_cone(root, "Trunk", Vector3(0, 2.4 * s, 0), 0.26 * s, 0.12 * s, 4.8 * s,
-		COL_BARK_PINE, vis)
-	var tiers := 3 + (seed_value % 2)
-	for i in range(tiers):
-		var t := float(i)
-		_cone(root, "Tier %d" % i,
-			Vector3(rng.randf_range(-0.15, 0.15) * s,
-				(3.0 + 1.75 * t) * s,
-				rng.randf_range(-0.15, 0.15) * s),
-			(2.1 - 0.42 * t) * s, 0.05 * s,
-			(2.4 - 0.22 * t) * s, COL_LEAF_PINE, vis)
-	return root
+	return TreeLib.build(parent, "pine", origin, seed_value, vis)
 
 
-## Birch: slim pale trunk with seeded dark bark marks and two light, airy
-## crown spheres. Reads as a different species even at cutscene speed.
+## Birch: slim pale trunk, sparse airy crown. ~9.5 m at scale 1.
 static func build_birch(parent: Node3D, origin: Vector3, seed_value: int,
 		vis := 160.0) -> Node3D:
-	var rng := _rng(seed_value)
-	var s := rng.randf_range(0.85, 1.15)
-	var root := _root(parent, "Birch Tree", origin, rng.randf_range(0.0, 360.0))
-	var trunk := _cone(root, "Trunk", Vector3(0, 3.0 * s, 0),
-		0.16 * s, 0.07 * s, 6.0 * s, COL_BARK_BIRCH, vis)
-	trunk.rotation_degrees.z = rng.randf_range(-4.0, 4.0)
-	for i in range(4):
-		var my := (0.8 + 1.3 * float(i) + rng.randf_range(-0.25, 0.25)) * s
-		var mark := _box(root, "Bark Mark %d" % i,
-			Vector3(rng.randf_range(-0.02, 0.02) * s, my,
-				(0.135 - 0.011 * float(i)) * s),
-			Vector3(0.10 * s, 0.06 * s, 0.05 * s), COL_BIRCH_MARK, vis)
-		mark.rotation_degrees.y = rng.randf_range(-25.0, 25.0)
-	_sphere(root, "Crown Lower",
-		Vector3(rng.randf_range(-0.35, 0.35) * s, 5.0 * s,
-			rng.randf_range(-0.35, 0.35) * s),
-		rng.randf_range(0.95, 1.25) * s, COL_LEAF_BIRCH, vis)
-	_sphere(root, "Crown Upper", Vector3(0.1 * s, 6.15 * s, 0.0),
-		rng.randf_range(0.7, 0.95) * s, COL_LEAF_BIRCH, vis)
-	return root
+	return TreeLib.build(parent, "birch", origin, seed_value, vis)
 
 
 static func _rng(seed_value: int) -> RandomNumberGenerator:

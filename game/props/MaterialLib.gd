@@ -187,6 +187,13 @@ static var _missing := {}
 ## так работает и тёплым полом вестибюля, и холодной стеной архива —
 ## без второго набора карт в памяти, потому что текстуры общие.
 ## scale — метров на квадрат текстуры; 0.0 берёт штатный для набора.
+## Плоский визуальный курс (блок 9 в AGENT_PLAN.md). true — только альбедо и ровная
+## шероховатость, как на референсах (Lethal Company, R.E.P.O.). false — старый
+## полный PBR с нормалями, AO и металлом. Переключать только здесь: кэш `_materials`
+## собирается один раз за запуск.
+const FLAT_STYLE := true
+const FLAT_ROUGHNESS := 0.92
+
 static func get_material(
 	pack_name: String,
 	tint: Color = Color.WHITE,
@@ -216,31 +223,40 @@ static func get_material(
 		return plain
 	mat.albedo_texture = albedo
 
-	var normal := _texture(pack, "nrm")
-	if normal != null:
-		mat.normal_enabled = true
-		mat.normal_texture = normal
-		mat.normal_scale = 1.0
+	if FLAT_STYLE:
+		# Плоский режим под референсы (блок 9): работает только альбедо.
+		# Никаких нормалей, карт шероховатости, AO и металла: именно они
+		# дают влажный PBR-блеск, которого на референсах нет.
+		# Побочно: из памяти уходят десятки 2K-карт, это работает на блок 5.
+		mat.metallic = 0.0
+		mat.roughness = FLAT_ROUGHNESS
+		mat.specular = 0.15
+	else:
+		var normal := _texture(pack, "nrm")
+		if normal != null:
+			mat.normal_enabled = true
+			mat.normal_texture = normal
+			mat.normal_scale = 1.0
 
-	var rough := _texture(pack, "rough")
-	if rough != null:
-		mat.roughness_texture = rough
-		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
+		var rough := _texture(pack, "rough")
+		if rough != null:
+			mat.roughness_texture = rough
+			mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
 
-	var ao := _texture(pack, "ao")
-	if ao != null:
-		mat.ao_enabled = true
-		mat.ao_texture = ao
-		mat.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
-		# AO по каналу света, а не поверх альбедо: иначе швы чернеют даже
-		# под прямым фонарём и пол читается грязным, а не рельефным.
-		mat.ao_light_affect = 0.7
+		var ao := _texture(pack, "ao")
+		if ao != null:
+			mat.ao_enabled = true
+			mat.ao_texture = ao
+			mat.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
+			# AO по каналу света, а не поверх альбедо: иначе швы чернеют даже
+			# под прямым фонарём и пол читается грязным, а не рельефным.
+			mat.ao_light_affect = 0.7
 
-	var metal := _texture(pack, "metal")
-	if metal != null:
-		mat.metallic = 1.0
-		mat.metallic_texture = metal
-		mat.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
+		var metal := _texture(pack, "metal")
+		if metal != null:
+			mat.metallic = 1.0
+			mat.metallic_texture = metal
+			mat.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
 
 	if triplanar:
 		mat.uv1_triplanar = true
@@ -249,9 +265,11 @@ static func get_material(
 	else:
 		mat.uv1_scale = Vector3.ONE
 
-	# Анизотропия обязательна именно на полах: пол всегда виден под острым
-	# углом, и обычный мипмаппинг смазывает его в кашу в двух метрах от игрока.
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	# Пиксельный курс (блок 9 в AGENT_PLAN.md): без nearest низкое разрешение рендера
+	# даёт не пиксели, а мыло. Мипмапы остаются: без них пол, видный под острым
+	# углом, закипает муаром при каждом шаге — это шум, а не стиль.
+	# Было до смены курса: TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC.
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 
 	_materials[key] = mat
 	return mat

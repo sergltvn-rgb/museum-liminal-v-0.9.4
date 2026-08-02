@@ -170,18 +170,26 @@ const CAM_FOV := 75.0
 #
 # Cost is the whole design here, not an afterthought: the museum already spends
 # ~5000 draw calls a frame, so a feed renders ONLY while somebody asks for it
-# (see feed_texture), at 256x192, and no more than FEED_BUDGET_PER_FRAME of them
-# are stepped in any one frame. The rest hold their last drawn frame -- which on
-# a security monitor reads as a security monitor, not as a compromise.
+# (see feed_texture), at FEED_SIZE, and no more than FEED_BUDGET_PER_FRAME of
+# them are stepped in any one frame. The rest hold their last drawn frame --
+# which on a security monitor reads as a security monitor, not as a compromise.
 
-## Feed resolution. Low because it is cheap AND because this is what CCTV looks
-## like; the pixels are visible on purpose.
-const FEED_SIZE := Vector2i(256, 192)
+## РАЗРЕШЕНИЕ ФИДА: ЧИТАЕМОСТЬ ВАЖНЕЕ «ЧЕСТНЫХ ПИКСЕЛЕЙ».
+##
+## Здесь стояло 256x192 с пояснением «пиксели видны намеренно». На практике это
+## означало, что на камере нельзя было разобрать ни зал, ни фигуру в нём: игрок
+## смотрел в кашу и не получал информации, ради которой камеры и существуют.
+## Ретро-вид держат развёртка, шум и частота кадров, а не нехватка пикселей.
+##
+## 768x576 -- те же 4:3, втрое больше по стороне. Ценой этого остаётся ленивый
+## рендер: фид рисуется только пока его кто-то держит, и не более
+## FEED_BUDGET_PER_FRAME за кадр.
+const FEED_SIZE := Vector2i(768, 576)
 ## Redraws per second per wanted feed. Deliberately not 60: a picture that
-## updates nine times a second reads as a recording, not as a window.
-const FEED_REFRESH_HZ := 9.0
+## updates fifteen times a second reads as a recording, not as a window.
+const FEED_REFRESH_HZ := 15.0
 ## Ceiling on feeds stepped in one frame, whatever the clock says they owe. Two
-## viewports of 256x192 is the spike this file is willing to put in a frame.
+## viewports of FEED_SIZE is the spike this file is willing to put in a frame.
 const FEED_BUDGET_PER_FRAME := 2
 ## Mirrors FirstMuseumMap.CCTV_HIDDEN_LAYER. Billboarded room names, mount tags
 ## and door notices live on that layer; a feed that renders them shows a fan of
@@ -710,6 +718,7 @@ func _build_ui() -> void:
 
 	_frame = TerminalFrame.new()
 	_frame.name = "Terminal"
+	_frame.set_panel_variation(&"CCTVPanel")
 	root.add_child(_frame)
 	_hide_frame_backdrop()
 	_frame.set_keys(_legend_entries())
@@ -731,8 +740,10 @@ func _build_ui() -> void:
 	# otherwise be letterboxed inside a bezel that is already a matte, and the
 	# operator would read the black bars as part of the picture.
 	_picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	# Nearest, so 256x192 blown up stays honest pixels instead of a blur.
-	_picture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# Линейная фильтрация: при FEED_SIZE увеличение до окна планшета уже не
+	# требует «честных пикселей», а nearest на этом разрешении давал рваные
+	# края на каждой грани зала. Ретро держат развёртка и шум поверх кадра.
+	_picture.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_feed.add_child(_picture)
 
 	_build_feed_overlays()
@@ -747,11 +758,11 @@ func _build_ui() -> void:
 ## Resolved by name first and by type second: the frame is another agent's file,
 ## and a renamed node must not silently leave a black rectangle over the picture.
 func _hide_frame_backdrop() -> void:
-	var backdrop := _frame.get_node_or_null("Backdrop") as ColorRect
+	var backdrop := _frame.get_node_or_null("Backdrop") as Control
 	if backdrop == null:
 		for child in _frame.get_children():
-			if child is ColorRect:
-				backdrop = child
+			if child is Panel or child is ColorRect:
+				backdrop = child as Control
 				break
 	if backdrop == null:
 		push_warning("SecurityCameraTablet: TerminalFrame has no backdrop to hide; "

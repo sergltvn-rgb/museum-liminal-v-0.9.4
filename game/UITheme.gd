@@ -2,13 +2,13 @@ class_name UITheme
 extends RefCounted
 ## Design tokens for every piece of UI in the game.
 ##
-## Stage 6 foundation. Nothing is shared today: 151 `add_theme_*` calls across
-## nine files each invent their own font size and colour, so the same "panel"
-## is a different grey in five places and the same "accent" belongs to three
-## rival families. This file is the single source those calls migrate onto in
-## round 2 -- it defines the values, it does not touch any existing screen.
-## Nothing reads it yet, by design: the project-wide switch is a single step at
-## the end of the migration, written out above `build_theme()` below.
+## Stage 6 foundation, now the live source. It began as a reply to 151
+## `add_theme_*` calls across nine files, each inventing its own font size and
+## colour, so the same "panel" was a different grey in five places and the same
+## "accent" belonged to three rival families. Round 2 moved every size and
+## colour onto the tokens below; round 3 (block 10) added the spacing scale and
+## moved the leftover hand-written gaps onto it. What still calls add_theme_*
+## outside this file is styleboxes swapped at runtime, built from these tokens.
 ##
 ## The shape is deliberately the one game/SettingsPanel.gd already arrived at
 ## (named colour constants + one StyleBoxFlat factory, `_style()` near line
@@ -41,39 +41,57 @@ extends RefCounted
 ## it is nothing at all on the dim, washed-out panels this game is played on.
 ##
 ## Measured luminance of the tokens below:
-##   SURFACE         #0a0e12   L = 0.00422
-##   SURFACE_RAISED  #25303a   L = 0.02813
+##   SURFACE         #111518   L = 0.00727
+##   SURFACE_RAISED  #2a3339   L = 0.03159
 ##
 ## The two hard gates:
-##   SURFACE_RAISED : SURFACE ..... 1.44 : 1   (gate 1.30, was 1.08)
-##   BORDER         : SURFACE ..... 4.58 : 1   (gate 3.00, was 1.61)
-## BORDER also clears 3:1 against SURFACE_RAISED (3.18 : 1), so a bordered
+##   SURFACE_RAISED : SURFACE ..... 1.42 : 1   (gate 1.30, was 1.08)
+##   BORDER         : SURFACE ..... 4.87 : 1   (gate 3.00, was 1.61)
+## BORDER also clears 3:1 against SURFACE_RAISED (3.42 : 1), so a bordered
 ## panel reads whether it sits on the page or on another panel -- the gate only
 ## demanded the first of those, but a border that vanishes on its own fill is
 ## the same bug one layer up.
 ##
+## Both surfaces are darker than they were, because the references are: 16% of
+## every pixel across the twelve reference screens is #181818 and another 12%
+## is nearly black. Panels are opaque, and the darkness comes from the fill
+## being dark -- not from transparency over the 3D scene.
+##
 ## Every text token, against BOTH backgrounds (gate 4.5 : 1):
 ##   token           hex        on SURFACE   on SURFACE_RAISED
-##   ON_SURFACE      #edf3f5      17.28            11.99
-##   MUTED           #a3b4c0       9.08             6.30
-##   ACCENT          #33c76b       8.78             6.09
-##   DANGER          #ff7a6b       7.61             5.28
-##   SUCCESS         #5fe08d      11.56             8.02
-##   WARNING         #ff9e47       9.44             6.55
+##   ON_SURFACE      #c6d3db      12.00             8.42
+##   MUTED           #8fa3ae       7.00             4.91
+##   BEIGE           #c6b994       9.41             6.60
+##   ACCENT          #81a88a       6.89             4.84
+##   SUCCESS         #81a88a       6.89             4.84
+##   WARNING         #d59a42       7.42             5.21
+##   DANGER          #e38175       6.67             4.68
+##   RIFT            #c7b7d9       9.79             6.87
 ##
-## DANGER is a lightened coral, not the tablet's `Color(0.9, 0.12, 0.1)`
-## (#e61f1a, L = 0.1788). That red reaches only 2.93:1 on SURFACE_RAISED as
-## text -- 4.22:1 even on SURFACE, the darkest thing in the palette -- and
-## cannot be rescued: passing 4.5:1 would need a SURFACE_RAISED of L <= 0.00084,
-## while clearing the 1.3x step above SURFACE needs L >= 0.0205. No colour is
-## both. It stays valid as a *fill*, which is all the tablet uses it for.
+## The palette is the seven canon colours of the MNEMOS design (block 10),
+## not a recolour of the old one. Two of them cannot be text and are split
+## into a separate fill token each:
+##
+##   DANGER_FILL     #b54a42   3.52 on SURFACE, 2.47 on SURFACE_RAISED
+##   PANEL_EDGE      #435865   2.43 on SURFACE, 1.70 on SURFACE_RAISED
+##
+## The canon alarm red #b54a42 fails 4.5:1 as text by the same argument the
+## old coral did: clearing the gate would need a SURFACE_RAISED darker than
+## the 1.4x step above SURFACE allows. So #b54a42 is the *fill* (the hard
+## frame and the hatching on the warning screen) and DANGER, a lightened
+## tint of it, carries the words. Alarm is never colour alone -- the frame
+## and the diagonal hatch must read in greyscale, per reference 09.
+##
+## PANEL_EDGE is the canon dim blue-grey. It is decorative chrome only:
+## dividers, inactive frames, the CCTV camera grid. Anything a player must
+## see and operate uses BORDER (#6b8896, 4.87 / 3.42), which clears the
+## 3:1 gate for non-text UI on both backgrounds.
 ##
 ## Non-text tokens, for the record:
-##   ACCENT_DIM      #269550   5.07 on SURFACE, 3.52 on SURFACE_RAISED
-##   BORDER_ACCENT   #33c76b   8.78 on SURFACE, 6.09 on SURFACE_RAISED
-## ACCENT_DIM is a fill/border token ONLY. It misses 4.5:1 on SURFACE_RAISED
-## and, by the same argument as DANGER above, no legal SURFACE_RAISED would
-## let it pass. Do not set it as `font_color`; use ACCENT.
+##   ACCENT_DIM      #55705c   3.15 on SURFACE, 2.21 on SURFACE_RAISED
+##   BORDER_ACCENT   #81a88a   6.89 on SURFACE, 4.84 on SURFACE_RAISED
+## ACCENT_DIM is a fill/border token ONLY. Do not set it as `font_color`;
+## use ACCENT.
 ##
 ##
 ## KEYBOARD FOCUS (stage 6.6)
@@ -83,11 +101,13 @@ extends RefCounted
 ## after re-enabling focus there would be nothing to see. `focus()` supplies
 ## the missing ring and `apply_button()` re-enables focus by default.
 ##
-## Two OFL faces now ship in fonts/ and are named further down, in the FONTS
-## section: JetBrains Mono for instrument data and Oswald for the institutional
-## voice. Before them the project had no font file at all, so every screen
-## rendered in Godot's stock sans -- which is why "it looks like stock Godot"
-## was a literal description of the build rather than an impression.
+## One OFL face now carries the whole interface and is named further down, in
+## the FONTS section: Departure Mono, a pixel face with full Cyrillic. Before
+## it the project had no font file at all, so every screen rendered in Godot's
+## stock sans -- which is why "it looks like stock Godot" was a literal
+## description of the build rather than an impression. The two faces that
+## briefly replaced it, JetBrains Mono and Oswald, were themselves modern and
+## are gone; hierarchy is now carried by size and case, not by family.
 
 # --- TYPE SCALE -------------------------------------------------------------
 # Six steps, replacing the 17 ad-hoc sizes currently in the codebase. Ratio is
@@ -101,53 +121,100 @@ const TITLE := 28     ## Panel / screen titles.
 const DISPLAY := 48   ## Full-screen moments: title card, death, chapter break.
 
 # --- SEMANTIC COLOURS -------------------------------------------------------
-# Twelve names, replacing 23 unrelated surface colours and 3 rival accent
-# families. Ratios for all of these are tabulated in the header comment.
+# The seven canon colours of the MNEMOS interface, plus the tints the contrast
+# gates force. Ratios for all of these are tabulated in the header comment.
+#
+# RULE OF ONE ACCENT: the base of any screen is carried by SURFACE,
+# SURFACE_RAISED, PANEL_EDGE and ON_SURFACE. At most ONE of the three accents
+# (ACCENT green, WARNING amber, DANGER red) may appear on screen at a time.
+# Green means one thing only -- the system is operating normally. It is not a
+# decoration, not a "confirm" colour on unrelated buttons, and not the default
+# border. If green is on screen everywhere, it has stopped saying anything.
 
-## Page background. Everything else is measured against this.
-const SURFACE := Color("0a0e12")
+## Page background. Everything else is measured against this. Canon graphite.
+const SURFACE := Color("111518")
 ## Anything that floats above the page: panels, cards, popups, tooltips.
-## 1.44:1 above SURFACE -- the whole point of this file.
-const SURFACE_RAISED := Color("25303a")
+## 1.42:1 above SURFACE -- the whole point of this file.
+const SURFACE_RAISED := Color("2a3339")
 ## Full-screen dim behind a modal. SURFACE at 88% -- alpha, so no ratio applies.
-const SCRIM := Color("0a0e12e0")
+const SCRIM := Color("111518e0")
 
-## Primary text.
-const ON_SURFACE := Color("edf3f5")
+## Primary text. Cold, slightly blue -- a phosphor white, not a paper white.
+const ON_SURFACE := Color("c6d3db")
 ## Secondary text: captions, disabled-looking-but-readable, units, hints.
-const MUTED := Color("a3b4c0")
+const MUTED := Color("8fa3ae")
+## Canon museum beige. The institutional voice: exhibit labels, inventory
+## numbers, printed report screens -- the parts of the building that predate
+## the terminal. Never for live system state.
+const BEIGE := Color("c6b994")
 
-## The CCTV CRT green: SecurityCameraTablet.GREEN, `Color(0.2, 0.78, 0.42)`.
-## Written as hex like the rest of the palette, so the stored floats differ from
-## the tablet's by up to 0.4/255 -- the same pixel once rasterised, but NOT
-## `is_equal_approx`-equal to the float triple. Compare via `to_html(false)`.
-const ACCENT := Color("33c76b")
-## SecurityCameraTablet.GREEN.darkened(0.25), the tablet's own row-border green.
-## FILL AND BORDER ONLY -- see the header; it misses 4.5:1 on SURFACE_RAISED.
-const ACCENT_DIM := Color("269550")
+## Canon terminal green. NORMAL OPERATION ONLY: system online, scan complete,
+## event resolved. See the rule of one accent above.
+const ACCENT := Color("81a88a")
+## ACCENT darkened for fills and borders.
+## FILL AND BORDER ONLY -- see the header; it misses 4.5:1 as text.
+const ACCENT_DIM := Color("55705c")
 ## Accent at 18% for pressed/selected fills.
-const ACCENT_FILL := Color("33c76b2e")
+const ACCENT_FILL := Color("81a88a2e")
 
-## Destructive actions, failure, alarms.
-const DANGER := Color("ff7a6b")
-## Confirmation, objective complete.
-const SUCCESS := Color("5fe08d")
-## Caution, timers running out. The tablet's flash amber, `Color(1.0, 0.62, 0.28)`.
-const WARNING := Color("ff9e47")
+## Failure, alarm, destructive actions -- as TEXT. Lightened from DANGER_FILL.
+const DANGER := Color("e38175")
+## Canon alarm red. FILL AND BORDER ONLY: warning frames, diagonal hatching.
+## Never a font_color -- see the header. Alarm must also read in greyscale.
+const DANGER_FILL := Color("b54a42")
+## Confirmation, objective complete. Deliberately the same green as ACCENT:
+## two rival greens would split the one meaning green is allowed to carry.
+const SUCCESS := Color("81a88a")
+## Canon amber. Caution, timers running out, degraded stability.
+const WARNING := Color("d59a42")
+## Canon rift colour, pale violet-white. The only thing on screen the museum
+## system was never built to display: anomalous readings, ghosted values,
+## the closure-count discrepancy. Use it sparingly or it stops being wrong.
+const RIFT := Color("c7b7d9")
 
-## Default 1px hairline. 4.58:1 on SURFACE, 3.18:1 on SURFACE_RAISED.
-const BORDER := Color("6e7d8b")
+## Default hairline for anything the player must see and operate.
+## 4.87:1 on SURFACE, 3.42:1 on SURFACE_RAISED -- clears the 3:1 non-text gate.
+const BORDER := Color("6b8896")
+## Canon dim blue-grey. DECORATIVE CHROME ONLY: dividers, inactive frames,
+## the CCTV camera grid. Below 3:1 -- never the edge of an active control.
+const PANEL_EDGE := Color("435865")
 ## Hairline for focused / active / selected chrome.
-const BORDER_ACCENT := Color("33c76b")
+const BORDER_ACCENT := Color("81a88a")
 
 # --- SHAPE ------------------------------------------------------------------
-const RADIUS_SM := 6    ## Chips, tags, small buttons.
-const RADIUS_MD := 10   ## Buttons, inputs, cards.
-const RADIUS_LG := 14   ## Panels, dialogs.
-const BORDER_WIDTH := 1
-const FOCUS_WIDTH := 2
+## Block 10: every radius is zero. A rounded corner is the strongest single
+## "modern app" signal there is, and MNEMOS has to read as a 1990s
+## institutional system. The three names are kept so no caller has to change.
+const RADIUS_SM := 0    ## Chips, tags, small buttons.
+const RADIUS_MD := 0    ## Buttons, inputs, cards.
+const RADIUS_LG := 0    ## Panels, dialogs.
+## 2px rather than a 1px hairline: the game renders at scaling_3d 0.75, and a
+## single-pixel border thins out to nothing on the in-world CCTV screens.
+const BORDER_WIDTH := 2
+const FOCUS_WIDTH := 3
 const PAD_X := 12
 const PAD_Y := 8
+
+# --- SPACING SCALE ----------------------------------------------------------
+# The last thing the migration had no token for. Round 2 collapsed every font
+# size and colour onto the tokens above, and the note over build_theme() was
+# honest about what it could not finish: the remaining add_theme_* calls were
+# "spacing constants (for which there is no token)". This is that token.
+#
+# Four steps, because the codebase only ever meant four things by a gap: lines
+# that belong to one readout, rows inside a block, blocks inside a column, and
+# sections that should read as separate. Every literal 2 / 6 / 10 / 14 already
+# scattered through the nine UI files is one of those four intents written by
+# hand; the values are chosen to match what is on screen today, so migrating a
+# call site is a rename and not a redesign.
+#
+# Insets keep using PAD_X / PAD_Y above -- a margin is a different quantity
+# from a gap, and giving them one shared scale is how padding starts drifting
+# into spacing.
+const GAP_TIGHT := 2     ## Stacked lines that read as one readout.
+const GAP_ROW := 6       ## Rows inside a block; label above its value.
+const GAP_BLOCK := 10    ## Between blocks in a column. The default.
+const GAP_SECTION := 14  ## Between parts that should read as separate.
 
 # --- CRT TREATMENT (stage 6.5) ----------------------------------------------
 #
@@ -222,6 +289,31 @@ static func panel() -> StyleBoxFlat:
 ## Card / dialog / popup: the surface that must not disappear.
 static func panel_raised() -> StyleBoxFlat:
 	return stylebox(SURFACE_RAISED, BORDER, BORDER_WIDTH, RADIUS_LG, PAD_X + 4, PAD_Y + 4)
+
+
+## Screen-family panels. These are Theme type variations rather than local
+## colours, so a screen can declare what kind of instrument it is without
+## rebuilding the palette. Their names are part of the UI contract: scenes and
+## runtime-built Controls set only `theme_type_variation`; the shared Theme owns
+## the actual surface, edge and spacing.
+static func terminal_panel() -> StyleBoxFlat:
+	return stylebox(SURFACE, PANEL_EDGE, BORDER_WIDTH, RADIUS_LG,
+		PAD_X + 4, PAD_Y + 4)
+
+
+static func cctv_panel() -> StyleBoxFlat:
+	return stylebox(SURFACE, PANEL_EDGE, BORDER_WIDTH, RADIUS_LG,
+		PAD_X, PAD_Y)
+
+
+static func warning_panel(border: Color = WARNING) -> StyleBoxFlat:
+	return stylebox(SURFACE_RAISED, border, FOCUS_WIDTH, RADIUS_LG,
+		PAD_X + 4, PAD_Y + 4)
+
+
+static func instrument_panel() -> StyleBoxFlat:
+	return stylebox(SURFACE_RAISED, BORDER, BORDER_WIDTH, RADIUS_SM,
+		PAD_X, PAD_Y)
 
 
 ## Resting button. Filled with SURFACE so it stays legible whether it is
@@ -310,6 +402,43 @@ static func apply_panel(control: Control, raised: bool = true) -> void:
 	control.add_theme_stylebox_override("panel", panel_raised() if raised else panel())
 
 
+## Set the gap between a container's children from the spacing scale.
+##
+## The branching is the same kind Godot forces on apply_text(): a BoxContainer
+## calls it `separation`, while GridContainer and the flow containers split it
+## into `h_separation` and `v_separation`. Call sites should not have to know
+## which of those the container they are holding happens to be.
+##
+## `cross` overrides the vertical step on the two-axis containers only; the
+## default keeps both axes on the same token, which is what a grid of equal
+## cells wants.
+static func apply_gap(container: Container, amount: int = GAP_BLOCK,
+		cross: int = -1) -> void:
+	if container == null:
+		return
+	if container is GridContainer or container is FlowContainer:
+		container.add_theme_constant_override("h_separation", amount)
+		container.add_theme_constant_override("v_separation",
+				amount if cross < 0 else cross)
+		return
+	container.add_theme_constant_override("separation", amount)
+
+
+## Set all four margins of a MarginContainer from the padding tokens.
+##
+## Four hand-written add_theme_constant_override lines per inset is how three
+## of the four sides end up correct and the fourth ends up 4px off -- the exact
+## shape of the bug this collapses.
+static func apply_inset(margin: MarginContainer, x: int = PAD_X,
+		y: int = PAD_Y) -> void:
+	if margin == null:
+		return
+	margin.add_theme_constant_override("margin_left", x)
+	margin.add_theme_constant_override("margin_right", x)
+	margin.add_theme_constant_override("margin_top", y)
+	margin.add_theme_constant_override("margin_bottom", y)
+
+
 # --- THEME RESOURCE ---------------------------------------------------------
 #
 # THE SWITCH-OVER IS DONE. All three steps have landed:
@@ -352,20 +481,32 @@ static func apply_panel(control: Control, raised: bool = true) -> void:
 ## description rather than an impression. Two OFL 1.1 faces now sit in fonts/,
 ## with their licences beside them:
 ##
-##   JetBrainsMono.ttf  instrument data: timers, readouts, camera IDs, coords.
-##                      Monospace, so a counting-down timer cannot jitter.
-##   Oswald.ttf         institutional voice: mastheads, signage, headings.
-##                      Condensed grotesque, the register of a building's own
-##                      wayfinding rather than of a game menu.
+##   DepartureMono.otf  every screen in the game. A monospaced pixel face by
+##                      Helena Zhang under the SIL OFL. Block 10 requires a
+##                      pixel bitmap font, and a monospaced one also keeps a
+##                      counting-down timer from jittering.
 ##
-## GLYPH COVERAGE, verified in-engine against every distinct character the
-## shipped catalogue uses (153 of them, both locales): JetBrains Mono covers all
-## 153. Oswald misses exactly one, U+2192 RIGHTWARDS ARROW, which appears in
-## trial objectives ("ПОЛ → ЗАПАДНАЯ СТЕНА"). Hence the fallback below rather
-## than a narrower role for Oswald -- a missing glyph renders as a box, and the
-## fallback also protects every character some future string introduces.
-const MONO_FONT_PATH := "res://fonts/JetBrainsMono.ttf"
-const DISPLAY_FONT_PATH := "res://fonts/Oswald.ttf"
+## Both roles point at the same file deliberately. The previous pairing --
+## JetBrains Mono for data, Oswald for signage -- was two modern faces, which
+## is a large part of why the UI read as stock engine chrome. MNEMOS is one
+## machine, so it speaks with one voice; hierarchy now comes from size, case
+## and spacing rather than from a second family.
+##
+## GLYPH COVERAGE, verified by tools/tmp_font_check.py, which renders every
+## required character and compares its bitmap against the font's .notdef box:
+## Departure Mono has all 33 Cyrillic capitals, all 33 lowercase, Latin,
+## digits, dashes and the arrows.
+##
+## IT DOES NOT HAVE U+2713 CHECK MARK or U+2717 BALLOT X. The terminal's
+## symptom rows must therefore NOT be built from those characters -- use ASCII
+## markers ([+] [x] [?] [ ]) or draw the mark, otherwise the row renders as
+## tofu boxes in the one place the player has to read carefully.
+##
+## Candidates already rejected, so they are not re-tested: Pixel Operator
+## (CC0, but contains no Cyrillic whatsoever), Pixelify Sans (holes in the
+## capitals), Pixellari (proportional, no em/en dash).
+const MONO_FONT_PATH := "res://fonts/DepartureMono.otf"
+const DISPLAY_FONT_PATH := "res://fonts/DepartureMono.otf"
 
 static var _mono_font: FontFile = null
 static var _display_font: FontFile = null
@@ -387,7 +528,14 @@ static func display_font() -> FontFile:
 		if _display_font != null:
 			var chain: Array[Font] = []
 			var mono := mono_font()
-			if mono != null:
+			# ОБЕ РОЛИ СЕЙЧАС УКАЗЫВАЮТ НА ОДИН ФАЙЛ, а load() отдаёт для
+			# одного пути ОДИН И ТОТ ЖЕ ресурс. Значит display и mono — это
+			# буквально один объект, и запись его себе в fallbacks замыкает
+			# цепочку на себя: Godot ловит это при первой же отрисовке текста
+			# и печатает "ERROR: Cyclic font fallback". Запасное начертание
+			# имеет смысл только когда лица РАЗНЫЕ; сравниваем по объекту, а
+			# не по путям, потому что пути могут разойтись, а ресурс совпасть.
+			if mono != null and mono != _display_font:
 				chain.append(mono)
 			_display_font.fallbacks = chain
 	return _display_font
@@ -439,6 +587,17 @@ static func build_theme() -> Theme:
 	theme.set_stylebox("panel", "Panel", panel())
 	theme.set_stylebox("panel", "PanelContainer", panel_raised())
 	theme.set_stylebox("panel", "PopupPanel", panel_raised())
+
+	# Four semantic families over the common theme. Godot type variations need a
+	# base type explicitly; without it an unset item falls through to Control
+	# instead of inheriting the built-in Panel/PanelContainer contract.
+	for variation: String in ["TerminalPanel", "CCTVPanel", "WarningPanel",
+			"InstrumentPanel"]:
+		theme.set_type_variation(variation, "Panel")
+	theme.set_stylebox("panel", "TerminalPanel", terminal_panel())
+	theme.set_stylebox("panel", "CCTVPanel", cctv_panel())
+	theme.set_stylebox("panel", "WarningPanel", warning_panel())
+	theme.set_stylebox("panel", "InstrumentPanel", instrument_panel())
 
 	# Separators are the one hairline nothing overrides: SettingsPanel's dialog
 	# divider (its `separation` constant sets the gap, not the line) was drawing

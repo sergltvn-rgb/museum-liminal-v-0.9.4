@@ -277,7 +277,9 @@ func _build() -> void:
 	var columns := HBoxContainer.new()
 	columns.name = "Settings Body"
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_theme_constant_override("separation", 0)
+	# Flush on purpose: the hairline below is the divider, so a gap here would
+	# read as a second, softer one.
+	UITheme.apply_gap(columns, 0)
 	_frame.body.add_child(columns)
 
 	columns.add_child(_sidebar())
@@ -874,13 +876,10 @@ func _row_shell(height := 74) -> HBoxContainer:
 	# reads it on the line after this call returns.
 	_pending_card = panel
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
+	UITheme.apply_inset(margin, 18, UITheme.GAP_BLOCK)
 	panel.add_child(margin)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
+	UITheme.apply_gap(row, UITheme.GAP_SECTION)
 	margin.add_child(row)
 	return row
 
@@ -907,8 +906,7 @@ func _info_card(title_text: String, body: String) -> void:
 		UITheme.ACCENT_FILL, UITheme.ACCENT_DIM, UITheme.BORDER_WIDTH, UITheme.RADIUS_LG))
 	_content.add_child(panel)
 	var margin := MarginContainer.new()
-	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 14)
+	UITheme.apply_inset(margin, UITheme.GAP_SECTION, UITheme.GAP_SECTION)
 	panel.add_child(margin)
 	var box := VBoxContainer.new()
 	margin.add_child(box)

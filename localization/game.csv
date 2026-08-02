@@ -62,6 +62,8 @@ COMPASS_ROOM_STALE,%s — last fix,%s — последняя отметка
 COMPASS_ROOM_UNKNOWN,Off the floor plan,Вне плана этажа
 COMPASS_SIGNAL_LOST,WAYFINDING NET DOWN,СЕТЬ НАВИГАЦИИ: НЕТ СВЯЗИ
 COMPASS_SIGNAL_WEAK,WAYFINDING NET DEGRADED,СЕТЬ НАВИГАЦИИ: ПОМЕХИ
+DESK_SYSTEM_LINE,MNEMOS WORKSTATION · NIGHT %d,СТАНЦИЯ МНЕМОС · НОЧЬ %d
+DESK_TITLE_PROTOCOL,Containment protocol,Протокол сдерживания
 EXHIBIT_BROKEN_CLOCK,Broken Clock,Сломанные часы
 EXHIBIT_CENTRAL_CORE,the central core,центральное ядро
 EXHIBIT_CLOAKROOM,CLOAKROOM · SEARCH,ГАРДЕРОБ · ДОСМОТР
@@ -152,11 +154,14 @@ HUD_PROTO_DIAGNOSE,DEVICE NOT ASSIGNED — OPERATOR'S CALL,ПРИБОР НЕ Н�
 HUD_PROTO_FOOTER,E / ENTER — close · The screen closes on its own,E / ENTER — закрыть · Экран закроется сам
 HUD_PROTO_HEADER,THE FIRST MUSEUM · NIGHT CONTAINMENT SERVICE,ПЕРВЫЙ МУЗЕЙ · СЛУЖБА НОЧНОГО СДЕРЖИВАНИЯ
 HUD_PROTO_SIGNS_HINT,Match the signs to what a device does. Storage labels every one of them.,"Сопоставьте признаки с тем, что делает прибор. На складе подписан каждый."
-HUD_PROTO_STATUS,NIGHT: %d\nINCIDENT ZONE: %s\nPICKUP POINT: Equipment Storage\nSTATUS: awaiting pickup,НОЧЬ: %d\nЗОНА АВАРИИ: %s\nМЕСТО ВЫДАЧИ: Склад оборудования\nСТАТУС: ожидает выдачи
 HUD_PROTO_TAKE,TAKE FROM EQUIPMENT STORAGE:,ВОЗЬМИТЕ СО СКЛАДА ОБОРУДОВАНИЯ:
 HUD_RIFT_GATE_OPEN,THE BREACH OPENS A DOORWAY — STEP THROUGH IT,ПРОРЫВ РАСКРЫЛСЯ ДВЕРЬЮ — ШАГНИТЕ ВНУТРЬ
 HUD_RIFT_RETURN_SHIFT,SECTION DARK — THE BUILDING CHANGED WITHOUT YOU,СЕКЦИЯ ОБЕСТОЧЕНА — ЗДАНИЕ ИЗМЕНИЛОСЬ БЕЗ ВАС
-HUD_SCAN_PROGRESS,SCANNING: %.0f%%,СКАНИРОВАНИЕ: %.0f%%
+HUD_SCAN_ALIGN,FRAME ALIGNMENT,СОВМЕЩЕНИЕ КАДРОВ
+HUD_SCAN_ARCHIVE,COMPARING AGAINST ARCHIVE,СРАВНЕНИЕ С АРХИВОМ
+HUD_SCAN_CONFIRM,CONFIRMING CARRIER,ПОДТВЕРЖДЕНИЕ НОСИТЕЛЯ
+HUD_SCAN_MISMATCH,SEARCHING FOR MISMATCHES,ПОИСК НЕСООТВЕТСТВИЙ
+HUD_SCAN_SEEK,SOURCE UNCONFIRMED — WATCH CAM %02d,ИСТОЧНИК НЕ ПОДТВЕРЖДЁН — СМОТРИТЕ КАМЕРУ %02d
 HUD_SOURCE_CONFIRMED,SOURCE CONFIRMED. PROTOCOL UNLOCKED.,ИСТОЧНИК ПОДТВЕРЖДЁН. ПРОТОКОЛ РАЗБЛОКИРОВАН.
 HUD_STAMINA,STAMINA,ВЫНОСЛИВОСТЬ
 HUD_STAMINA_EXHAUSTED,EXHAUSTED — CATCH YOUR BREATH,ИСТОЩЕНИЕ — ПЕРЕВЕДИТЕ ДЫХАНИЕ
@@ -326,7 +331,16 @@ TEACH_OBJ_TABLET,Back at the desk: the cameras show what you cannot see from her
 TERM_CORE_CRITICAL,CORE: CRITICAL,ЯДРО: КРИТИЧНО
 TERM_CORE_NOMINAL,CORE: NOMINAL,ЯДРО: НОРМА
 TERM_CORE_UNSTABLE,CORE: UNSTABLE,ЯДРО: НЕСТАБИЛЬНО
+TERM_FIELD_CARRIER,CARRIER,НОСИТЕЛЬ
+TERM_FIELD_EVENT,EVENT,СОБЫТИЕ
+TERM_FIELD_STABILITY,STABILITY,СТАБИЛЬНОСТЬ
+TERM_FIELD_WING,WING,КРЫЛО
+TERM_SECTION_PLAN,MUSEUM PLAN,ПЛАН МУЗЕЯ
+TERM_SECTION_PROTOCOL,RECOMMENDED PROTOCOL,РЕКОМЕНДУЕМЫЙ ПРОТОКОЛ
+TERM_SECTION_SYMPTOMS,SYMPTOMS,ПРИЗНАКИ
 TERM_SIGNAL_LOST,SIGNAL LOST,СИГНАЛ ПОТЕРЯН
+TERM_VALUE_CONFIRM_REQUIRED,CONFIRMATION REQUIRED,ТРЕБУЕТСЯ ПОДТВЕРЖДЕНИЕ
+TERM_VALUE_UNCLASSIFIED,UNCLASSIFIED,НЕ КЛАССИФИЦИРОВАНО
 TOOL_CHRONO_STABILIZER_HINT,Evens out the flow of time in the incident zone,Выравнивает ход времени в зоне аварии
 TOOL_CHRONO_STABILIZER_NAME,Chrono Stabilizer,Хроностабилизатор
 TOOL_CONTAINMENT_ROD_HINT,Damps the exhibit's radiation bloom,Гасит радиационное цветение экспоната
@@ -473,3 +487,26 @@ TUT_TARGET_CONSOLE,ORIENTATION CONSOLE,КОНСОЛЬ ОРИЕНТАЦИИ
 TUT_TARGET_EXIT,EXIT TO SHIFT,ВЫХОД НА СМЕНУ
 HUD_BELT_EMPTY,EMPTY,ПУСТО
 HUD_BELT_FULL,Belt full — G drops the device in hand,Пояс полон — G сбрасывает прибор из рук
+DESK_DOOR_EAST,East bulkhead,Восточная створка
+DESK_DOOR_NORTH,North bulkhead,Северная створка
+DESK_DOOR_SOUTH,South bulkhead,Южная створка
+DESK_POWER_DOORS,BULKHEADS,ГЕРМОСТВОРКИ
+DESK_POWER_LEVEL,EMERGENCY POWER %.0f%%,АВАРИЙНОЕ ПИТАНИЕ %.0f%%
+DESK_TITLE_POWER,Power supply,Электропитание
+DESK_TITLE_LOG,Event log,Журнал событий
+DESK_TITLE_CCTV,Surveillance,Наблюдение
+DESK_LOG_EMPTY,Shift log is empty,За смену записей нет
+DESK_LOG_BOOT,System ready,Система готова
+DESK_LOG_DOOR_SHUT,Bulkhead closed,Створка закрыта
+DESK_LOG_DOOR_OPEN,Bulkhead opened,Створка открыта
+DESK_LOG_BREACH,Containment breach,Прорыв содержания
+HUD_DOOR_NO_POWER,No power — the bulkhead will not move,Нет питания — створка не двинется
+HUD_DOOR_OPEN,Bulkhead raised,Створка поднята
+HUD_DOOR_SHUT,Bulkhead lowered,Створка опущена
+HUD_HINT_DOOR_CLOSE,E - lower the bulkhead,E - опустить створку
+HUD_HINT_DOOR_OPEN,E - raise the bulkhead,E - поднять створку
+HUD_HINT_WORKSTATION,E - sit down at the computer,E - сесть за компьютер
+HUD_POWER_OUT,POWER OUT — BULKHEADS OPEN,ПИТАНИЕ КОНЧИЛОСЬ — СТВОРКИ ОТКРЫТЫ
+HUD_POWER_LOW,POWER LOW — CHECK THE CONSUMPTION,МАЛО ПИТАНИЯ — ПРОВЕРЬТЕ РАСХОД
+HUD_POWER_CRITICAL,POWER CRITICAL — BULKHEADS WILL OPEN,ПИТАНИЕ НА ИСХОДЕ — СТВОРКИ ОТКРОЮТСЯ
+DESK_POWER_DRAIN,DRAIN %.0f%%/MIN,РАСХОД %.0f%%/МИН

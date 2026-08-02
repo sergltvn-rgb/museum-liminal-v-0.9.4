@@ -90,7 +90,7 @@ func _build_cell(index: int) -> void:
 	_row.add_child(cell)
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_theme_constant_override("separation", 2)
+	UITheme.apply_gap(column, UITheme.GAP_TIGHT)
 	cell.add_child(column)
 	# One label, not a bullet plus a digit: the mark and the slot number are read
 	# as one token ("the third one, and it is the one in my hands").

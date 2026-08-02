@@ -228,7 +228,7 @@ func _build_ui() -> void:
 	_layer.add_child(panel)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 10)
+	UITheme.apply_gap(box, UITheme.GAP_BLOCK)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(box)
 

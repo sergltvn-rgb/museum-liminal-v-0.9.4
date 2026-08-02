@@ -41,8 +41,11 @@ extends Control
 ## neither has to know about the other. What the effective level buys:
 ##
 ##   MURK           a flat SURFACE wash over the whole page, MURK_MAX at c=1.
-##   PALETTE        text drifts dimmer and the accent family walks green ->
-##                  amber; the rules and borders walk BORDER -> DANGER.
+##   PALETTE        text drifts dimmer and the accent family DIMS, ACCENT ->
+##                  ACCENT_DIM; the rules and borders walk BORDER -> DANGER.
+##                  Amber is not on this ramp -- it belongs to the stability
+##                  readout alone, and a rotting page is not the same fact as
+##                  an unstable core.
 ##   RULES BREAK    the hairlines above the body and below it lose segments,
 ##                  RULE_MAX_GAPS of them at c=1. Shape, not colour.
 ##   INTEGRITY      the status cluster's segmented meter and its percentage fall
@@ -66,10 +69,20 @@ extends Control
 ## a torn-picture panel carrying the caller's message on an opaque plate, the
 ## night and clock readouts drop to an em dash, and integrity reads 0%.
 ##
-## WIRING IS THE NEXT PHASE'S JOB. Nothing in the game calls set_corruption()
-## yet. The intended sources, for whoever does it: night number and remaining
-## anomalies for the sustained floor, Curator distance for the pulse, and a
-## blackout / containment breach for signal loss.
+## WIRED, AND WHERE FROM. game/GameManager.gd drives both terms. The sustained
+## floor is _night_corruption(): the blackout, CORRUPT_PER_NIGHT for every night
+## survived, and up to CORRUPT_TIMER_SPAN as a containment window closes -- a
+## failed run pins it at 1.0 and a finished one at 0.0. The spike is the Curator:
+## _sync_terminals() reads the distance every frame and calls pulse_corruption()
+## inside CURATOR_PULSE_RANGE, hardest when it is closest, rate-limited by
+## CURATOR_PULSE_INTERVAL. Only the page on screen is pushed; a hidden one is
+## brought up to date on the way in.
+##
+## set_signal_lost() is deliberately still unwired. It replaces the body of the
+## page with a torn picture carrying one message, which on the fail page would
+## bury FAIL_RETRY -- the only line telling the player how to leave -- and on the
+## protocol page would bury the device name the page exists to deliver. It wants
+## a surface of its own to land on, and there is not one yet.
 ##
 ##
 ## TYPOGRAPHY -- THE CHROME IS SET, NOT JUST COLOURED
@@ -358,6 +371,15 @@ var _settings: Node = null
 ## entry. An int always casts, always matches, and instance_from_id() answers
 ## null for the ones that have gone.
 var _glitch_targets: Dictionary[int, String] = {}
+## Floor plans handed out by add_floor_plan(), by instance id. Kept so _render()
+## can repaint them: they are drawn, not laid out, so neither the corruption ramp
+## nor a language change reaches them through the label refresh.
+var _plan_ids: Array[int] = []
+## Report captions: instance id -> catalogue key. Kept so a locale change can
+## re-resolve them from _apply_type(); these labels are built by the caller's
+## page rather than by _render(), so nothing else would ever retranslate them.
+## Keyed by id for the reason _glitch_targets is -- a caller may free its page.
+var _report_captions: Dictionary[int, String] = {}
 
 var _noise_seed := 1
 var _since_tick := 0.0
@@ -386,9 +408,9 @@ func _ready() -> void:
 # --- CONSTRUCTION ------------------------------------------------------------
 
 func _build() -> void:
-	var backdrop := ColorRect.new()
+	var backdrop := Panel.new()
 	backdrop.name = "Backdrop"
-	backdrop.color = UITheme.SURFACE
+	backdrop.theme_type_variation = &"TerminalPanel"
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(backdrop)
@@ -466,6 +488,7 @@ func _apply_type() -> void:
 	# same advance -- but the separators do not, so the shape is written out.
 	TerminalType.reserve_numeric(_clock_chip, "88:88", UITheme.LABEL)
 	TerminalType.reserve_numeric(_meter_value, "100%", UITheme.LABEL)
+	_refresh_report_captions()
 	# A locale change can resolve a different font, and the rot pool is a property
 	# of the font, not of the string.
 	_glitch_pool = ""
@@ -652,6 +675,413 @@ func body_column() -> VBoxContainer:
 	return column
 
 
+# --- REPORT BLOCK ------------------------------------------------------------
+#
+# The body composition reference 01 asks for: a report the museum system printed
+# rather than a stack of centred sentences. Three parts, and every page that
+# reports on an incident builds itself out of them, so no screen invents its own
+# grid again.
+#
+#   FIELDS      caption on the left at a fixed column, value on the right. The
+#               caption width is fixed and the value is a readout, so a value
+#               that changes while the player watches cannot shove the column.
+#   STABILITY   a segmented bar plus a percentage. Two non-colour readings of
+#               one number, for the reason the integrity meter has both.
+#   SYMPTOMS    one marker plus one observation per row.
+#
+# THE MARKERS ARE ASCII ON PURPOSE. Departure Mono carries no U+2713 CHECK MARK
+# and no U+2717 BALLOT X (verified with tools/tmp_font_check.py against the
+# face's .notdef box), so a tick would render as a tofu box in the one place on
+# the page the player has to read carefully.
+const MARK_PRESENT := "[+]"
+const MARK_ABSENT := "[x]"
+const MARK_UNKNOWN := "[?]"
+const MARK_PENDING := "[ ]"
+
+## Fixed caption column, in pixels. Sized for the longest field caption in
+## either locale at LABEL -- Russian "СТАБИЛЬНОСТЬ" is the worst case, 12
+## glyphs on Departure Mono's fixed advance. It is a constant and not a
+## measurement because the whole point of the column is that it does not move
+## when a value inside the row changes.
+const FIELD_CAPTION_WIDTH := 168
+const FIELD_GAP := 12
+const ROW_GAP := 6
+const MARK_WIDTH := 34
+
+const STABILITY_SEGMENTS := 20
+const STABILITY_SEGMENT_GAP := 2.0
+const STABILITY_HEIGHT := 14.0
+## Above this the system is operating normally and the bar may be green. Below
+## STABILITY_ALARM it is an alarm. Between them: caution. Green means one thing
+## in this UI, so the bar earns it rather than defaulting to it.
+const STABILITY_OK := 0.6
+const STABILITY_ALARM := 0.3
+
+
+## One "CAPTION      value" row. Returns the value Label; the caller writes to
+## its `text` and nothing else.
+func add_report_field(column: VBoxContainer, caption_key: String) -> Label:
+	var row := HBoxContainer.new()
+	row.name = caption_key
+	row.add_theme_constant_override("separation", FIELD_GAP)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(row)
+
+	var caption := Label.new()
+	caption.name = "Caption"
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.custom_minimum_size = Vector2(FIELD_CAPTION_WIDTH, 0)
+	TerminalType.apply_label(caption, UITheme.LABEL, UITheme.MUTED)
+	caption.text = tr(caption_key)
+	_report_captions[caption.get_instance_id()] = caption_key
+	row.add_child(caption)
+
+	var value := Label.new()
+	value.name = "Value"
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	TerminalType.apply_readout(value, UITheme.LABEL, UITheme.ON_SURFACE)
+	row.add_child(value)
+	return value
+
+
+## A section caption with a rule under it: "ПРИЗНАКИ", "РЕКОМЕНДУЕМЫЙ ПРОТОКОЛ".
+## The rule is the frame's own _build_rule(), so it breaks up with corruption
+## exactly like the two rules around the body do.
+func add_report_section(column: VBoxContainer, caption_key: String) -> Label:
+	var caption := Label.new()
+	caption.name = caption_key
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	TerminalType.apply_masthead(caption, UITheme.CAPTION, UITheme.MUTED)
+	caption.text = tr(caption_key)
+	_report_captions[caption.get_instance_id()] = caption_key
+	column.add_child(caption)
+	column.add_child(_build_rule("%s Rule" % caption_key))
+	return caption
+
+
+## One symptom row: an ASCII marker in a fixed column, then the observation.
+## `mark` is one of the MARK_* constants; `text` arrives already translated,
+## because the observations belong to the incident catalogue, not to this file.
+func add_report_symptom(column: VBoxContainer, mark: String, text: String) -> Label:
+	var row := HBoxContainer.new()
+	row.name = "Symptom"
+	row.add_theme_constant_override("separation", ROW_GAP)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(row)
+
+	var dim := mark == MARK_ABSENT or mark == MARK_PENDING
+	var marker := Label.new()
+	marker.name = "Mark"
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.custom_minimum_size = Vector2(MARK_WIDTH, 0)
+	TerminalType.apply_readout(marker, UITheme.LABEL,
+		UITheme.MUTED if dim else UITheme.ON_SURFACE)
+	marker.text = mark
+	row.add_child(marker)
+
+	var body_label := Label.new()
+	body_label.name = "Text"
+	body_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	TerminalType.apply_label(body_label, UITheme.LABEL,
+		UITheme.MUTED if mark == MARK_ABSENT else UITheme.ON_SURFACE)
+	body_label.text = text
+	row.add_child(body_label)
+	return body_label
+
+
+## The stability readout: a segmented bar and a percentage on one row, behind the
+## same caption column as the fields above it. Returns the bar Control, which is
+## what set_stability() takes.
+func add_stability_bar(column: VBoxContainer, caption_key: String) -> Control:
+	var row := HBoxContainer.new()
+	row.name = "Stability"
+	row.add_theme_constant_override("separation", FIELD_GAP)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(row)
+
+	var caption := Label.new()
+	caption.name = "Caption"
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.custom_minimum_size = Vector2(FIELD_CAPTION_WIDTH, 0)
+	TerminalType.apply_label(caption, UITheme.LABEL, UITheme.MUTED)
+	caption.text = tr(caption_key)
+	_report_captions[caption.get_instance_id()] = caption_key
+	row.add_child(caption)
+
+	var bar := Control.new()
+	bar.name = "Bar"
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.custom_minimum_size = Vector2(0, STABILITY_HEIGHT)
+	bar.set_meta("value", 1.0)
+	bar.draw.connect(_draw_stability.bind(bar))
+	bar.resized.connect(bar.queue_redraw)
+	row.add_child(bar)
+
+	var percent := Label.new()
+	percent.name = "Percent"
+	percent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	TerminalType.apply_readout(percent, UITheme.LABEL, UITheme.ON_SURFACE)
+	# Pinned at its widest reading, for the reason the integrity chip is pinned:
+	# this number changes while the player is looking at it, and an unpinned
+	# field would resize the row every time it did.
+	TerminalType.reserve_numeric(percent, "100%", UITheme.LABEL)
+	percent.text = "100%"
+	row.add_child(percent)
+	# The Label is reached by id rather than held as a reference: a caller may
+	# free the page this row lives on, and a freed Object cannot be cast.
+	bar.set_meta("percent", percent.get_instance_id())
+	return bar
+
+
+## Drive a bar built by add_stability_bar(). `value` is 0..1.
+func set_stability(bar: Control, value: float) -> void:
+	if bar == null or not is_instance_valid(bar):
+		return
+	var level := clampf(value, 0.0, 1.0)
+	bar.set_meta("value", level)
+	var percent := instance_from_id(int(bar.get_meta("percent", 0))) as Label
+	if percent != null:
+		percent.text = "%d%%" % int(round(level * 100.0))
+		# Never colour alone: the digits and the count of lit segments both fall
+		# with the reading, and the colour only agrees with them.
+		percent.add_theme_color_override("font_color", _stability_color(level))
+	bar.queue_redraw()
+
+
+## Green is not the default here -- it is the statement "operating normally".
+func _stability_color(level: float) -> Color:
+	if level >= STABILITY_OK:
+		return UITheme.ACCENT
+	if level >= STABILITY_ALARM:
+		return UITheme.WARNING
+	return UITheme.DANGER
+
+
+func _draw_stability(bar: Control) -> void:
+	var level := float(bar.get_meta("value", 1.0))
+	var width := bar.size.x
+	if width <= 0.0:
+		return
+	var step := (width + STABILITY_SEGMENT_GAP) / float(STABILITY_SEGMENTS)
+	var seg_width := maxf(1.0, step - STABILITY_SEGMENT_GAP)
+	var lit := int(round(level * float(STABILITY_SEGMENTS)))
+	var on_color := _stability_color(level)
+	for index in STABILITY_SEGMENTS:
+		var rect := Rect2(float(index) * step, 0.0, seg_width, bar.size.y)
+		if index < lit:
+			bar.draw_rect(rect, on_color, true)
+		else:
+			# An unlit segment is still drawn: the empty cells are what make the
+			# reading countable at a glance instead of a bare stripe.
+			bar.draw_rect(rect, UITheme.PANEL_EDGE, false, 1.0)
+
+
+# --- FLOOR PLAN --------------------------------------------------------------
+#
+# The sixth block of reference 01. The report answers what happened, how bad it
+# is and what to carry. The plan answers WHERE, which is the one question the
+# page had no way of putting.
+#
+# THE ROOM TABLE IS NEVER COPIED IN HERE, and this file does not go looking for
+# it either. SecurityCameraTablet.ROOMS owns the eleven rectangles and
+# game/test_map_verification.gd pins them to the geometry FirstMuseumMap
+# actually builds; game/Compass.gd reads that same table out of the shipping
+# script at runtime rather than keeping a second copy. This file is chrome: it
+# draws whatever rectangles the caller hands it and knows nothing about the
+# museum. One table, three renderers -- a plan that has quietly drifted from the
+# building is worse than no plan, because the player trusts it.
+#
+# IT ROTS WITH THE PAGE. The block sits in the body column, under _noise, so
+# murk, dropped lines and speckle already cross it; its own ink walks the same
+# ramp as everything else -- chrome_color for the walls, secondary_color for the
+# sealed wings, primary_color for the names. It never spends an accent: the
+# incident is called out with a bracketed name, a lighter cell and a cross, so
+# the mark still reads with the accent held elsewhere on the page (RULE OF ONE
+# ACCENT) and for a player who cannot separate the greens at all.
+
+## Height of the plan. Fixed, because the body is a VBox and a block that grew
+## with its content would shove the sections under it around.
+const PLAN_HEIGHT := 132.0
+## Margin between the outermost wall and the edge of the block.
+const PLAN_INSET := 8.0
+## Under this width a room cannot carry its name and goes unlabelled.
+const PLAN_LABEL_MIN_WIDTH := 34.0
+## Arms of the cross marking the incident, and its stroke.
+const PLAN_MARK_ARM := 5.0
+const PLAN_MARK_WIDTH := 2.0
+
+
+## A floor-plan block: section caption, rule, plan. Returns the plan Control,
+## which is what set_floor_plan() takes. The caption and rule travel with it --
+## with no table to draw the whole block hides itself, rather than leaving a
+## heading over an empty rectangle, which reads as a broken readout.
+func add_floor_plan(column: VBoxContainer, caption_key: String) -> Control:
+	var block := VBoxContainer.new()
+	block.name = "Floor Plan Block"
+	block.add_theme_constant_override("separation", ROW_GAP)
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_child(block)
+	add_report_section(block, caption_key)
+
+	var plan := Control.new()
+	plan.name = "Plan"
+	plan.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plan.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	plan.custom_minimum_size = Vector2(0, PLAN_HEIGHT)
+	plan.set_meta("rooms", [])
+	plan.set_meta("night", 0)
+	plan.set_meta("mark", Vector2.ZERO)
+	plan.set_meta("marked", false)
+	# The block is reached by id for the reason the percentage label is: a caller
+	# may free the page this lives on, and a freed Object cannot be cast.
+	plan.set_meta("block", block.get_instance_id())
+	plan.draw.connect(_draw_floor_plan.bind(plan))
+	plan.resized.connect(plan.queue_redraw)
+	block.add_child(plan)
+	_plan_ids.append(plan.get_instance_id())
+	return plan
+
+
+## Drive a plan built by add_floor_plan().
+##
+## `rooms` is SecurityCameraTablet.ROOMS exactly as it stands in that file --
+## [key, world centre (x, z), world size (w, d), first night open] -- passed
+## through untouched, because the moment this file reshapes the table it has
+## started being a second copy of it.
+##
+## `night` seals every room that opens later than it. Pass 0 for "do not claim to
+## know", which draws the whole building open. `mark` is a world (x, z) the page
+## wants called out -- the incident -- and is ignored unless `marked`.
+func set_floor_plan(plan: Control, rooms: Array, night: int,
+		mark := Vector2.ZERO, marked := false) -> void:
+	if plan == null or not is_instance_valid(plan):
+		return
+	plan.set_meta("rooms", rooms)
+	plan.set_meta("night", night)
+	plan.set_meta("mark", mark)
+	plan.set_meta("marked", marked)
+	var block := instance_from_id(int(plan.get_meta("block", 0))) as Control
+	if block != null:
+		block.visible = not rooms.is_empty()
+	plan.queue_redraw()
+
+
+## Bounding box of every rectangle in the table, in world (x, z). Drives the fit,
+## so the plan cannot be thrown off by a room being added or moved.
+func _plan_bounds(rooms: Array) -> Rect2:
+	var box := Rect2()
+	var started := false
+	for entry: Variant in rooms:
+		var row := entry as Array
+		if row == null or row.size() < 4:
+			continue
+		var centre: Vector2 = row[1]
+		var half: Vector2 = (row[2] as Vector2) * 0.5
+		var rect := Rect2(centre - half, half * 2.0)
+		box = rect if not started else box.merge(rect)
+		started = true
+	return box
+
+
+## Index of the room containing `point`, or -1. Strict containment: the mark is
+## an incident inside the building, not a player who may be standing in a doorway
+## -- the slack rule for that case belongs to Compass, which owns the readout it
+## is there to steady.
+func _plan_room_at(rooms: Array, point: Vector2) -> int:
+	for index in range(rooms.size()):
+		var row := rooms[index] as Array
+		if row == null or row.size() < 4:
+			continue
+		var centre: Vector2 = row[1]
+		var half: Vector2 = (row[2] as Vector2) * 0.5
+		if absf(point.x - centre.x) <= half.x and absf(point.y - centre.y) <= half.y:
+			return index
+	return -1
+
+
+func _draw_floor_plan(plan: Control) -> void:
+	var rooms: Array = plan.get_meta("rooms", [])
+	var view := plan.size
+	if rooms.is_empty() or view.x <= 0.0 or view.y <= 0.0:
+		return
+	var bounds := _plan_bounds(rooms)
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return
+
+	var level := get_effective_corruption()
+	var walls := chrome_color(level)
+	var struck := secondary_color(level)
+	var ink := primary_color(level)
+	# One scale for both axes and the result centred: the museum keeps its
+	# proportions instead of being stretched to whatever shape the block is.
+	var fit := minf((view.x - PLAN_INSET * 2.0) / bounds.size.x,
+		(view.y - PLAN_INSET * 2.0) / bounds.size.y)
+	var origin := (view - bounds.size * fit) * 0.5 - bounds.position * fit
+	var night := int(plan.get_meta("night", 0))
+	var marked := bool(plan.get_meta("marked", false))
+	var mark: Vector2 = plan.get_meta("mark", Vector2.ZERO)
+	var here := _plan_room_at(rooms, mark) if marked else -1
+	var font := plan.get_theme_default_font()
+
+	for index in range(rooms.size()):
+		var row := rooms[index] as Array
+		if row == null or row.size() < 4:
+			continue
+		var centre: Vector2 = row[1]
+		var half: Vector2 = (row[2] as Vector2) * 0.5
+		var rect := Rect2(origin + (centre - half) * fit, half * 2.0 * fit)
+		# night 0 means the caller does not know, and an unknown building is drawn
+		# open rather than sealed -- guessing shut is the guess that strands people.
+		var sealed_off := night > 0 and night < int(row[3])
+		if index == here:
+			# A lighter cell, not a coloured one. The accent may be spoken for
+			# elsewhere on the page and this mark still has to read.
+			plan.draw_rect(rect, UITheme.SURFACE_RAISED, true)
+		plan.draw_rect(rect, struck if sealed_off else walls, false, 1.0)
+		if sealed_off:
+			# Struck through, not merely greyed: the cross is what a player who
+			# cannot tell one grey from the other actually reads.
+			plan.draw_line(rect.position, rect.position + rect.size, struck, 1.0)
+			plan.draw_line(rect.position + Vector2(rect.size.x, 0.0),
+				rect.position + Vector2(0.0, rect.size.y), struck, 1.0)
+			continue
+		if font == null or rect.size.x < PLAN_LABEL_MIN_WIDTH:
+			continue
+		# Brackets, not colour, say which room the report is about.
+		var caption := tr(String(row[0]))
+		if index == here:
+			caption = "[%s]" % caption
+		plan.draw_string(font,
+			rect.position + Vector2(3.0, float(UITheme.CAPTION) + 2.0),
+			caption, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 6.0,
+			UITheme.CAPTION, ink)
+
+	if not marked:
+		return
+	var spot := origin + mark * fit
+	plan.draw_line(spot - Vector2(PLAN_MARK_ARM, PLAN_MARK_ARM),
+		spot + Vector2(PLAN_MARK_ARM, PLAN_MARK_ARM), ink, PLAN_MARK_WIDTH)
+	plan.draw_line(spot + Vector2(PLAN_MARK_ARM, -PLAN_MARK_ARM),
+		spot + Vector2(-PLAN_MARK_ARM, PLAN_MARK_ARM), ink, PLAN_MARK_WIDTH)
+
+
+## Re-resolve every caption this file handed out. Called from _apply_type(), so
+## it runs at construction and again on NOTIFICATION_TRANSLATION_CHANGED.
+func _refresh_report_captions() -> void:
+	for id: int in _report_captions.keys():
+		var label := instance_from_id(id) as Label
+		if label == null:
+			_report_captions.erase(id)
+			continue
+		label.text = tr(_report_captions[id])
+
+
 ## The screen's own title, by catalogue key. "" clears it.
 func set_title(key: String) -> void:
 	_title_key = key
@@ -663,6 +1093,17 @@ func set_title(key: String) -> void:
 func set_institution(key: String) -> void:
 	_institution_key = key
 	_render()
+
+
+## Select the shared panel family without copying palette values into callers.
+## The fallback keeps typoed or empty values on the normal terminal contract.
+func set_panel_variation(variation: StringName) -> void:
+	var backdrop := get_node_or_null("Backdrop") as Panel
+	if backdrop == null:
+		return
+	var allowed: Array[StringName] = [
+		&"TerminalPanel", &"CCTVPanel", &"WarningPanel", &"InstrumentPanel"]
+	backdrop.theme_type_variation = variation if variation in allowed else &"TerminalPanel"
 
 
 ## The whole status cluster in one call.
@@ -880,6 +1321,14 @@ func _render() -> void:
 	_meter.queue_redraw()
 	_noise.queue_redraw()
 	_lost_bands.queue_redraw()
+	# The plans are painted, not laid out, so nothing above this reaches them:
+	# their ink walks the corruption ramp and their room names come from tr().
+	for index in range(_plan_ids.size() - 1, -1, -1):
+		var plan := instance_from_id(_plan_ids[index]) as Control
+		if plan == null:
+			_plan_ids.remove_at(index)
+			continue
+		plan.queue_redraw()
 	_apply_crt()
 
 
@@ -1000,9 +1449,26 @@ static func secondary_color(level: float) -> Color:
 	return UITheme.MUTED.lerp(TEXT_DIM, clampf(level, 0.0, 1.0))
 
 
-## Live accent: the CRT green walking to the tablet's flash amber.
+## Live accent: the CRT green LOSING POWER, not changing meaning.
+##
+## It used to walk ACCENT -> WARNING, and that leaked amber into places that
+## have nothing to say about stability: the hot edge of every dropped line, a
+## third of the speckle, the lit segments of the integrity meter and the chip
+## of a perfectly nominal core. The reference README keeps amber for exactly
+## one reading -- the stability bar in add_stability_bar() -- and green for
+## "штатная работа". A page can be rotting and still be nominal; those are
+## two different facts and they are not allowed to share a colour.
+##
+## So corruption now DRAINS the accent instead of repainting it. Where a real
+## warning is due, the caller says so outright -- see _draw_meter(), which
+## steps to WARNING at 0.4 and DANGER at 0.75 on its own.
+##
+## FILL AND STROKE ONLY. UITheme measures ACCENT_DIM at 3.15 : 1 on SURFACE,
+## under the 4.5 gate for text, and says so itself: "ACCENT_DIM is a
+## fill/border token ONLY. Do not set it as font_color; use ACCENT." Anything
+## on this ramp that ends up as a font_color must take flat ACCENT instead.
 static func accent_color(level: float) -> Color:
-	return UITheme.ACCENT.lerp(UITheme.WARNING, clampf(level, 0.0, 1.0))
+	return UITheme.ACCENT.lerp(UITheme.ACCENT_DIM, clampf(level, 0.0, 1.0))
 
 
 ## Hairlines and borders. BORDER -> DANGER, which is *lighter*, so a corrupted
@@ -1020,7 +1486,10 @@ func _core_color(core_level: int, level: float) -> Color:
 		CORE_OFFLINE:
 			return secondary_color(level)
 		_:
-			return accent_color(level)
+			# Штатное ядро — ровный зелёный, без дрейфа. Это ЦВЕТ ТЕКСТА
+			# чипа, а accent_color() теперь уходит в ACCENT_DIM, который
+			# как надпись не проходит по контрасту.
+			return UITheme.ACCENT
 
 
 # --- DRAWING -----------------------------------------------------------------

@@ -1209,11 +1209,12 @@ func _build_hud()->void:
 	_layer=CanvasLayer.new(); _layer.name="Rift Terminal"; _layer.layer=TRIAL_FRAME_LAYER; _layer.visible=false; add_child(_layer)
 	_frame=TerminalFrame.new()
 	_frame.name="Rift Frame"
+	_frame.set_panel_variation(&"InstrumentPanel")
 	# The pocket dimension is what the operator is looking AT, so the page behind
 	# the chrome comes out. This is the one thing the frame has no setter for; the
 	# node is named and null-guarded rather than indexed, so a future rename
 	# degrades to an opaque page instead of a crash.
-	var backdrop:=_frame.get_node_or_null("Backdrop") as ColorRect
+	var backdrop:=_frame.get_node_or_null("Backdrop") as Control
 	if backdrop!=null: backdrop.visible=false
 	# The frame defaults to MOUSE_FILTER_STOP, which is right for a screen that has
 	# taken the game away and wrong for one drawn over live play: this is a trial,

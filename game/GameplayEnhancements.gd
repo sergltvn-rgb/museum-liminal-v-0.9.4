@@ -32,6 +32,23 @@ const STATE_ANOMALY := 2
 ## has already ended so the catch sequence does not fail it a second time.
 const STATE_FAILED := 4
 const SCAN_TIME := 2.5
+
+## The four stages the confirmation walks through, in order (block 10, step 6).
+## SCAN_TIME did not change -- 2.5 s is still 2.5 s -- but a percentage is a
+## progress bar wearing words: it says how long the tax has left to run and
+## nothing about what the machine is doing. Named stages spend the same seconds
+## telling the operator that frames are being aligned against the archive and
+## that a mismatch is what confirms a carrier, which is the fiction the whole
+## instrument rests on. Deliberately keyed, not formatted: these lines carry no
+## specifiers, so they can be picked from an array without hiding an arity from
+## tools/check_localization.py.
+const SCAN_STAGE_KEYS: Array[String] = [
+	"HUD_SCAN_ALIGN",
+	"HUD_SCAN_ARCHIVE",
+	"HUD_SCAN_MISMATCH",
+	"HUD_SCAN_CONFIRM",
+]
+
 const EFFECT_RADIUS := 15.0
 
 # --- Curator proximity alert (stage 7.8) ------------------------------------
@@ -227,6 +244,7 @@ var _scale_controller: Node
 var _player_camera: Camera3D
 var _watch_layer: CanvasLayer
 var _watch_frame: Panel
+var _watch_banner: Panel
 var _watch_label: Label
 var _watch_style_near: StyleBoxFlat
 var _watch_style_critical: StyleBoxFlat
@@ -476,6 +494,18 @@ func _update_scan(delta: float) -> void:
 		_scan_progress = maxf(0.0, _scan_progress - delta * 0.5)
 
 
+## Which stage the confirmation is on right now, from _scan_progress alone. No
+## stored index: _update_scan() walks progress backwards at half speed when the
+## operator looks away, and a latched stage would keep claiming the archive is
+## being compared while the run drains back to zero. Derived means the readout
+## can only ever say something the scan is actually doing.
+func _scan_stage_key() -> String:
+	var count := SCAN_STAGE_KEYS.size()
+	var span := maxf(SCAN_TIME, 0.001)
+	var index := int(floorf(_scan_progress / span * float(count)))
+	return SCAN_STAGE_KEYS[clampi(index, 0, count - 1)]
+
+
 ## Whether the office wall is currently showing the required post to a player who
 ## is actually looking at that panel. The wall answers -1 whenever it is not
 ## holding feeds at all, so this cannot be satisfied from outside the office.
@@ -602,12 +632,14 @@ func _set_watch_critical(distance: float) -> void:
 		if distance > WATCH_CRITICAL_RANGE * WATCH_CRITICAL_RELEASE:
 			_watch_critical = false
 			_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
+			_watch_banner.remove_theme_stylebox_override("panel")
 			UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
 		return
 	if distance > WATCH_CRITICAL_RANGE:
 		return
 	_watch_critical = true
 	_watch_frame.add_theme_stylebox_override("panel", _watch_style_critical)
+	_watch_banner.add_theme_stylebox_override("panel", UITheme.warning_panel(UITheme.DANGER_FILL))
 	UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.DANGER)
 	# One heavy sting at the boundary. The ping tells the operator something is
 	# coming; this tells them the decision is now.
@@ -622,6 +654,7 @@ func _hide_watch_alert() -> void:
 	if _watch_critical:
 		_watch_critical = false
 		_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
+		_watch_banner.remove_theme_stylebox_override("panel")
 		UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
 
 
@@ -816,14 +849,14 @@ func _build_watch_alert() -> void:
 	_watch_frame.add_theme_stylebox_override("panel", _watch_style_near)
 	_watch_layer.add_child(_watch_frame)
 
-	var banner := Panel.new()
-	banner.anchor_left = 0.22
-	banner.anchor_top = 0.055
-	banner.anchor_right = 0.78
-	banner.anchor_bottom = 0.155
-	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	UITheme.apply_panel(banner)
-	_watch_layer.add_child(banner)
+	_watch_banner = Panel.new()
+	_watch_banner.theme_type_variation = &"WarningPanel"
+	_watch_banner.anchor_left = 0.22
+	_watch_banner.anchor_top = 0.055
+	_watch_banner.anchor_right = 0.78
+	_watch_banner.anchor_bottom = 0.155
+	_watch_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_watch_layer.add_child(_watch_banner)
 
 	_watch_label = Label.new()
 	_watch_label.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -838,7 +871,7 @@ func _build_watch_alert() -> void:
 	_watch_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_watch_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UITheme.apply_text(_watch_label, UITheme.SECTION, UITheme.WARNING)
-	banner.add_child(_watch_label)
+	_watch_banner.add_child(_watch_label)
 
 
 ## Screen-edge band: border only, so the camera feed underneath stays readable.
@@ -911,7 +944,14 @@ func _update_readouts() -> void:
 			else:
 				_block.set_status("HUD_EVIDENCE_SEEK", [_required_camera + 1], TaskBlock.OWNER_ANOMALY)
 			return
-		_block.set_status("HUD_SCAN_PROGRESS", [100.0 * _scan_progress / SCAN_TIME], TaskBlock.OWNER_ANOMALY)
+		# The nine scan incidents get the same treatment the sign incidents got
+		# above, one rung lower: not a fill, and not a number either. Off-feed the
+		# line names the post to hold -- without it the stages would read as a
+		# machine working on its own while the operator stands in a corridor.
+		if not _watching_required():
+			_block.set_status("HUD_SCAN_SEEK", [_required_camera + 1], TaskBlock.OWNER_ANOMALY)
+			return
+		_block.set_status(_scan_stage_key(), [], TaskBlock.OWNER_ANOMALY)
 		return
 	# Every key spelled at its own call site with its own arguments, rather than
 	# collected into a variable and formatted once below: tools/check_localization.py

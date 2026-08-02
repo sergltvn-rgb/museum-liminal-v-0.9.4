@@ -356,7 +356,7 @@ extends CanvasLayer
 ##     block.set_timer(_time_left, _time_left < 30.0, TaskBlock.OWNER_NIGHT)
 ##     block.set_hint("HUD_HINT_APPLY", [tool_name], TaskBlock.OWNER_NIGHT)
 ##     block.claim(TaskBlock.Slot.STATUS, TaskBlock.OWNER_ANOMALY)
-##     block.set_status("HUD_SCAN_PROGRESS", [pct], TaskBlock.OWNER_ANOMALY)
+##     block.set_status("HUD_SCAN_ARCHIVE", [], TaskBlock.OWNER_ANOMALY)
 ##     block.set_progress(stamina, "HUD_STAMINA", [], TaskBlock.OWNER_NIGHT)
 ##     block.flash("HUD_ANOMALY_CLEARED", [], TaskBlock.Tone.GOOD)
 ##     block.release(TaskBlock.Slot.STATUS, TaskBlock.OWNER_ANOMALY)
