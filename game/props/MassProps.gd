@@ -130,6 +130,8 @@ extends RefCounted
 # for a large shape.
 
 ## Impossible mass. Near-black, faintly metallic, deliberately unreadable.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const DENSE := Color(0.042, 0.041, 0.048)
 ## Structural steel: gantry rails, bearing plates, load-frame beams.
 const STEEL := Color(0.145, 0.150, 0.160)
@@ -882,10 +884,27 @@ static func _shape(instance: MeshInstance3D, node_name: String, shape: Shape3D,
 	body.add_child(collision)
 
 
+## Палитра крыла массы -> набор карт.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STEEL) or color.is_equal_approx(STEEL_WORN):
+		return "steel"
+	if color.is_equal_approx(CONCRETE) or color.is_equal_approx(CONCRETE_DARK):
+		return "concrete"
+	if color.is_equal_approx(RUST):
+		return "rust"
+	return ""
+
+
 static func _material(color: Color, metallic: float) -> StandardMaterial3D:
 	var key := "%s|%.2f" % [color.to_html(true), metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	var pack := _pack_for(color)
+	if not pack.is_empty():
+		var photo := MatLib.get_material(pack, color)
+		_materials[key] = photo
+		return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

@@ -90,6 +90,8 @@ const CASE_INNER_HALF := 1.06
 # Steel and cable read almost black under the wing's failing blue lights; the
 # paint colours are chalky and unsaturated so they look sprayed on, not lit.
 
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const STEEL := Color(0.105, 0.115, 0.125)
 const STEEL_LIGHT := Color(0.185, 0.200, 0.215)
 const CABLE := Color(0.035, 0.038, 0.042)
@@ -921,12 +923,32 @@ static func _prism_mesh(size: Vector3) -> PrismMesh:
 ## Same surface treatment as the rest of the museum: polished-marble roughness,
 ## and a restrained triplanar grain on opaque, non-metallic, non-emissive parts
 ## so a prop dropped next to a wall does not read as a different material set.
+## Палитра крыла гравитации -> набор карт. Поле, пыль и краска — ровный цвет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STEEL) or color.is_equal_approx(STEEL_LIGHT):
+		return "steel"
+	if color.is_equal_approx(CABLE):
+		return "painted_metal"
+	if color.is_equal_approx(CONCRETE):
+		return "concrete"
+	if color.is_equal_approx(DUST):
+		return "dirt"
+	return ""
+
+
 static func _mat(color: Color, emission_energy := 0.0, metallic := 0.0,
 		alpha := 1.0) -> StandardMaterial3D:
 	var key := "%s/%.2f/%.2f/%.2f" % [color.to_html(false), emission_energy,
 		metallic, alpha]
 	if _materials.has(key):
 		return _materials[key]
+
+	if alpha >= 0.999 and emission_energy <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	var transparent: bool = alpha < 0.999

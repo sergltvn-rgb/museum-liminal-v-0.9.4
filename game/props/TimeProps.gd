@@ -58,6 +58,8 @@ const WALL_HEIGHT := 3.4
 const WALL_THICKNESS := 0.35
 
 # Wing B palette: warm amber brass, bone-pale dials, cold water for the drop.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const BRASS := Color(0.30, 0.25, 0.13)
 const BRASS_LIT := Color(0.46, 0.38, 0.20)
 const IRON := Color(0.10, 0.11, 0.12)
@@ -615,11 +617,29 @@ static func _prim(parent: Node3D, node_name: String, prim_position: Vector3,
 ## Shared with every other prop built by this class for the lifetime of the
 ## process; the museum builds ~1270 meshes in one frame and cannot afford a
 ## StandardMaterial3D per node.
+## Палитра крыла времени -> набор карт. Циферблаты, вода и песок — ровный цвет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(BRASS) or color.is_equal_approx(BRASS_LIT):
+		return "painted_metal"
+	if color.is_equal_approx(IRON):
+		return "steel"
+	if color.is_equal_approx(CASE_DARK):
+		return "wood"
+	return ""
+
+
 static func _material(color: Color, emission_energy: float,
 		metallic: float) -> StandardMaterial3D:
 	var key := "%s:%s:%s" % [color.to_html(true), emission_energy, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if emission_energy <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

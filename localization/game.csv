@@ -290,6 +290,11 @@ SIGN_REFLECTION_LAG,REFLECTIONS LAG BEHIND,ОТРАЖЕНИЯ ЗАПАЗДЫВА
 SIGN_SHADOW_WRONG,SHADOWS FALL AWAY FROM LAMPS,ТЕНИ ПАДАЮТ ПРОЧЬ ОТ ЛАМП
 SIGN_SOUND_DELAY,SOUND ARRIVES A SECOND LATE,ЗВУК ОТСТАЁТ НА СЕКУНДУ
 SIGN_SURFACES_TRANSPARENT,SURFACES GO TRANSPARENT,ПОВЕРХНОСТИ ПРОЗРАЧНЕЮТ
+STORY_DRIVE_01,A back road through the forest. The last few kilometres to the museum.,Просёлок через лес. До музея — последние километры.
+STORY_DRIVE_02,Past the bridge the river runs off to the mountains. The radio has been silent since the turn.,За мостом река уходит к горам. Радио молчит с самого поворота.
+STORY_DRIVE_03,The lamps are already lit. No one at the bus stop: the last bus has left for town.,Фонари уже горят. На остановке — никого: последний автобус ушёл в город.
+STORY_DRIVE_04,The staff parking lot. The night shift arrives first and leaves last.,Служебная парковка. Ночная смена приезжает первой и уезжает последней.
+STORY_DRIVE_05,The First Museum. The shift starts at the main door.,Первый музей. Смена начинается у парадного входа.
 STORY_ENDING,The last rift closes. The exhibits are silent — for now.,Последний разлом закрывается. Экспонаты молчат — пока что.
 STORY_END_01,"Three nights. The core holds, and wing by wing the constants settle back into their cases.","Три ночи. Ядро держит, и крыло за крылом постоянные величины возвращаются в свои витрины."
 STORY_END_02,The monitors go quiet one after another. Nothing walks the halls that the cameras can name.,"Мониторы гаснут один за другим. По залам не ходит ничего такого, что камеры сумели бы назвать."

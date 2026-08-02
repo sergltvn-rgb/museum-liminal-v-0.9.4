@@ -27,7 +27,8 @@ const APPLY_DISTANCE := 3.4
 # room floors are boxes centred at y = -0.08 with height 0.16 (see
 # FirstMuseumMap._add_room) and "Forecourt Ground" is centred at y = -0.10
 # with height 0.2 (FirstMuseumMap._add_outdoor). The highest outdoor deck is
-# the top entrance step at y = 0.22; nothing legitimate is below zero.
+# the porch stylobate at y = 0.36 (FacadeProps.DECK_TOP); nothing legitimate
+# is below zero.
 # -8.0 is therefore pure void: ~0.94 s of free fall at the player's gravity
 # of 18.0 -- fast enough to read as a slip, deep enough never to misfire on
 # step-up jitter (PlayerController.step_height is 0.38).

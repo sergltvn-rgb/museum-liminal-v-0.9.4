@@ -65,6 +65,8 @@ extends RefCounted
 # --- Palette -----------------------------------------------------------------
 # Museum-grade steel and concrete. Values are deliberately dark: the atrium
 # walls are near-white marble (0.87) and the core has to read as a hole in it.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const CONCRETE := Color(0.128, 0.134, 0.140)
 const CONCRETE_DARK := Color(0.088, 0.092, 0.096)
 const STEEL := Color(0.175, 0.185, 0.195)
@@ -850,11 +852,34 @@ static func _add_body(inst: MeshInstance3D, node_name: String,
 	body.add_child(collision)
 
 
+## Палитра атриума -> набор карт.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(CONCRETE) or color.is_equal_approx(CONCRETE_DARK):
+		return "concrete"
+	if color.is_equal_approx(STEEL) or color.is_equal_approx(STEEL_DARK):
+		return "steel"
+	if color.is_equal_approx(IRON) or color.is_equal_approx(BRASS):
+		return "painted_metal"
+	if color.is_equal_approx(PANEL):
+		return "plastic_dry"
+	if color.is_equal_approx(WOOD):
+		return "wood"
+	if color.is_equal_approx(STONE):
+		return "quartzite"
+	return ""
+
+
 static func _material(color: Color, emission := 0.0,
 		metallic := 0.0) -> StandardMaterial3D:
 	var key := "%s|%.2f|%.2f" % [color.to_html(true), emission, metallic]
 	if _materials.has(key):
 		return _materials[key]
+	if emission <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.metallic = metallic

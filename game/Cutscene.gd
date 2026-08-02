@@ -250,6 +250,17 @@ func is_playing() -> bool:
 	return _active
 
 
+## Seconds of sequence time consumed so far — the same clamped clock _apply()
+## poses the camera from, NOT wall time (MAX_STEP slows it under hitches).
+## Read-only, for callers that animate scenery in step with the shot list: the
+## museum's driving cutscene moves the player's car along a track keyed to the
+## same shot boundaries, and any other clock would drift away from the camera.
+## This node still owns nothing but the camera; what a caller does with the
+## number is the caller's scene.
+func elapsed() -> float:
+	return _time
+
+
 ## End the sequence early, as the skip binding does. No-op once finished.
 func skip() -> void:
 	if _active:

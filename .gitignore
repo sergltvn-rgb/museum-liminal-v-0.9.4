@@ -50,3 +50,24 @@ bridge.stdout.log
 bridge.stderr.log
 bypass-wrapper-rpc.log
 proxy.log
+
+# Agent screenshots. Regenerated on demand by game/test_shot.gd and the
+# *_capture.gd suites; they are review artefacts, not sources. Keeping them in
+# history means a new JPEG set on every visual iteration.
+shots/
+lobby_captures/
+exterior_captures/
+drive_captures/
+facade_captures/
+
+# Scratch scripts written by agents mid-session (tmp_cut.py, tmp_probe.py,
+# tmp_length.gd and friends). Real tooling goes in tools/ without the prefix.
+tools/tmp_*
+
+# Qoder IDE workspace metadata, same class as .claude/.
+.qoder/
+
+# TerraBrush: GDExtension .dll that does not load in this project (it errors on
+# --import) and the terrain is procedural anyway. Kept on disk so the editor
+# stops asking, excluded from history so nobody ships a broken binary addon.
+addons/terrabrush/

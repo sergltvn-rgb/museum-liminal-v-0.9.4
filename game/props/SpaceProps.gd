@@ -78,6 +78,8 @@ const SHADOW_CUTOFF := 0.65
 # it: the exhibits are darker than their room so they read as silhouettes when
 # the wing lights fail.
 
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 ## Exhibit casework and arch stone.
 const STONE := Color(0.155, 0.165, 0.185)
 ## Lit faces of the same stone -- top surfaces, crowns.
@@ -109,12 +111,27 @@ static var _normal_noise: NoiseTexture2D = null
 ## Cached StandardMaterial3D. Opaque, non-emissive, low-metal materials get the
 ## same restrained triplanar noise the museum walls use, so a prop standing
 ## against a wall does not read as a slab of plastic next to it.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STONE) or color.is_equal_approx(STONE_LIT):
+		return "quartzite"
+	if color.is_equal_approx(BRASS):
+		return "painted_metal"
+	return ""
+
+
 static func _mat(color: Color, emission := 0.0, metallic := 0.0,
 		transparent := false) -> StandardMaterial3D:
 	var key := "%s|%.2f|%.2f|%s" % [color.to_html(true), emission, metallic,
 		transparent]
 	if _materials.has(key):
 		return _materials[key]
+
+	if not transparent and emission <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

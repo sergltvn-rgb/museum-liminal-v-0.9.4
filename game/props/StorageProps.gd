@@ -60,6 +60,8 @@ extends RefCounted
 # --- Palette -----------------------------------------------------------------
 # Industrial night-shift storeroom: near-black steel, one worn paint tone, three
 # indicator tints. STENCIL against the opaque black outline measures 15.9:1.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const STEEL_DARK := Color(0.100, 0.110, 0.120)
 const STEEL := Color(0.135, 0.145, 0.155)
 const STEEL_PALE := Color(0.300, 0.310, 0.330)
@@ -710,11 +712,33 @@ static func _stencil(parent: Node3D, node_name: String, at: Vector3, text: Strin
 ## device tint passed to device_cradle(). No noise textures -- painted steel reads
 ## better smooth, and it saves generating the texture pair the map already pays
 ## for.
+## Палитра склада -> набор карт.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STEEL_DARK) or color.is_equal_approx(STEEL) \
+			or color.is_equal_approx(STEEL_PALE) or color.is_equal_approx(TOOL_STEEL):
+		return "steel"
+	if color.is_equal_approx(PAINT_DARK) or color.is_equal_approx(PAINT_WORN) \
+			or color.is_equal_approx(BRASS):
+		return "painted_metal"
+	if color.is_equal_approx(CRATE):
+		return "wood"
+	if color.is_equal_approx(GRIME):
+		return "rust"
+	return ""
+
+
 static func _material(color: Color, emission: float,
 		metallic: float) -> StandardMaterial3D:
 	var key := "%s|%.2f|%.2f" % [color.to_html(true), emission, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if emission <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

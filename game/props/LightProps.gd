@@ -87,6 +87,8 @@ const TINT_EMERGENCY := Color(0.96, 0.24, 0.16)
 const TINT_FAILING := Color(0.98, 0.74, 0.38)
 
 # Structural greys. The museum's fittings are painted steel, not chrome.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const STEEL_DARK := Color(0.075, 0.080, 0.088)
 const STEEL_MID := Color(0.145, 0.150, 0.155)
 const LAMP_DEAD := Color(0.115, 0.118, 0.122)
@@ -821,11 +823,26 @@ static func _instance(parent: Node, node_name: String, offset: Vector3,
 	return inst
 
 
+## Корпуса светильников -> крашеный металл. Лампы и стёкла — ровный цвет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STEEL_DARK) or color.is_equal_approx(STEEL_MID) \
+			or color.is_equal_approx(LAMP_DEAD):
+		return "painted_metal"
+	return ""
+
+
 static func _material(color: Color, emission: float,
 		metallic: float) -> StandardMaterial3D:
 	var key := "%s|%.3f|%.3f" % [color.to_html(true), emission, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if emission <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

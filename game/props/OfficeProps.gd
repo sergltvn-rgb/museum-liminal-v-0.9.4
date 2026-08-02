@@ -102,6 +102,8 @@ const CHAIR_BACK_TOP := Vector3(0.0, 1.03, -0.245)
 # Institutional greys with a cold cast, one dead-plant brown and exactly one
 # warm colour (the cardigan) so the personal detail reads at a glance.
 
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const COL_STEEL := Color(0.105, 0.115, 0.125)
 const COL_SHELL := Color(0.062, 0.070, 0.078)
 const COL_DARK := Color(0.035, 0.040, 0.046)
@@ -274,12 +276,33 @@ static func _collider(parent: Node3D, node_name: String, box_position: Vector3,
 	return body
 
 
+## Палитра кабинета -> набор карт. Бумага и экраны остаются ровным цветом.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(COL_STEEL) or color.is_equal_approx(COL_SHELL) \
+			or color.is_equal_approx(COL_DARK):
+		return "steel"
+	if color.is_equal_approx(COL_DESK):
+		return "wood"
+	if color.is_equal_approx(COL_LAMINATE):
+		return "plastic_worn"
+	if color.is_equal_approx(COL_PLASTIC):
+		return "plastic_dry"
+	return ""
+
+
 static func _material(color: Color, transparent: bool,
 		emission_energy: float, metallic: float) -> StandardMaterial3D:
 	var key := "%s:%s:%s:%s" % [color.to_html(true), transparent,
 		emission_energy, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if not transparent and emission_energy <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

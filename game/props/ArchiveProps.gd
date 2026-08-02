@@ -80,6 +80,8 @@ const SHADOW_CUTOFF := 0.65
 # Back-of-house, unrestored, lit by whatever still works. Everything is
 # desaturated except the tape and the brass, which are the only two things in
 # either room anybody ever bothered to keep bright.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const _STEEL_DARK := Color(0.115, 0.125, 0.135)
 const _STEEL := Color(0.185, 0.195, 0.205)
 const _STEEL_LIT := Color(0.300, 0.310, 0.320)
@@ -279,12 +281,33 @@ static func _tag_label(parent: Node3D, text: String, label_position: Vector3,
 	return label
 
 
+## Палитра архива -> набор карт. Бумага, картон и листы — ровный цвет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(_STEEL_DARK) or color.is_equal_approx(_STEEL) \
+			or color.is_equal_approx(_STEEL_LIT):
+		return "steel"
+	if color.is_equal_approx(_WOOD_DARK) or color.is_equal_approx(_WOOD):
+		return "wood"
+	if color.is_equal_approx(_BRASS):
+		return "painted_metal"
+	if color.is_equal_approx(_FOAM):
+		return "plastic_worn"
+	return ""
+
+
 static func _material(color: Color, transparent: bool, emission_energy: float,
 		metallic: float) -> StandardMaterial3D:
 	var key := "%s:%s:%s:%s" % [color.to_html(true), transparent,
 		emission_energy, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if not transparent and emission_energy <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

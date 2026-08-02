@@ -71,6 +71,8 @@ const SHARED_WALL_FACE := WALL_THICKNESS
 # --- Palette ----------------------------------------------------------------
 # Service fittings, not gallery dressing: the museum's white marble is the
 # bright thing, everything screwed to it is nearly black.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const STEEL := Color(0.135, 0.140, 0.148)
 const STEEL_DARK := Color(0.060, 0.062, 0.066)
 ## The black behind a grille or an open hatch. Reads as a hole, not a surface.
@@ -694,6 +696,17 @@ static func _primitive(parent: Node, node_name: String, prim_position: Vector3,
 	return instance
 
 
+## Палитра коридоров -> набор карт. Знаки и огнетушитель — ровный цвет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(STEEL) or color.is_equal_approx(STEEL_DARK):
+		return "steel"
+	if color.is_equal_approx(RUBBER):
+		return "plastic_worn"
+	if color.is_equal_approx(BRASS):
+		return "painted_metal"
+	return ""
+
+
 static func _material(color: Color, transparent: bool,
 		emission_energy: float = 0.0,
 		metallic: float = 0.0) -> StandardMaterial3D:
@@ -701,6 +714,13 @@ static func _material(color: Color, transparent: bool,
 		emission_energy, metallic]
 	if _materials.has(key):
 		return _materials[key]
+
+	if not transparent and emission_energy <= 0.0:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_materials[key] = photo
+			return photo
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color

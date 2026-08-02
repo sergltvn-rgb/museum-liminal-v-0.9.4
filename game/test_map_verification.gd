@@ -234,6 +234,23 @@ func _verify_blackout(map_root: Node, generated: Node) -> void:
 		_fail("Blackout: no player in the tree, the trigger can never fire")
 		return
 	paused = false
+	# The opening chain (arrival drive -> prologue -> intro) may be in flight
+	# on a profile that has not seen it yet, and FirstMuseumMap._process()
+	# deliberately stays out of the way while any cutscene plays -- so the
+	# blackout could never fire, however long this check waited. End the chain
+	# the way a player would, piece by piece: each skip() finishes one
+	# cutscene, its finished-handler may start the next, so loop until the map
+	# has no playing Cutscene child left.
+	for _hop in range(8):
+		var opening: Cutscene = null
+		for child in map_root.get_children():
+			if child is Cutscene and (child as Cutscene).is_playing():
+				opening = child
+				break
+		if opening == null:
+			break
+		opening.skip()
+		await process_frame
 	player.global_position = Vector3(-25.0, 1.0, -1.0)
 	for _i in range(8):
 		await process_frame

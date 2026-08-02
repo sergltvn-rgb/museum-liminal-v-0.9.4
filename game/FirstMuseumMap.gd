@@ -25,6 +25,11 @@ var _materials: Dictionary = {}
 var _noise_texture: NoiseTexture2D = null
 var _bump_texture: NoiseTexture2D = null
 
+# Фототекстуры из textures/ (распакованы из наборов в models/).
+# Предзагрузка, а не глобальное имя: тесты ходят через --script, где
+# глобальные class_name могут быть ещё не зарегистрированы.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 
 # Rope barrier ring around an exhibit: posts with brass caps and a red rope.
 func _add_stanchions(parent: Node, center: Vector3, radius: float,
@@ -62,11 +67,11 @@ func _add_plant(parent: Node, plant_position: Vector3) -> void:
 
 func _box(parent: Node, node_name: String, box_position: Vector3, size: Vector3,
 		color: Color, emission_energy := 0.0, metallic := 0.0,
-		with_collision := true) -> MeshInstance3D:
+		with_collision := true, pack := "") -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	return _primitive(parent, node_name, box_position, mesh, size, color,
-		false, emission_energy, metallic, with_collision)
+		false, emission_energy, metallic, with_collision, pack)
 
 
 func _cylinder(parent: Node, node_name: String, cylinder_position: Vector3,
@@ -172,15 +177,22 @@ func _capsule(parent: Node, node_name: String, capsule_position: Vector3,
 		false, emission_energy, 0.0)
 
 
+# `pack` — имя набора фототекстур из MaterialLib.PACKS. Пустая строка —
+# старое поведение с ровным цветом, поэтому все старые вызовы живы.
+# Прозрачное и светящееся идёт мимо библиотеки: стеклу и лампам нужен
+# чистый цвет, а не рисунок камня поверх.
 func _primitive(parent: Node, node_name: String, prim_position: Vector3,
 		mesh: PrimitiveMesh, size: Vector3, color: Color, transparent: bool,
 		emission_energy: float, metallic: float,
-		with_collision := true) -> MeshInstance3D:
+		with_collision := true, pack := "") -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
 	instance.name = node_name
 	instance.position = prim_position
 	instance.mesh = mesh
-	instance.material_override = _material(color, transparent, emission_energy, metallic)
+	if pack.is_empty() or transparent or emission_energy > 0.0:
+		instance.material_override = _material(color, transparent, emission_energy, metallic)
+	else:
+		instance.material_override = MatLib.get_material(pack, color)
 	# Cull distant decorative geometry and avoid shadow-map work for tiny props.
 	instance.visibility_range_end = 115.0
 	instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -361,10 +373,18 @@ func _add_room(parent: Node, room_name: String, sign_key: String,
 	room.position = center
 	parent.add_child(room)
 
+	# Пол — фотоскан травертиновой плитки, подкрашенный цветом комнаты.
+	# Один набор карт обслуживает все одиннадцать комнат: порода камня
+	# общая, а тон разный — ровно так же, как в настоящем здании.
 	_box(room, "%s Floor" % room_name, Vector3(0, -0.08, 0),
-		Vector3(size.x, 0.16, size.y), floor_color)
+		Vector3(size.x, 0.16, size.y), floor_color, 0.0, 0.0, true,
+		"travertine")
+	# Потолок — тот же изношенный бетон, что и стены, но крупным масштабом:
+	# сверху игрок видит его под острым углом, и мелкая структура там всё
+	# равно не читается, а швы плит — читаются.
 	_box(room, "%s Ceiling Shadow" % room_name, Vector3(0, WALL_HEIGHT + 0.05, 0),
-		Vector3(size.x, 0.12, size.y), Color(0.80, 0.79, 0.76))
+		Vector3(size.x, 0.12, size.y), Color(0.80, 0.79, 0.76), 0.0, 0.0, true,
+		"concrete")
 
 	# White marble halls: light walls with a darker per-room accent stripe
 	# so rooms still read as distinct spaces.
@@ -411,7 +431,8 @@ func _horizontal_wall_with_gap(parent: Node, wall_name: String, z: float,
 	_wall_segment(parent, "%s Right Segment" % wall_name, Vector3(right_x, y, z),
 		Vector3(segment_width, WALL_HEIGHT, WALL_THICKNESS), color, accent)
 	_box(parent, "%s Door Lintel" % wall_name, Vector3(0, WALL_HEIGHT - 0.35, z),
-		Vector3(gap, 0.7, WALL_THICKNESS), color.darkened(0.08))
+		Vector3(gap, 0.7, WALL_THICKNESS), color.darkened(0.08), 0.0, 0.0, true,
+		"concrete")
 
 
 func _vertical_wall_with_gap(parent: Node, wall_name: String, x: float,
@@ -430,7 +451,8 @@ func _vertical_wall_with_gap(parent: Node, wall_name: String, x: float,
 	_wall_segment(parent, "%s Far Segment" % wall_name, Vector3(x, y, far_z),
 		Vector3(WALL_THICKNESS, WALL_HEIGHT, segment_depth), color, accent)
 	_box(parent, "%s Door Lintel" % wall_name, Vector3(x, WALL_HEIGHT - 0.35, 0),
-		Vector3(WALL_THICKNESS, 0.7, gap), color.darkened(0.08))
+		Vector3(WALL_THICKNESS, 0.7, gap), color.darkened(0.08), 0.0, 0.0, true,
+		"concrete")
 
 
 # One wall slab dressed with a baseboard, an accent stripe and a cornice so
@@ -438,18 +460,23 @@ func _vertical_wall_with_gap(parent: Node, wall_name: String, x: float,
 # skips doorway gaps because it is emitted per wall segment.
 func _wall_segment(parent: Node, seg_name: String, center: Vector3,
 		size: Vector3, color: Color, accent: Color) -> void:
-	_box(parent, seg_name, center, size, color)
+	_box(parent, seg_name, center, size, color, 0.0, 0.0, true, "concrete")
 	var trim_color := Color(0.05, 0.05, 0.048)
 	var along_x: bool = size.x > size.z
 	var base_size := Vector3(size.x, 0.22, size.z + 0.06) if along_x else Vector3(size.x + 0.06, 0.22, size.z)
 	var stripe_size := Vector3(size.x, 0.14, size.z + 0.04) if along_x else Vector3(size.x + 0.04, 0.14, size.z)
 	var crown_size := Vector3(size.x, 0.16, size.z + 0.06) if along_x else Vector3(size.x + 0.06, 0.16, size.z)
+	# Плинтус и карниз — тёмный дуб: это единственные полосы дерева, которые
+	# идут по всему периметру каждой комнаты, и именно они связывают столярку
+	# вестибюля с голыми стенами крыльев.
 	_box(parent, "%s Baseboard" % seg_name, Vector3(center.x, 0.11, center.z),
-		base_size, trim_color, 0.0, 0.0, false)
+		base_size, trim_color.lightened(0.35), 0.0, 0.0, false, "wood")
+	# Акцентная полоса остаётся цветовой меткой комнаты, но теперь это
+	# полированный кварцит, а не заливка одним тоном.
 	_box(parent, "%s Accent Stripe" % seg_name, Vector3(center.x, 1.25, center.z),
-		stripe_size, accent, 0.0, 0.0, false)
+		stripe_size, accent.lightened(0.28), 0.0, 0.0, false, "quartzite")
 	_box(parent, "%s Cornice" % seg_name, Vector3(center.x, WALL_HEIGHT - 0.14, center.z),
-		crown_size, trim_color, 0.0, 0.0, false)
+		crown_size, trim_color.lightened(0.35), 0.0, 0.0, false, "wood")
 
 
 # A door portal dressing the seam between two adjacent rooms: side jambs, a
@@ -1402,11 +1429,16 @@ func _add_entrance_details(parent: Node) -> void:
 	for x:float in [-2.75,2.75]:_glass_case(parent,"Стена тамбура %s" % ("запад" if x < 0.0 else "восток"),Vector3(x,1.45,31.9),Vector3(.10,2.9,4.8))
 	_box(parent,"Козырёк тамбура",Vector3(0,3.05,32),Vector3(5.6,.18,5),Color(.12,.13,.14),0,.45)
 	_box(parent,"Ковёр тамбура",Vector3(0,.02,32),Vector3(4.6,.03,3.4),Color(.24,.07,.065),0,0,false)
-	_box(parent,"Стойка приёма",Vector3(-7.2,.58,25.5),Vector3(5.4,1.16,1.25),Color(.18,.14,.10))
-	_box(parent,"Столешница приёма",Vector3(-7.2,1.19,25.5),Vector3(5.7,.08,1.45),Color(.10,.085,.07),0,.3)
-	_add_label(parent,tr("EXHIBIT_RECEPTION"),Vector3(-7.2,2.4,25.5),Color(.68,.64,.48))
-	_box(parent,"Шкафчики посетителей",Vector3(10.2,1.15,20),Vector3(1,2.3,4.8),Color(.16,.17,.18),0,.5)
-	_add_label(parent,tr("EXHIBIT_CLOAKROOM"),Vector3(8.3,2.75,24.8),Color(.54,.70,.72))
+	# Обстановку вестибюля собирает LobbyProps: Г-образная стойка приёма с
+	# рабочей поверхностью 0.75 и клиентской 1.10, служебная стенка за ней,
+	# лента очереди, гардероб с хатчем, киоск аудиогидов, навигация и зона
+	# ожидания. Ось x = 0 остаётся без коллайдеров: обе двери комнаты стоят
+	# на ней, а Куратор печёт навмеш с agent_radius 0.45.
+	LobbyProps.build_lobby(parent, Vector3(0, 0, 25), CEILING_SOFFIT_Y)
+	# Подписи остаются здесь, а не в библиотеке: tr() — метод экземпляра и из
+	# static-функции недоступен, а ключи уже лежат в каталоге локализации.
+	_add_label(parent,tr("EXHIBIT_RECEPTION"),Vector3(-6,2.52,25.99),Color(.68,.64,.48))
+	_add_label(parent,tr("EXHIBIT_CLOAKROOM"),Vector3(8.4,2.62,22.6),Color(.54,.70,.72))
 	_night_entrance_door=_box(parent,"Ночная дверь главного входа",Vector3(0,4.85,34.2),Vector3(5.6,3.05,.22),Color(.055,.06,.065),0,.75)
 	_add_label(parent,tr("EXHIBIT_MAIN_ENTRANCE"),Vector3(0,3.18,34),Color(.42,.64,.54))
 
@@ -2593,21 +2625,40 @@ func _add_outdoor(parent: Node) -> void:
 		Color(0.78, 0.77, 0.73))
 	_box(parent, "Entrance Plaza", Vector3(0, -0.005, 38.2), Vector3(17, 0.10, 5.6),
 		Color(0.70, 0.70, 0.68))
-	# These plates used to be a hump, not a stair. Their tops ran 0.100 (z 35.6),
-	# 0.160, 0.220 (z 36.4) while the plaza in front of them is 0.045 and the lobby
-	# floor behind them is 0.000: walking in meant climbing 0.175 and then
-	# immediately dropping 0.220, on ground the fiction calls flat. The lobby floor
-	# cannot be raised (the whole building sits on y=0) and any plate standing
-	# above the plaza rebuilds the hump, so the plates now sit FLUSH with the plaza
-	# at 0.045 and read as a porch by their lighter stone alone, widening outwards.
-	# Measured after the change: a ray walk from z 38.6 to the threshold reports
-	# 0.045 the whole way, step +0.000, and the body crosses in both directions
-	# without a single stuck frame.
-	for i in range(3):
-		_box(parent, "Entrance Step %d" % i,
-			Vector3(0, -0.015, 35.6 + float(i) * 0.4),
-			Vector3(5.6 + float(i) * 0.8, 0.12, 0.5),
-			Color(0.80 - float(i) * 0.02, 0.79 - float(i) * 0.02, 0.75 - float(i) * 0.02))
+	# These plates used to be a hump, not a stair (tops 0.100/0.160/0.220 over a
+	# 0.045 plaza and a 0.000 lobby floor). They are gone: the entrance is now a
+	# real perron built by FacadeProps.build_entrance_porch() with 0.105 m risers
+	# up to a 0.36 m stylobate deck, which PlayerController's step mechanics
+	# (step_height 0.38, floor_snap_length 0.38) climb and descend cleanly. The
+	# classical facade above it is built here too: both share the local origin
+	# (0, 0, 35), the centre of the Entrance Zone's street wall at ground level.
+	# Сначала объём здания, потом портик перед ним. BuildingShell оборачивает
+	# весь след комнат корпусами с цоколем, рустом, окнами, карнизами и
+	# вальмовыми крышами, ставит купол над атриумом и над планетарием.
+	# Геометрия без коллайдеров и вне группы museum_nav_source: игрок до неё не
+	# добирается (форкорт закрыт фасадом и стенами участка), а навмеш Куратора
+	# остаётся таким же, каким был.
+	# Земля под всем этим. До GroundsProps музей стоял в пустоте: "Forecourt
+	# Ground" покрывает только x -32..32, z 35..55, а луг набора для поездки
+	# начинается с x 32 -- западный фланг, весь юг и грунт под самим зданием
+	# были дырой, в которую и смотрели кадры с флангов и общий план. Территория
+	# строится первой, чтобы корпуса и портик легли поверх неё, и не несёт ни
+	# одного коллайдера: игрок за 1.2-метровые стены участка не выходит, а
+	# навмеш печётся по статическим телам, которых здесь нет.
+	GroundsProps.build_grounds(parent as Node3D)
+	BuildingShell.build_museum_shell(parent as Node3D)
+	FacadeProps.build_classical_facade(parent as Node3D, Vector3(0, 0, 35))
+	FacadeProps.build_entrance_porch(parent as Node3D, Vector3(0, 0, 35))
+
+	# А это -- сам парадный двор, то есть единственный кусок улицы, по
+	# которому игрок действительно ходит: спавн стоит в (0, 0.05, 46) лицом к
+	# портику. Поэтому здесь, в отличие от территории за оградой, всё высокое
+	# получает коллайдер (фонтан, столбы ворот, вазоны, болларды, бордюрный
+	# газон), а мощение -- нет: пол уже несут "Forecourt Ground", "Museum
+	# Walkway" и "Entrance Plaza", а плиты ложатся на 1-2 см выше них как
+	# чистая графика. Идёт ПОСЛЕ крыльца: площадка вымащивается с z 38.4,
+	# то есть вплотную к перрону, но ни одной плитой в его ступени не лезет.
+	GroundsProps.build_forecourt(parent as Node3D)
 
 	# Long planting beds frame the route without narrowing the playable path.
 	for side: float in [-1.0, 1.0]:
@@ -2656,17 +2707,13 @@ func _add_outdoor(parent: Node) -> void:
 				Vector3(ex, 0.82, 43.86), Vector3(0.10, 0.62, 0.09),
 				Color(0.20, 0.16, 0.12))
 
-	_box(parent, "Museum Sign", Vector3(0, 3.5, 35.2), Vector3(7.8, 1.0, 0.3),
-		Color(0.16, 0.18, 0.22))
-	# The facade sign read "NATURAL PHILOSOPHY MUSEUM" -- an untranslated English
-	# literal naming a building this game does not contain. The museum is THE
-	# FIRST MUSEUM / ПЕРВЫЙ МУЗЕЙ everywhere else: the main menu, the protocol
-	# header, the intro caption. It matters more now than it did, because the
-	# prologue's first three shots are aimed straight at this sign.
-	# z 35.4, not 35.0: the sign box above spans z 35.05..35.35, so the old
-	# position put the museum's own name *inside* the board and nobody could
-	# read it from the forecourt. 0.05 m clear of the street-facing face.
-	_add_label(parent, tr("EXHIBIT_MUSEUM_SIGN"), Vector3(0, 3.5, 35.4),
+	# The sign board itself is part of the facade now: FacadeProps._sign_board()
+	# centres a 6.8 x 0.55 board named "Museum Sign" on the portico frieze, its
+	# street face at z 37.34. The label keeps the museum's actual name -- THE
+	# FIRST MUSEUM / ПЕРВЫЙ МУЗЕЙ, as on the main menu, the protocol header and
+	# the intro caption -- and hangs 0.05 m clear of the board's face so the
+	# prologue shots aimed at the facade can read it from the forecourt.
+	_add_label(parent, tr("EXHIBIT_MUSEUM_SIGN"), Vector3(0, 5.72, 37.39),
 		Color(0.92, 0.89, 0.78))
 
 	# Low perimeter walls keep the composition bounded while preserving the
@@ -2736,11 +2783,15 @@ func _add_street_extras(parent: Node) -> void:
 			2.2, Color(0.30, 0.22, 0.14))
 		_cone(parent, "Street Tree Crown %s" % [tree_pos], tree_pos + Vector3(0, 3.3, 0), 1.5, 0.15,
 			2.4, Color(0.18, 0.31, 0.16))
-	for fx: float in [-5.4, 5.4]:
+	# The flags used to stand at (+-5.4, z 36.8), which the classical facade now
+	# occupies: the portico's outer columns rise at x +-5.1, z 36.9 and the porch
+	# cheek parapets run out to x +-6.4. Moved onto the formal lawns (beds span
+	# x 4..17, z 38..52), a metre clear of the parapets' street ends at z 38.9.
+	for fx: float in [-9.2, 9.2]:
 		var flag_tag: String = "West" if fx < 0.0 else "East"
-		_cylinder(parent, "Flag Pole %s" % flag_tag, Vector3(fx, 2.5, 36.8), 0.05, 5.0,
+		_cylinder(parent, "Flag Pole %s" % flag_tag, Vector3(fx, 2.5, 39.9), 0.05, 5.0,
 			Color(0.60, 0.62, 0.66))
-		_box(parent, "Flag %s" % flag_tag, Vector3(fx + 0.5, 4.55, 36.8), Vector3(0.9, 0.5, 0.04),
+		_box(parent, "Flag %s" % flag_tag, Vector3(fx + 0.5, 4.55, 39.9), Vector3(0.9, 0.5, 0.04),
 			Color(0.30, 0.42, 0.72) if fx < 0.0 else Color(0.72, 0.50, 0.30),
 			0.15, 0.0, false)
 
@@ -2792,6 +2843,143 @@ func _add_street_extras(parent: Node) -> void:
 		Color(0.86, 0.90, 0.80))
 
 
+## The countryside the arrival drive (see _drive_shots) is filmed in: a
+## continuation of the street east past the lot wall, with forest on both
+## sides, mountain ranges on the horizon, a river under a road bridge, lamp
+## rows, a bus stop and the staff parking lot butted against the forecourt.
+##
+## STRICTLY SET DRESSING. Nothing here carries a collider -- ExteriorProps
+## never builds them and every map _box below passes with_collision = false --
+## so the navmesh bake and the physics world are untouched, and the 1.2 m lot
+## walls (unclimbable, see _add_outdoor) keep the player out of the set on
+## foot. Distances do the rest: the set starts behind Lot Wall East at
+## x 31.5 and runs to x ~270.
+##
+## SURFACE HEIGHTS, chosen against z-fighting: meadow top -0.03; road and
+## bridge deck top 0.01 (same as Street Road); parking slab top 0.005; every
+## painted line floats >= 6 mm above its slab; props sink 2-5 cm into the
+## ground so no bottom face is coplanar with a top face.
+func _add_drive_set(parent: Node) -> void:
+	var set_root := Node3D.new()
+	set_root.name = "Driving Set"
+	parent.add_child(set_root)
+
+	# Ground planes. Never culled: they are under or behind every drive shot.
+	# South slab x 32..272, z 24..150 reaches the far mountain feet; north slab
+	# x 64..300, z -28..24 starts east of Mass Wing D (which ends at x 63).
+	var meadow := _box(set_root, "Drive Meadow", Vector3(152, -0.09, 87),
+		Vector3(240, 0.12, 126), ExteriorProps.COL_GRASS, 0.0, 0.0, false)
+	meadow.visibility_range_end = 0.0
+	var meadow_north := _box(set_root, "Drive Meadow North", Vector3(182, -0.09, -2),
+		Vector3(236, 0.12, 52), ExteriorProps.COL_GRASS, 0.0, 0.0, false)
+	meadow_north.visibility_range_end = 0.0
+
+	# The road continues Street Road's centreline (z 59, 8 m wide, top 0.01)
+	# east in two spans with the bridge carrying the x 146..154 gap.
+	for span: Array in [[89.0, 114.0, "West"], [208.0, 108.0, "East"]]:
+		var road := _box(set_root, "Drive Road %s" % span[2],
+			Vector3(span[0], -0.095, 59), Vector3(span[1], 0.21, 8),
+			ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
+		road.visibility_range_end = 0.0
+		for side: float in [-1.0, 1.0]:
+			var shoulder := _box(set_root,
+				"Drive Shoulder %s %s" % [span[2], "North" if side < 0.0 else "South"],
+				Vector3(span[0], -0.06, 59.0 + side * 4.35),
+				Vector3(span[1], 0.12, 0.7), ExteriorProps.COL_SHOULDER,
+				0.0, 0.0, false)
+			shoulder.visibility_range_end = 0.0
+	# Centreline dashes float 6 mm over the road surface; none on the bridge.
+	var dash_index := 0
+	var dash_x := 40.0
+	while dash_x < 256.0:
+		if dash_x < 144.0 or dash_x > 156.0:
+			_box(set_root, "Drive Road Dash %d" % dash_index,
+				Vector3(dash_x, 0.022, 59), Vector3(2.4, 0.012, 0.18),
+				ExteriorProps.COL_MARKING, 0.0, 0.0, false)
+			dash_index += 1
+		dash_x += 10.0
+
+	# River south from the road, under the bridge; banks and rocks come with it.
+	ExteriorProps.build_river(set_root, Vector3(150, -0.02, 24), 82.0, 5.6, 71)
+	ExteriorProps.build_bridge(set_root, Vector3(150, 0, 59), 8.0, 8.0)
+
+	# Mountain backdrop: three southern planes and two northern, each further
+	# one taller, lighter and hazier (tone 2 carries snow caps). The northern
+	# pair starts at x >= 70 so no ridge leans over Mass Wing D (x 41..63).
+	ExteriorProps.build_mountain_range(set_root, Vector3(60, -0.05, 96), 200.0, 0, 11)
+	ExteriorProps.build_mountain_range(set_root, Vector3(40, -0.05, 112), 240.0, 1, 12)
+	ExteriorProps.build_mountain_range(set_root, Vector3(20, -0.05, 132), 280.0, 2, 13)
+	ExteriorProps.build_mountain_range(set_root, Vector3(70, -0.05, 12), 200.0, 1, 14)
+	ExteriorProps.build_mountain_range(set_root, Vector3(80, -0.05, -2), 220.0, 2, 15)
+
+	# Forest: two bands flanking the road, species cycled and every tree
+	# seeded, so neither band reads as a clone row. The x 143..157 window is
+	# left open for the river, and nothing grows on the parking lot (x <= 53).
+	var scatter := RandomNumberGenerator.new()
+	scatter.seed = 20260731
+	var tree_index := 0
+	for i in range(26):  # north band, between road and north meadow edge
+		var tx := 58.0 + float(i) * 7.5 + scatter.randf_range(-2.2, 2.2)
+		var tz := scatter.randf_range(34.0, 50.0)
+		if tx < 143.0 or tx > 157.0:
+			_add_drive_tree(set_root, tree_index, Vector3(tx, -0.05, tz))
+		tree_index += 1
+	for i in range(24):  # south band, between road and the near ridge
+		var tx := 60.0 + float(i) * 8.0 + scatter.randf_range(-2.5, 2.5)
+		var tz := scatter.randf_range(66.0, 86.0)
+		if tx < 143.0 or tx > 157.0:
+			_add_drive_tree(set_root, tree_index, Vector3(tx, -0.05, tz))
+		tree_index += 1
+	# A pair of birches softens the lot's east edge without shading the bays.
+	ExteriorProps.build_birch(set_root, Vector3(54.5, -0.05, 44.0), 300)
+	ExteriorProps.build_birch(set_root, Vector3(56.5, -0.05, 50.0), 301)
+
+	# Lamp rows, lanterns turned to face the road from either side. The two
+	# westernmost northern posts stand on the parking slab (top 0.005).
+	for i in range(7):
+		var lx := 38.0 + float(i) * 15.0
+		ExteriorProps.build_lamp_post(set_root,
+			Vector3(lx, 0.005 if lx <= 53.0 else -0.05, 53.9), 180.0)
+	for i in range(7):
+		ExteriorProps.build_lamp_post(set_root,
+			Vector3(45.0 + float(i) * 15.0, -0.05, 64.1), 0.0)
+
+	# Bus stop on the museum side of the road, opening turned to the kerb.
+	ExteriorProps.build_bus_stop(set_root, Vector3(75, -0.05, 51.6), 180.0)
+
+	# Staff parking, butted against Lot Wall East (x 31.5) so it reads as the
+	# museum's own yard: slab, kerb, five painted bays, two staff cars and the
+	# player's sedan in the middle bay -- the drive cutscene's moving prop.
+	var lot := _box(set_root, "Museum Parking Lot", Vector3(42.4, -0.03, 46.5),
+		Vector3(21.2, 0.07, 17.0), ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
+	lot.visibility_range_end = 0.0
+	_box(set_root, "Parking Kerb", Vector3(42.4, 0.03, 38.2),
+		Vector3(21.2, 0.12, 0.4), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
+	for i in range(5):
+		_box(set_root, "Parking Bay Line %d" % i,
+			Vector3(36.0 + float(i) * 3.0, 0.017, 41.8),
+			Vector3(0.12, 0.012, 5.6), ExteriorProps.COL_BAY_LINE,
+			0.1, 0.0, false)
+	ExteriorProps.build_parked_car(set_root, Vector3(37.5, 0.005, 42.6),
+		Color(0.25, 0.30, 0.40), 0.0)
+	ExteriorProps.build_parked_car(set_root, Vector3(46.5, 0.005, 42.6),
+		Color(0.38, 0.20, 0.18), 0.0)
+	ExteriorProps.build_player_car(set_root, DRIVE_CAR_PARKED_POS,
+		DRIVE_CAR_PARKED_YAW)
+
+
+## Species cycle for _add_drive_set's forest bands. The seed is the running
+## tree index, so replanting the bands never reshuffles every tree at once.
+func _add_drive_tree(set_root: Node3D, index: int, origin: Vector3) -> void:
+	match index % 3:
+		0:
+			ExteriorProps.build_oak(set_root, origin, 100 + index)
+		1:
+			ExteriorProps.build_pine(set_root, origin, 100 + index)
+		_:
+			ExteriorProps.build_birch(set_root, origin, 100 + index)
+
+
 ## NO LONGER CALLED. The containment dome is built by AtriumProps.build_atrium()
 ## now, and that file applies the shader itself through an identical
 ## ResourceLoader.exists() guard chain, so this function has no call site left in
@@ -2835,6 +3023,20 @@ func _apply_dome_shader(dome: MeshInstance3D) -> void:
 # The cutscene currently on screen, or null. Runtime only; freed by itself.
 var _cutscene: Cutscene = null
 
+# The arrival drive's moving prop and its animation state. The car is the
+# "Player Car" node ExteriorProps parks on the staff lot (_add_drive_set);
+# during the drive cutscene _sync_drive_car() moves it along _drive_track in
+# step with Cutscene's own clock. All three are runtime only.
+var _drive_car: Node3D = null
+var _drive_track: Array = []
+var _drive_playing := false
+
+# Where the sedan stands whenever it is not being driven: the middle bay of
+# the staff lot, nose to the museum. _add_drive_set builds it here, and
+# _on_drive_finished snaps it back here so a skip cannot strand it mid-road.
+const DRIVE_CAR_PARKED_POS := Vector3(43.5, 0.005, 42.6)
+const DRIVE_CAR_PARKED_YAW := 0.0
+
 # --- When a cutscene is allowed to play --------------------------------------
 # Both files belong to other scripts and are only read here (the two seen flags
 # are the exception, see _mark_seen). Paths are
@@ -2866,6 +3068,12 @@ func _intro_should_play() -> bool:
 ## player who already has intro/seen set still gets to show it once.
 func _prologue_should_play() -> bool:
 	return _intro_saved_night() <= 1 and not _seen_flag("story", "prologue_seen")
+
+
+## The arrival drive opens the whole chain and carries its own flag for the
+## same reason the prologue does: each piece must be retirable on its own.
+func _drive_should_play() -> bool:
+	return _intro_saved_night() <= 1 and not _seen_flag("story", "drive_seen")
 
 
 func _intro_saved_night() -> int:
@@ -2911,6 +3119,19 @@ func _start_opening() -> void:
 	# guards, and it is why the old _start_intro() bailed on a null player too.
 	if get_tree().get_first_node_in_group("player") == null:
 		return
+	# The arrival drive comes first: the player pulls up outside before the
+	# prologue explains what is inside. It needs its moving prop, so a layout
+	# that lost the "Player Car" node (an edited serialized scene, or an old
+	# save of GeneratedMap from before the driving set existed) degrades to
+	# the prologue instead of playing a drive with an invisible car.
+	if _drive_should_play():
+		var generated := get_node_or_null("GeneratedMap")
+		if generated != null:
+			_drive_car = generated.find_child("Player Car", true, false) as Node3D
+		if _drive_car != null:
+			_drive_playing = true
+			_play(_drive_shots(), _on_drive_finished)
+			return
 	if _prologue_should_play():
 		_play(_prologue_shots(), _on_prologue_finished)
 	elif _intro_should_play():
@@ -2928,6 +3149,22 @@ func _play(shots: Array, on_finished: Callable) -> void:
 	_cutscene.start(shots)
 
 
+func _on_drive_finished(_skipped: bool) -> void:
+	_cutscene = null
+	_drive_playing = false
+	_mark_seen("story", "drive_seen")
+	# Whether the drive ran out or was skipped at the first frame, the fiction
+	# afterwards is the same: the car stands in its bay. Snap it there so the
+	# prologue's forecourt shots never catch it hanging halfway down the road.
+	if is_instance_valid(_drive_car):
+		_drive_car.position = DRIVE_CAR_PARKED_POS
+		_drive_car.rotation.y = deg_to_rad(DRIVE_CAR_PARKED_YAW)
+	if _prologue_should_play():
+		_play(_prologue_shots(), _on_prologue_finished)
+	elif _intro_should_play():
+		_play(_intro_shots(), _on_intro_finished)
+
+
 func _on_prologue_finished(_skipped: bool) -> void:
 	_cutscene = null
 	_mark_seen("story", "prologue_seen")
@@ -2941,6 +3178,105 @@ func _on_prologue_finished(_skipped: bool) -> void:
 func _on_intro_finished(_skipped: bool) -> void:
 	_cutscene = null
 	_mark_seen("intro")
+
+
+# --- The arrival drive ---------------------------------------------------------
+
+
+## 30 s, once per save: the drive down the country road _add_drive_set builds
+## east of the museum. Three POV shots from behind the wheel (the camera sits
+## at ExteriorProps.DRIVER_EYE inside the sedan's furnished cabin, so the
+## dashboard, wheel and hood frame every one of them), then two exterior
+## shots: the car turning into its bay, and the facade reveal that hands the
+## frame over to the prologue's opening card on the same building.
+##
+## The car is not animated by this list -- Cutscene owns nothing but the
+## camera. _drive_track below is the same six moves written as car poses;
+## _sync_drive_car() replays it every frame from Cutscene.elapsed() with the
+## same smoothstep, so in the POV shots the cabin cannot drift off the lens:
+## each shot's camera endpoints ARE its track segment's endpoints plus the
+## rotated eye offset, computed right here so the numbers live in one place.
+##
+## Track geography (see _add_drive_set): the car rolls west down the road
+## lane at z 57.2 from deep in the forest (x 236), crosses the river bridge
+## at x 150 during the second shot, passes the bus stop (x 75) and the lamp
+## rows in the third, then swings off the road into the middle parking bay.
+## Shot cuts hide the two small pose jumps between segments 2->3 and 3->4.
+func _drive_shots() -> Array:
+	_drive_track = [
+		{"t0": 0.0, "t1": 6.5, "from": Vector3(236, 0.01, 57.2),
+			"to": Vector3(168, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 6.5, "t1": 13.0, "from": Vector3(168, 0.01, 57.2),
+			"to": Vector3(134, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 13.0, "t1": 19.0, "from": Vector3(124, 0.01, 57.2),
+			"to": Vector3(62, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 19.0, "t1": 22.2, "from": Vector3(58, 0.01, 57.2),
+			"to": Vector3(46.5, 0.01, 49.5), "yaw0": 90.0, "yaw1": 40.0},
+		{"t0": 22.2, "t1": 24.5, "from": Vector3(46.5, 0.01, 49.5),
+			"to": DRIVE_CAR_PARKED_POS, "yaw0": 40.0,
+			"yaw1": DRIVE_CAR_PARKED_YAW},
+		{"t0": 24.5, "t1": 30.0, "from": DRIVE_CAR_PARKED_POS,
+			"to": DRIVE_CAR_PARKED_POS, "yaw0": DRIVE_CAR_PARKED_YAW,
+			"yaw1": DRIVE_CAR_PARKED_YAW},
+	]
+	# Driver's eye in world terms while the car points west (yaw 90): the POV
+	# camera rides exactly there, so the wheel sits low-left and the hood low
+	# in frame, the way build_player_car framed its cabin for DRIVER_EYE.
+	var eye: Vector3 = ExteriorProps.DRIVER_EYE.rotated(Vector3.UP, deg_to_rad(90.0))
+	return [
+		# Deep forest, both tree bands closing over the road, mountains past
+		# them on either side. The look point is the far road axis so the
+		# whole move reads as driving, not floating.
+		{"from": (_drive_track[0]["from"] as Vector3) + eye,
+			"to": (_drive_track[0]["to"] as Vector3) + eye,
+			"look": Vector3(40, 1.0, 57.2), "text": "STORY_DRIVE_01",
+			"time": 6.5, "card": false},
+		# Over the river bridge at x 150; the glance goes ahead-left, down the
+		# water towards the southern ranges, while the parapets sweep past.
+		{"from": (_drive_track[1]["from"] as Vector3) + eye,
+			"to": (_drive_track[1]["to"] as Vector3) + eye,
+			"look": Vector3(60, 2.0, 78.0), "text": "STORY_DRIVE_02",
+			"time": 6.5, "card": false},
+		# Past the bus stop (x 75) and down both lamp rows, museum end of the
+		# road. Eyes back on the road: the look point is the street ahead.
+		{"from": (_drive_track[2]["from"] as Vector3) + eye,
+			"to": (_drive_track[2]["to"] as Vector3) + eye,
+			"look": Vector3(0, 1.2, 57.0), "text": "STORY_DRIVE_03",
+			"time": 6.0, "card": false},
+		# Exterior: a static camera on the lot watches the sedan swing off the
+		# road and settle into the middle bay between the two staff cars.
+		{"from": Vector3(36.5, 1.9, 50.5), "to": Vector3(36.5, 1.9, 50.5),
+			"look": Vector3(44.0, 0.8, 46.0), "text": "STORY_DRIVE_04",
+			"time": 5.5, "card": false},
+		# The reveal: up over the lot wall and across the forecourt onto the
+		# facade, the same (0, 4.2, 35) aim the museum intro opens with.
+		{"from": Vector3(33, 2.4, 47.5), "to": Vector3(14, 4.0, 51),
+			"look": Vector3(0, 4.2, 35), "text": "STORY_DRIVE_05",
+			"time": 5.5, "card": false},
+	]
+
+
+## Poses the sedan for the current cutscene instant. Called from _process
+## while the drive plays; reads Cutscene.elapsed() -- the same clamped clock
+## the camera is posed from -- and applies the same smoothstep, so car and
+## camera can never drift apart, not even under a hitchy frame.
+func _sync_drive_car() -> void:
+	if not _drive_playing or _drive_track.is_empty():
+		return
+	if not is_instance_valid(_drive_car) or not is_instance_valid(_cutscene):
+		return
+	var t: float = _cutscene.elapsed()
+	var seg: Dictionary = _drive_track.back()
+	for candidate: Dictionary in _drive_track:
+		if t <= float(candidate["t1"]):
+			seg = candidate
+			break
+	var span: float = maxf(float(seg["t1"]) - float(seg["t0"]), 0.001)
+	var k: float = clampf((t - float(seg["t0"])) / span, 0.0, 1.0)
+	k = k * k * (3.0 - 2.0 * k)  # Cutscene._apply()'s easing, kept identical.
+	_drive_car.position = (seg["from"] as Vector3).lerp(seg["to"] as Vector3, k)
+	_drive_car.rotation.y = lerp_angle(
+		deg_to_rad(float(seg["yaw0"])), deg_to_rad(float(seg["yaw1"])), k)
 
 
 # --- The prologue ------------------------------------------------------------
@@ -3040,16 +3376,19 @@ func _prologue_shots() -> Array:
 # --- The museum intro --------------------------------------------------------
 
 
-## Three 4.5 s camera shots on the forecourt, 13.5 s in total, unchanged from
-## the day they were authored except that the STORY_PROLOGUE title card that
-## used to open them now closes the prologue instead (see _prologue_shots).
+## Three 4.5 s camera shots on the forecourt, 13.5 s in total. The look
+## targets track the classical facade (FacadeProps): the establishing shot
+## takes in the whole order up to the pediment, the second reads the sign
+## board on the portico frieze, the third stays at the door. The STORY_PROLOGUE
+## title card that used to open them now closes the prologue instead (see
+## _prologue_shots).
 func _intro_shots() -> Array:
 	return [
 		{"from": Vector3(26, 13, 63), "to": Vector3(15, 9, 58),
-			"look": Vector3(0, 3.0, 35), "text": "HUD_INTRO_MUSEUM",
+			"look": Vector3(0, 4.2, 35), "text": "HUD_INTRO_MUSEUM",
 			"time": 4.5, "card": false},
 		{"from": Vector3(-12, 1.5, 53), "to": Vector3(-5, 1.7, 48),
-			"look": Vector3(0, 3.4, 35.2), "text": "HUD_INTRO_FIRST_NIGHT",
+			"look": Vector3(0, 5.72, 37.3), "text": "HUD_INTRO_FIRST_NIGHT",
 			"time": 4.5, "card": false},
 		{"from": Vector3(0, 2.4, 53), "to": Vector3(0, 1.75, 46.6),
 			"look": Vector3(0, 1.8, 35), "text": "HUD_INTRO_CHECK_HALLS",
@@ -3185,6 +3524,9 @@ func _process(delta: float) -> void:
 	# fires on the player's position, and the player is parked at the spawn with
 	# controls disabled for the whole opening.
 	if is_instance_valid(_cutscene) and _cutscene.is_playing():
+		# ...except for the arrival drive's one moving prop, which must track
+		# that camera frame for frame. A no-op outside the drive.
+		_sync_drive_car()
 		return
 	if not _blackout_done:
 		_check_blackout()
@@ -3321,6 +3663,7 @@ func build_map() -> void:
 	_add_light_fittings(map_root)
 	_add_outdoor(map_root)
 	_add_street_extras(map_root)
+	_add_drive_set(map_root)
 	_add_cameras(map_root)
 	_add_locked_doors(map_root)
 	_add_player_spawn(map_root)

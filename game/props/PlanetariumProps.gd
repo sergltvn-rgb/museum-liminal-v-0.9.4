@@ -44,6 +44,8 @@ extends RefCounted
 # Night museum with the power failing: everything is a value, not a hue. The
 # dust sheet over the projector is the single light-valued mass in the room, so
 # it owns the silhouette; nothing else competes with it.
+const MatLib := preload("res://game/props/MaterialLib.gd")
+
 const CONCRETE := Color(0.20, 0.20, 0.21)
 const CONCRETE_DARK := Color(0.14, 0.14, 0.15)
 ## Step nosings are lighter in VALUE, not in hue -- the edge of a 0.45 m drop
@@ -574,12 +576,35 @@ static func _primitive(parent: Node3D, node_name: String, pos: Vector3,
 	return instance
 
 
+## Палитра планетария -> набор карт. Двусторонние поверхности (внутренность
+## купола) идут мимо: им нужен cull_disabled, которого в библиотеке нет.
+static func _pack_for(color: Color) -> String:
+	if color.is_equal_approx(CONCRETE) or color.is_equal_approx(CONCRETE_DARK) \
+			or color.is_equal_approx(BOOTH_WALL) or color.is_equal_approx(BOOTH_TRIM):
+		return "concrete"
+	if color.is_equal_approx(NOSING) or color.is_equal_approx(SHROUD):
+		return "quartzite"
+	if color.is_equal_approx(DOME_PANEL) or color.is_equal_approx(DOME_RIB) \
+			or color.is_equal_approx(DOME_RIM) or color.is_equal_approx(MACHINE_STEEL) \
+			or color.is_equal_approx(MACHINE_DARK) or color.is_equal_approx(SEAT_FRAME):
+		return "steel"
+	if color.is_equal_approx(BRASS):
+		return "painted_metal"
+	return ""
+
+
 static func _material(color: Color, metallic: float,
 		two_sided: bool) -> StandardMaterial3D:
 	var key := "%s|%.2f|%s" % [color.to_html(true), metallic, two_sided]
 	var cached: StandardMaterial3D = _mats.get(key)
 	if cached != null:
 		return cached
+	if not two_sided:
+		var pack := _pack_for(color)
+		if not pack.is_empty():
+			var photo := MatLib.get_material(pack, color)
+			_mats[key] = photo
+			return photo
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	# Matte by default. A gloss highlight on a prop in a dark room draws the eye
