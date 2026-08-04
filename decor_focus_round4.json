@@ -1,0 +1,16 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_round4",
+  "tiles": 1,
+  "settle": 40,
+  "frames": 3,
+  "shots": [
+    {"name":"lab_exhibit_sheet_v4","pos":[-25.0,1.65,20.5],"look_at":[-25.0,1.30,24.0],"fov":42},
+    {"name":"lab_exhibit_sheet_v4_east","pos":[-21.9,1.75,24.0],"look_at":[-25.0,1.35,24.0],"fov":42},
+    {"name":"lab_exhibit_sheet_v4_west","pos":[-28.1,1.75,24.0],"look_at":[-25.0,1.35,24.0],"fov":42},
+    {"name":"lab_exhibit_sheet_v4_high","pos":[-22.8,2.30,21.0],"look_at":[-25.0,1.35,24.0],"fov":46},
+    {"name":"player_car_medium","pos":[18.2,2.70,65.0],"look_at":[8.5,0.80,56.2],"fov":56},
+    {"name":"player_car_medium_wide","pos":[18.2,2.70,65.0],"look_at":[8.5,0.80,56.2],"fov":60},
+    {"name":"vents_oblique","pos":[-12.2,2.10,-7.2],"look_at":[-15.1,2.55,-5.5],"fov":34}
+  ]
+}

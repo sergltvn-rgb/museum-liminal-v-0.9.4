@@ -98,15 +98,20 @@ const SIGN_CENTRE := Vector3(0.0, 5.72, 2.31)
 # (the porch lanterns and the door sconces) so the entrance reads at night.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+# Фасад — единственное место, где камень светлее роли: тут `tone()` идёт
+# в плюс, а не в минус. Объявлено `static var`: вызов функции не константен.
+const Pal := preload("res://game/props/Palette.gd")
 
-const COL_STONE := Color(0.75, 0.73, 0.70)
-const COL_PLINTH := Color(0.55, 0.53, 0.50)
-const COL_MOLDING := Color(0.82, 0.80, 0.77)
-const COL_RECESS := Color(0.44, 0.43, 0.41)
-const COL_GLASS := Color(0.05, 0.06, 0.08)
-const COL_MUNTIN := Color(0.22, 0.20, 0.17)
-const COL_SIGN_BOARD := Color(0.16, 0.18, 0.22)
-const COL_BRONZE := Color(0.35, 0.30, 0.20)
+static var COL_STONE := Pal.tone(Pal.STONE, 0.40)
+static var COL_PLINTH := Pal.tone(Pal.STONE, -0.05)
+static var COL_MOLDING := Pal.tone(Pal.STONE, 0.57)
+static var COL_RECESS := Pal.tone(Pal.STONE, -0.24)
+static var COL_GLASS := Pal.tone(Pal.SHELL, -0.20)
+static var COL_MUNTIN := Pal.tone(Pal.WOOL, -0.27)
+static var COL_SIGN_BOARD := Pal.tone(Pal.SLATE, -0.45)
+static var COL_BRONZE := Pal.tone(Pal.BRASS, -0.30)
 const COL_LAMP_GLOW := Color(0.95, 0.83, 0.55)
 
 # --- Static caches ------------------------------------------------------------
@@ -300,7 +305,7 @@ static func _material(color: Color, transparent: bool,
 
 	# Enough grain that night-lit limestone is not a flat swatch, not so much
 	# that it turns into television static.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _shared_roughness_noise()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

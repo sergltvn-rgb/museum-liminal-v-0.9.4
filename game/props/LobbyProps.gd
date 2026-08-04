@@ -56,20 +56,29 @@ const VISIBILITY_RANGE := 44.0
 
 # Palette. Warm stone and dark walnut for the joinery, cold steel for the
 # fittings: the lobby should feel like a civic building that is still trying.
-const STONE := Color(0.60, 0.58, 0.55)
-const STONE_DARK := Color(0.42, 0.41, 0.39)
-const WOOD := Color(0.20, 0.14, 0.095)
-const WOOD_LIGHT := Color(0.33, 0.23, 0.15)
-const STEEL_DARK := Color(0.16, 0.17, 0.18)
-const STEEL := Color(0.42, 0.44, 0.46)
-const BRASS := Color(0.50, 0.40, 0.19)
-const PANEL := Color(0.072, 0.076, 0.082)
-const SIGN_TEXT := Color(0.82, 0.86, 0.84)
-const SCREEN := Color(0.12, 0.26, 0.30)
-const FELT := Color(0.24, 0.07, 0.065)
-const ROPE := Color(0.32, 0.09, 0.09)
-const PAPER := Color(0.74, 0.72, 0.66)
-const LEAF := Color(0.14, 0.26, 0.13)
+# Цвета взяты из общей палитры (game/props/Palette.gd), а не подобраны здесь.
+# Имена оставлены прежними: остальной файл не тронут, меняются только
+# сами значения. Сталь и камень были почти серыми — теперь у них есть
+# синеватый и бежевый уклон канона; экран был голубым (0.12, 0.26, 0.30) —
+# восьмой цвет мимо палитры, стал болотно-зелёным.
+# Через preload, а не через имя класса Palette: глобальное имя класса для
+# парсера не является константным выражением, а preload — является.
+const Pal := preload("res://game/props/Palette.gd")
+
+const STONE := Pal.STONE
+const STONE_DARK := Pal.STONE_DARK
+const WOOD := Pal.WOOD
+const WOOD_LIGHT := Pal.WOOD_LIGHT
+const STEEL_DARK := Pal.STEEL_DARK
+const STEEL := Pal.STEEL
+const BRASS := Pal.BRASS
+const PANEL := Pal.PANEL
+const SIGN_TEXT := Pal.SIGN_TEXT
+const SCREEN := Pal.SCREEN
+const FELT := Pal.FELT
+const ROPE := Pal.ROPE
+const PAPER := Pal.PAPER
+const LEAF := Pal.LEAF
 
 # Front-of-house ergonomics, all in metres.
 const COUNTER_TOP := 1.10   # visitor side transaction surface

@@ -1,0 +1,31 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_round3",
+  "tiles": 1,
+  "settle": 40,
+  "frames": 3,
+  "shots": [
+    {"name":"lab_exhibit_sheet_v3","pos":[-25.0,1.65,20.5],"look_at":[-25.0,1.30,24.0],"fov":42},
+    {"name":"lab_exhibit_sheet_v3_east","pos":[-21.9,1.75,24.0],"look_at":[-25.0,1.35,24.0],"fov":42},
+    {"name":"lab_covered_west_v3","pos":[-25.7,1.35,22.8],"look_at":[-28.6,0.55,25.4],"fov":42},
+    {"name":"lab_covered_east_v3","pos":[-20.8,1.35,20.8],"look_at":[-17.1,0.72,23.0],"fov":44},
+
+    {"name":"tray_final","pos":[-30.7,1.55,19.0],"look_at":[-31.5,0.98,18.1],"fov":26},
+    {"name":"flashlight_final","pos":[-23.4,1.65,-0.85],"look_at":[-24.35,0.767,-1.78],"fov":24},
+    {"name":"vents_final","pos":[-12.0,2.4,-5.87],"look_at":[-15.1,2.55,-5.5],"fov":32},
+    {"name":"clock_final","pos":[-9.2,2.3,-18.0],"look_at":[-12.59,1.95,-18.0],"fov":30},
+    {"name":"hose_final","pos":[-11.0,1.15,-4.69],"look_at":[-14.23,0.80,-4.69],"fov":32},
+
+    {"name":"player_car_final","pos":[20.0,3.0,67.0],"look_at":[8.5,0.80,56.2],"fov":58},
+    {"name":"player_car_final_wide","pos":[22.0,3.4,69.0],"look_at":[8.5,0.80,56.2],"fov":62},
+
+    {"name":"exit_final","pos":[-2.6,2.3,-12.0],"look_at":[-2.6,2.25,-14.65],"fov":22},
+    {"name":"exit_final_oblique","pos":[-0.2,2.45,-11.8],"look_at":[-2.6,2.25,-14.65],"fov":28},
+    {"name":"emergency_final","pos":[-3.5,2.60,-11.8],"look_at":[-3.5,2.60,-14.65],"fov":20},
+    {"name":"emergency_final_oblique","pos":[-1.6,2.55,-11.9],"look_at":[-3.5,2.60,-14.65],"fov":24},
+
+    {"name":"atrium_north_fittings","pos":[0.0,2.40,-10.0],"look_at":[0.0,2.40,-14.45],"fov":50},
+    {"name":"atrium_east_fittings","pos":[10.0,2.40,0.0],"look_at":[14.45,2.40,0.0],"fov":50},
+    {"name":"east_exit_final","pos":[12.0,2.30,-2.6],"look_at":[14.65,2.25,-2.6],"fov":22}
+  ]
+}

@@ -91,15 +91,20 @@ const CASE_INNER_HALF := 1.06
 # paint colours are chalky and unsaturated so they look sprayed on, not lit.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const STEEL := Color(0.105, 0.115, 0.125)
-const STEEL_LIGHT := Color(0.185, 0.200, 0.215)
-const CABLE := Color(0.035, 0.038, 0.042)
-const CONCRETE := Color(0.185, 0.185, 0.178)
-const DUST := Color(0.415, 0.415, 0.395)
-const PAINT_LINE := Color(0.615, 0.625, 0.600)
-const PAINT_HAZARD := Color(0.520, 0.380, 0.070)
-const SHADOW := Color(0.035, 0.035, 0.040)
+# Ступени материалов берутся через `tone()` и потому объявлены как
+# `static var`: вызов функции не является константным выражением.
+static var STEEL := Pal.tone(Pal.STEEL_DARK, -0.35)
+static var STEEL_LIGHT := Pal.tone(Pal.STEEL, -0.54)
+const CABLE := Pal.DARK
+static var CONCRETE := Pal.tone(Pal.STONE, -0.68)
+static var DUST := Pal.tone(Pal.STONE, -0.28)
+static var PAINT_LINE := Pal.tone(Pal.SIGN_TEXT, -0.23)
+static var PAINT_HAZARD := Pal.tone(Pal.AMBER, -0.37)
+const SHADOW := Pal.DARK
 ## Containment field blue, matched to the Gravity Wing ceiling light.
 const FIELD := Color(0.420, 0.580, 0.920)
 
@@ -107,7 +112,7 @@ const FIELD := Color(0.420, 0.580, 0.920)
 ## passes for these three slots so the wing palette does not shift.
 const CUBE_ACCENT := Color(0.18, 0.28, 0.48)
 const CELL_ACCENT := Color(0.36, 0.22, 0.46)
-const COLUMN_ACCENT := Color(0.45, 0.45, 0.38)
+static var COLUMN_ACCENT := Pal.tone(Pal.STONE, -0.22)
 
 # --- Tessellation -----------------------------------------------------------
 
@@ -967,7 +972,7 @@ static func _mat(color: Color, emission_energy := 0.0, metallic := 0.0,
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		mat.shadow_to_opacity = false
-	elif metallic < 0.35 and emission_energy <= 0.0:
+	elif emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _grain_texture()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

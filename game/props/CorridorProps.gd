@@ -72,19 +72,25 @@ const SHARED_WALL_FACE := WALL_THICKNESS
 # Service fittings, not gallery dressing: the museum's white marble is the
 # bright thing, everything screwed to it is nearly black.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const STEEL := Color(0.135, 0.140, 0.148)
-const STEEL_DARK := Color(0.060, 0.062, 0.066)
+# Служебная фурнитура обязана остаться почти чёрной на белом мраморе,
+# поэтому берём роли через `tone()`. `static var`, а не `const`: вызов
+# функции не является константным выражением.
+static var STEEL := Pal.tone(Pal.STEEL, -0.66)
+static var STEEL_DARK := Pal.tone(Pal.STEEL_DARK, -0.62)
 ## The black behind a grille or an open hatch. Reads as a hole, not a surface.
-const VOID_BLACK := Color(0.012, 0.012, 0.014)
+static var VOID_BLACK := Pal.tone(Pal.DARK, -0.65)
 const RUBBER := Color(0.045, 0.045, 0.050)
 const EXTINGUISHER_RED := Color(0.34, 0.050, 0.045)
 ## Dark green field. Luminance 0.070 against the glyph's 0.812 is 7.2:1, so the
 ## pictogram clears 4.5:1 on albedo alone; the glyph also carries three times
 ## the field's emission, which only widens the rendered ratio.
 const SIGN_FIELD := Color(0.06, 0.34, 0.16)
-const SIGN_GLYPH := Color(0.86, 0.93, 0.88)
-const BRASS := Color(0.30, 0.26, 0.17)
+const SIGN_GLYPH := Pal.SIGN_TEXT
+static var BRASS := Pal.tone(Pal.BRASS, -0.40)
 
 const SIGN_FIELD_ENERGY := 0.5
 const SIGN_GLYPH_ENERGY := 1.4
@@ -740,7 +746,7 @@ static func _material(color: Color, transparent: bool,
 
 	# The same restrained surface detail the walls carry, so a bracket bolted
 	# to a wall does not look like a different material system.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		if _noise_texture == null:
 			var noise := FastNoiseLite.new()
 			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX

@@ -116,6 +116,7 @@ var _max_button: Button
 var _footer: Panel
 var _footer_label: Label
 var _grip: Control
+var _scroll: ScrollContainer
 var _active := false
 
 var _dragging := false
@@ -135,6 +136,15 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = MIN_SIZE
+	# ОКНО НЕ РИСУЕТ НИЧЕГО ЗА СВОЕЙ РАМКОЙ. Содержимое кладут снаружи, и оно
+	# запросто оказывается выше слота: кадр терминала внутри окна протокола
+	# требует своей высоты под шапку, отчёт и строку клавиш. VBoxContainer в
+	# такой ситуации не сжимает детей, а выкладывает их по минимальной высоте
+	# и спокойно вылезает НИЖЕ окна — на скриншоте это выглядело как текст и
+	# план музея, висящие поверх соседнего окна и панели задач, и как кнопки
+	# заголовка, оторвавшиеся от своей полосы. Отсечение по рамке — это то,
+	# что делает окно окном.
+	clip_contents = true
 	_build()
 
 
@@ -217,12 +227,26 @@ func _build() -> void:
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(rule)
 
+	# Одного отсечения мало: обрезанный отчёт — это молча потерянные строки.
+	# Содержимое едет в прокрутку, поэтому то, что не поместилось по высоте,
+	# остаётся доступным, а по ширине окно не разъезжается вовсе.
+	_scroll = ScrollContainer.new()
+	_scroll.name = "Body Scroll"
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.follow_focus = true
+	column.add_child(_scroll)
+
 	body = MarginContainer.new()
 	body.name = "Body"
+	# Обе оси EXPAND_FILL: ScrollContainer тянет ребёнка до своего размера
+	# только с этими флагами, иначе кадр терминала схлопнулся бы к минимуму и
+	# отчёт прижался бы к верхней кромке узкой полоской.
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		body.add_theme_constant_override(side, BODY_PAD)
-	column.add_child(body)
+	_scroll.add_child(body)
 
 	_build_footer(column)
 	_apply_type()

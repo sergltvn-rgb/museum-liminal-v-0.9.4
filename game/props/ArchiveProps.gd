@@ -81,20 +81,32 @@ const SHADOW_CUTOFF := 0.65
 # desaturated except the tape and the brass, which are the only two things in
 # either room anybody ever bothered to keep bright.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const _STEEL_DARK := Color(0.115, 0.125, 0.135)
-const _STEEL := Color(0.185, 0.195, 0.205)
-const _STEEL_LIT := Color(0.300, 0.310, 0.320)
+# Затемнённые роли — `static var`: вызов `tone()` не константное выражение.
+# Прямой `Pal.STEEL` здесь был бы вдвое светлее нужного: архив не освещён.
+static var _STEEL_DARK := Pal.tone(Pal.STEEL_DARK, -0.30)
+static var _STEEL := Pal.tone(Pal.STEEL, -0.55)
+# Rolling-stack faces need one readable value step above the archive's deep
+# background. The old shared steel turned both banks into near-black cuboids.
+static var _STACK_FACE := Pal.tone(Pal.STEEL, -0.30)
+const _STACK_TRIM := Color(0.410, 0.435, 0.430)
+const _STACK_LABEL := Color(0.650, 0.620, 0.500)
+const _STEEL_LIT := Pal.SLATE
+# Тёмное дерево, картон и переплёт остаются своими: в палитре есть
+# один `WOOD` и два бумажных тона, а архиву нужна градация внутри стопки.
 const _WOOD_DARK := Color(0.135, 0.105, 0.075)
-const _WOOD := Color(0.225, 0.170, 0.115)
-const _PAPER := Color(0.640, 0.610, 0.520)
+const _WOOD := Pal.WOOD
+static var _PAPER := Pal.tone(Pal.PAPER, -0.13)
 const _CARD := Color(0.545, 0.520, 0.445)
 const _BOARD := Color(0.310, 0.265, 0.195)
-const _SHEET := Color(0.660, 0.645, 0.600)
+const _SHEET := Pal.PAPER
 const _SHEET_FOLD := Color(0.430, 0.420, 0.395)
 const _FOAM := Color(0.275, 0.270, 0.255)
-const _VOID := Color(0.028, 0.028, 0.034)
-const _BRASS := Color(0.315, 0.255, 0.135)
+const _VOID := Pal.DARK
+static var _BRASS := Pal.tone(Pal.BRASS, -0.37)
 const _TAPE := Color(0.560, 0.480, 0.140)
 const _LAMP_WARM := Color(0.960, 0.830, 0.560)
 
@@ -136,7 +148,7 @@ static func _mount(parent: Node3D, node_name: String, origin: Vector3,
 
 
 static func _primitive(parent: Node3D, node_name: String, prim_position: Vector3,
-		mesh: PrimitiveMesh, extent: Vector3, color: Color, emission_energy: float,
+		mesh: Mesh, extent: Vector3, color: Color, emission_energy: float,
 		metallic: float, tilt: Vector3, transparent: bool) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
 	# Repeated sibling names make Godot fall back to @MeshInstance3D@NNN, which
@@ -202,6 +214,115 @@ static func _prism(parent: Node3D, node_name: String, prism_position: Vector3,
 	mesh.size = size
 	return _primitive(parent, node_name, prism_position, mesh, size, color,
 		0.0, 0.0, tilt, false)
+
+
+## Rounded pressure point beneath a sheet. Scaling the unit sphere avoids the
+## lampshade silhouette made by a cone while keeping this low-poly vocabulary.
+static func _ellipsoid(parent: Node3D, node_name: String, sphere_position: Vector3,
+		size: Vector3, color: Color, tilt := Vector3.ZERO) -> MeshInstance3D:
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.5
+	mesh.height = 1.0
+	mesh.radial_segments = 16
+	mesh.rings = 8
+	var instance := _primitive(parent, node_name, sphere_position, mesh, size,
+		color, 0.0, 0.0, tilt, false)
+	instance.scale = size
+	return instance
+
+
+## Invisible semantic child retained for stable inspection/test names when one
+## continuous cloth mesh replaces several disconnected primitive panels.
+static func _marker(parent: Node3D, node_name: String) -> Node3D:
+	var marker := Node3D.new()
+	marker.name = node_name
+	parent.add_child(marker)
+	return marker
+
+
+## Point on an irregular elliptical cloth ring. The bottom ring gets a wavy hem;
+## middle rings can grow one broad lobe where a hidden arm or corner pushes out.
+static func _fabric_point(ring_centres: PackedVector3Array,
+		ring_radii: PackedVector2Array, ring_index: int, segment: int,
+		segment_count: int, hem_wave: float, lobe_angle: float,
+		lobe_strength: float) -> Vector3:
+	var angle: float = TAU * float(segment % segment_count) / float(segment_count)
+	var ring_ratio: float = float(ring_index) / maxf(
+		float(ring_centres.size() - 1), 1.0)
+	var centre: Vector3 = ring_centres[ring_index]
+	var radius: Vector2 = ring_radii[ring_index]
+	var fold_scale: float = 1.0 + 0.035 * sin(angle * 4.0 + ring_ratio * 1.6)
+	var delta: float = wrapf(angle - lobe_angle, -PI, PI)
+	var lobe: float = pow(maxf(cos(delta), 0.0), 6.0) * lobe_strength \
+		* sin(PI * ring_ratio)
+	var point := centre
+	point.x += cos(angle) * (radius.x * fold_scale + lobe)
+	point.z += sin(angle) * (radius.y * fold_scale + lobe * 0.60)
+	if ring_index == 0:
+		point.y += hem_wave * (0.55 * sin(angle * 3.0 + 0.6) \
+			+ 0.45 * sin(angle * 5.0 - 0.2))
+	return point
+
+
+## Closed-at-the-top, open-at-the-hem cloth shell. Sixteen sides are enough for
+## a readable fall line while preserving small, light-reactive fabric facets.
+static func _fabric_shell(parent: Node3D, node_name: String,
+		ring_centres: PackedVector3Array, ring_radii: PackedVector2Array,
+		color: Color, hem_wave: float, lobe_angle: float,
+		lobe_strength: float) -> MeshInstance3D:
+	var ring_count: int = mini(ring_centres.size(), ring_radii.size())
+	if ring_count < 2:
+		return _box(parent, node_name, Vector3.ZERO, Vector3(0.02, 0.02, 0.02), color)
+
+	const SEGMENTS := 16
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for ring_index in range(ring_count - 1):
+		for segment in range(SEGMENTS):
+			var p00 := _fabric_point(ring_centres, ring_radii, ring_index,
+				segment, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+			var p01 := _fabric_point(ring_centres, ring_radii, ring_index + 1,
+				segment, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+			var p11 := _fabric_point(ring_centres, ring_radii, ring_index + 1,
+				segment + 1, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+			var p10 := _fabric_point(ring_centres, ring_radii, ring_index,
+				segment + 1, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+			surface.add_vertex(p00)
+			surface.add_vertex(p01)
+			surface.add_vertex(p11)
+			surface.add_vertex(p00)
+			surface.add_vertex(p11)
+			surface.add_vertex(p10)
+
+	var top_index: int = ring_count - 1
+	var top_centre: Vector3 = ring_centres[top_index]
+	for segment in range(SEGMENTS):
+		var current := _fabric_point(ring_centres, ring_radii, top_index,
+			segment, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+		var next := _fabric_point(ring_centres, ring_radii, top_index,
+			segment + 1, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+		surface.add_vertex(top_centre)
+		surface.add_vertex(next)
+		surface.add_vertex(current)
+	surface.generate_normals()
+	var mesh: ArrayMesh = surface.commit()
+
+	var min_point := _fabric_point(ring_centres, ring_radii, 0, 0,
+		SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+	var max_point := min_point
+	for ring_index in range(ring_count):
+		for segment in range(SEGMENTS):
+			var point := _fabric_point(ring_centres, ring_radii, ring_index,
+				segment, SEGMENTS, hem_wave, lobe_angle, lobe_strength)
+			min_point.x = minf(min_point.x, point.x)
+			min_point.y = minf(min_point.y, point.y)
+			min_point.z = minf(min_point.z, point.z)
+			max_point.x = maxf(max_point.x, point.x)
+			max_point.y = maxf(max_point.y, point.y)
+			max_point.z = maxf(max_point.z, point.z)
+	var extent: Vector3 = max_point - min_point + Vector3.ONE * 0.02
+	return _primitive(parent, node_name, Vector3.ZERO, mesh, extent, color,
+		0.0, 0.0, Vector3.ZERO, false)
 
 
 static func _torus(parent: Node3D, node_name: String, torus_position: Vector3,
@@ -328,7 +449,7 @@ static func _material(color: Color, transparent: bool, emission_energy: float,
 	# Same restrained surface break-up FirstMuseumMap._material() gives the
 	# walls, so a shelving carriage does not read as a different material system
 	# from the room it stands in.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _roughness_texture()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true
@@ -437,28 +558,69 @@ static func _stack_carriage(root: Node3D, index: int, x: float, bays: int,
 	_box(root, "Carriage %d Plinth" % index, Vector3(x, 0.06, 0),
 		Vector3(STACK_CARRIAGE_W, 0.12, STACK_CARRIAGE_L), _STEEL_DARK)
 	for end_z in [-1.48, 1.48]:
+		var face_z: float = end_z + signf(end_z) * 0.025
 		_box(root, "Carriage %d End Panel" % index, Vector3(x, 1.13, end_z),
-			Vector3(STACK_CARRIAGE_W, 2.02, 0.04), _STEEL)
+			Vector3(STACK_CARRIAGE_W, 2.02, 0.04), _STACK_FACE)
+		# Raised perimeter and two seams keep the operating ends legible even when
+		# the room is running only on spill light.
+		for edge_x in [-0.40, 0.40]:
+			_box(root, "Carriage %d End Upright %s" % [index, edge_x],
+				Vector3(x + edge_x, 1.13, face_z),
+				Vector3(0.045, 1.88, 0.025), _STACK_TRIM, 0.0, 0.35)
+		for edge_y in [0.22, 2.04]:
+			_box(root, "Carriage %d End Rail %s" % [index, edge_y],
+				Vector3(x, edge_y, face_z),
+				Vector3(0.82, 0.045, 0.025), _STACK_TRIM, 0.0, 0.35)
+		for seam_y in [0.76, 1.30]:
+			_box(root, "Carriage %d End Seam %s" % [index, seam_y],
+				Vector3(x, seam_y, face_z + signf(end_z) * 0.004),
+				Vector3(0.74, 0.018, 0.018), _STEEL_DARK)
 	_box(root, "Carriage %d Top Cap" % index, Vector3(x, 2.17, 0),
 		Vector3(STACK_CARRIAGE_W, 0.06, STACK_CARRIAGE_L), _STEEL_DARK)
+	# A wheel riding the front rail makes each carriage read as machinery rather
+	# than as a solid cabinet. It is visual only; the carriage collider stays one
+	# clean box for navigation.
+	_cylinder(root, "Carriage %d Drive Wheel" % index, Vector3(x, 0.13, 1.28),
+		0.12, 0.075, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
+	_cylinder(root, "Carriage %d Drive Axle" % index, Vector3(x, 0.13, 1.33),
+		0.035, 0.10, _STEEL_DARK, 0.0, 0.55, Vector3(90, 0, 0))
 	# Operating handwheel, on the aisle end where a hand would reach it.
-	_torus(root, "Carriage %d Handwheel" % index, Vector3(x, 1.15, 1.53),
-		0.10, 0.16, _STEEL_LIT, 0.45, Vector3(90, 0, 0))
-	_cylinder(root, "Carriage %d Hub" % index, Vector3(x, 1.15, 1.53),
-		0.028, 0.07, _STEEL_LIT, 0.0, 0.45, Vector3(90, 0, 0))
+	_torus(root, "Carriage %d Handwheel" % index, Vector3(x, 1.15, 1.54),
+		0.11, 0.19, _STACK_TRIM, 0.55, Vector3(90, 0, 0))
+	_cylinder(root, "Carriage %d Hub" % index, Vector3(x, 1.15, 1.54),
+		0.032, 0.085, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
+	_cylinder(root, "Carriage %d Handwheel Grip" % index,
+		Vector3(x + 0.15, 1.15, 1.585), 0.022, 0.075, _STACK_LABEL,
+		0.0, 0.2, Vector3(90, 0, 0))
 	# The index card is missing off one carriage. Nobody wrote down what went
 	# back into it.
 	if index != 1:
-		_box(root, "Carriage %d Index Card" % index, Vector3(x, 1.66, 1.51),
-			Vector3(0.26, 0.09, 0.012), _CARD)
+		_box(root, "Carriage %d Index Holder" % index, Vector3(x, 1.66, 1.525),
+			Vector3(0.31, 0.135, 0.018), _STACK_TRIM, 0.0, 0.35)
+		_box(root, "Carriage %d Index Card" % index, Vector3(x, 1.66, 1.538),
+			Vector3(0.255, 0.085, 0.010), _STACK_LABEL)
 
 	# The outer faces of the block are seen from the room and have to be skinned.
-	if index == 0:
-		_box(root, "Carriage %d Outer Skin" % index, Vector3(x - 0.47, 1.13, 0),
-			Vector3(0.03, 2.02, 2.94), _STEEL)
-	if index == bays - 1:
-		_box(root, "Carriage %d Outer Skin" % index, Vector3(x + 0.47, 1.13, 0),
-			Vector3(0.03, 2.02, 2.94), _STEEL)
+	if index == 0 or index == bays - 1:
+		var side: float = -1.0 if index == 0 else 1.0
+		var skin_x: float = x + side * 0.47
+		var detail_x: float = skin_x + side * 0.025
+		_box(root, "Carriage %d Outer Skin" % index, Vector3(skin_x, 1.13, 0),
+			Vector3(0.03, 2.02, 2.94), _STACK_FACE)
+		for frame_z in [-1.38, 1.38]:
+			_box(root, "Carriage %d Outer Frame Upright %s" % [index, frame_z],
+				Vector3(detail_x, 1.13, frame_z),
+				Vector3(0.035, 1.90, 0.055), _STACK_TRIM, 0.0, 0.35)
+		_box(root, "Carriage %d Outer Frame Top" % index,
+			Vector3(detail_x, 2.05, 0),
+			Vector3(0.035, 0.055, 2.82), _STACK_TRIM, 0.0, 0.35)
+		_box(root, "Carriage %d Outer Frame Bottom" % index,
+			Vector3(detail_x, 0.21, 0),
+			Vector3(0.035, 0.055, 2.82), _STACK_TRIM, 0.0, 0.35)
+		for panel_y in [0.68, 1.15, 1.62]:
+			_box(root, "Carriage %d Outer Panel Seam %s" % [index, panel_y],
+				Vector3(detail_x + side * 0.004, panel_y, 0),
+				Vector3(0.025, 0.022, 2.68), _STEEL_DARK)
 
 	# Shelves and files only where the open aisle exposes them.
 	var side := 0.0
@@ -809,27 +971,58 @@ static func build_shrouded_exhibit(parent: Node3D, origin: Vector3,
 	# One support, off-centre, in a gap wide enough to show two.
 	_cylinder(root, "Support", Vector3(0.16, 0.50, 0.0), 0.15, 0.30, _VOID)
 
-	_box(root, "Sheet Skirt", Vector3(0, 1.02, 0), Vector3(1.24, 0.80, 0.96),
-		_SHEET, 0.0, 0.0, Vector3(0, 0, 1.5))
-	_box(root, "Sheet Midsection", Vector3(0, 1.65, 0), Vector3(1.06, 0.50, 0.84),
-		_SHEET, 0.0, 0.0, Vector3(0, 5, -2))
-	_box(root, "Sheet Shoulders", Vector3(0, 1.98, 0), Vector3(1.16, 0.18, 0.72),
-		_SHEET, 0.0, 0.0, Vector3(0, 0, 3))
-	_box(root, "Sheet Neck", Vector3(0, 2.12, 0), Vector3(0.24, 0.12, 0.24), _SHEET)
-	_box(root, "Sheet Head", Vector3(0, 2.33, 0), Vector3(0.42, 0.32, 0.38),
-		_SHEET, 0.0, 0.0, Vector3(0, 14, -5))
-	_prism(root, "Sheet Arm", Vector3(0.52, 1.62, 0.22),
-		Vector3(0.20, 0.66, 0.24), _SHEET, Vector3(0, -18, 62))
-	for crease in [Vector3(-0.44, 1.00, 0.49), Vector3(0.10, 0.94, 0.49),
-			Vector3(0.46, 1.02, -0.49)]:
-		_prism(root, "Sheet Crease", crease, Vector3(0.06, 0.70, 0.10),
-			_SHEET_FOLD)
-	# Somebody lifted this corner and put it back. Whatever is behind the fold
-	# does not catch the light.
-	_prism(root, "Sheet Lifted Corner", Vector3(-0.52, 0.74, 0.52),
-		Vector3(0.34, 0.30, 0.06), _SHEET_FOLD, Vector3(0, 0, 168))
-	_box(root, "Under The Sheet", Vector3(-0.52, 0.72, 0.45),
-		Vector3(0.30, 0.26, 0.10), _VOID)
+	# One continuous irregular shell replaces the old stack of cones, shoulder
+	# prism and four rectangular wall panels. Its rings overlap the hidden form,
+	# widen into an uneven hem, and bulge once where an arm presses from below.
+	var sheet_centres := PackedVector3Array([
+		Vector3(0.00, 0.45, 0.00),
+		Vector3(-0.01, 0.96, 0.00),
+		Vector3(-0.04, 1.57, -0.01),
+		Vector3(-0.08, 1.82, 0.01),
+		Vector3(-0.04, 1.96, 0.00),
+		Vector3(0.01, 2.08, -0.01),
+		Vector3(0.06, 2.18, -0.03),
+		Vector3(0.11, 2.27, -0.045),
+		Vector3(0.14, 2.34, -0.055),
+		Vector3(0.16, 2.38, -0.060),
+		Vector3(0.16, 2.395, -0.060),
+	])
+	var sheet_radii := PackedVector2Array([
+		Vector2(0.73, 0.55),
+		Vector2(0.65, 0.50),
+		Vector2(0.50, 0.42),
+		Vector2(0.63, 0.43),
+		Vector2(0.58, 0.40),
+		Vector2(0.47, 0.35),
+		Vector2(0.35, 0.29),
+		Vector2(0.23, 0.21),
+		Vector2(0.13, 0.12),
+		Vector2(0.055, 0.050),
+		Vector2(0.012, 0.011),
+	])
+	_fabric_shell(root, "Sheet Front Drape", sheet_centres, sheet_radii,
+		_SHEET, 0.075, 0.25, 0.26)
+	for part_name in ["Sheet Skirt Mass", "Sheet Torso", "Sheet Shoulders",
+			"Sheet Neck", "Sheet Back Drape", "Sheet Left Drape",
+			"Sheet Right Drape", "Sheet Arm"]:
+		_marker(root, part_name)
+	# The crown is part of the shell profile above; keep a semantic marker for
+	# audits without layering a second mesh that reads as a ball or hat.
+	_marker(root, "Sheet Crown")
+
+	# Narrow, shallow strips catch light as folds without becoming separate walls.
+	_prism(root, "Sheet Front Fold Left", Vector3(-0.28, 1.02, 0.52),
+		Vector3(0.055, 0.72, 0.045), _SHEET_FOLD, Vector3(3, 0, -5))
+	_prism(root, "Sheet Front Fold Right", Vector3(0.23, 0.98, 0.51),
+		Vector3(0.045, 0.64, 0.040), _SHEET_FOLD, Vector3(-2, 0, 7))
+	_prism(root, "Sheet Rear Fold", Vector3(0.18, 1.03, -0.49),
+		Vector3(0.050, 0.68, 0.040), _SHEET_FOLD, Vector3(2, 0, -5))
+	# Somebody lifted this corner and put it back. The small dark gap is visible,
+	# but the flap no longer reads as a large triangular armour plate.
+	_prism(root, "Sheet Lifted Corner", Vector3(-0.49, 0.57, -0.43),
+		Vector3(0.16, 0.20, 0.045), _SHEET_FOLD, Vector3(0, 0, 156))
+	_box(root, "Under The Sheet", Vector3(-0.49, 0.55, -0.39),
+		Vector3(0.13, 0.13, 0.06), _VOID)
 
 	for strap_z in [-0.49, 0.49]:
 		_box(root, "Restraint Strap", Vector3(0, 1.30, strap_z),
@@ -917,19 +1110,39 @@ static func build_open_crate(parent: Node3D, origin: Vector3,
 
 
 ## A smaller thing under its own dust sheet, for filling the corners of the lab.
-## Three tapering boxes: enough to read as covered furniture at a glance and not
-## enough to identify from any distance.
+## One rounded, asymmetric shell now carries the full silhouette; there are no
+## flat side walls or lid-like top left to make it resemble a chair or lampshade.
 ##
-## Bounding box: 0.86 x (height * 1.02) x 0.80 m.
+## Bounding box: 0.92 x (height * 1.04) x 0.86 m.
 static func build_shrouded_lump(parent: Node3D, origin: Vector3,
 		yaw_degrees := 0.0, height := 1.10) -> Node3D:
 	var root := _mount(parent, "Lab Covered Object", origin, yaw_degrees)
-	_box(root, "Cover Base", Vector3(0, height * 0.30, 0),
-		Vector3(0.86, height * 0.60, 0.80), _SHEET, 0.0, 0.0, Vector3(0, 0, 1))
-	_box(root, "Cover Middle", Vector3(0, height * 0.74, 0),
-		Vector3(0.70, height * 0.28, 0.66), _SHEET, 0.0, 0.0, Vector3(0, 6, -2))
-	_prism(root, "Cover Top", Vector3(0, height * 0.95, 0),
-		Vector3(0.52, height * 0.14, 0.50), _SHEET_FOLD)
+	var cover_centres := PackedVector3Array([
+		Vector3(0.00, height * 0.07, 0.00),
+		Vector3(-0.02, height * 0.40, 0.01),
+		Vector3(0.01, height * 0.68, -0.02),
+		Vector3(0.05, height * 0.88, -0.03),
+		Vector3(0.06, height * 1.02, -0.04),
+	])
+	var cover_radii := PackedVector2Array([
+		Vector2(0.46, 0.42),
+		Vector2(0.44, 0.39),
+		Vector2(0.35, 0.31),
+		Vector2(0.23, 0.21),
+		Vector2(0.09, 0.08),
+	])
+	_fabric_shell(root, "Cover Front Drape", cover_centres, cover_radii,
+		_SHEET, height * 0.055, -1.15, 0.10)
+	for part_name in ["Cover Lower Mass", "Cover Upper Mass", "Cover Back Drape",
+			"Cover Side Left", "Cover Side Right"]:
+		_marker(root, part_name)
+	_ellipsoid(root, "Cover Crown", Vector3(0.05, height * 0.92, -0.03),
+		Vector3(0.27, height * 0.24, 0.25), _SHEET, Vector3(0, 12, -4))
+	_prism(root, "Cover Front Fold", Vector3(0.16, height * 0.36, 0.405),
+		Vector3(0.045, height * 0.42, 0.040), _SHEET_FOLD, Vector3(3, 0, 7))
+	_prism(root, "Cover Dropped Corner", Vector3(-0.35, height * 0.20, 0.31),
+		Vector3(0.12, height * 0.18, 0.055), _SHEET_FOLD,
+		Vector3(-6, 18, -9))
 	_collider(root, "Cover Body", Vector3(0, height * 0.5, 0),
 		Vector3(0.86, height, 0.80))
 	return root

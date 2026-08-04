@@ -61,23 +61,37 @@ extends RefCounted
 # Industrial night-shift storeroom: near-black steel, one worn paint tone, three
 # indicator tints. STENCIL against the opaque black outline measures 15.9:1.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const STEEL_DARK := Color(0.100, 0.110, 0.120)
-const STEEL := Color(0.135, 0.145, 0.155)
-const STEEL_PALE := Color(0.300, 0.310, 0.330)
-const PAINT_DARK := Color(0.115, 0.130, 0.122)
-const PAINT_WORN := Color(0.560, 0.545, 0.480)
-const STENCIL := Color(0.880, 0.880, 0.840)
-const SHADOW := Color(0.026, 0.028, 0.032)
-const HAZARD := Color(0.760, 0.620, 0.090)
-const SIGNAL_GREEN := Color(0.200, 0.780, 0.420)
-const SIGNAL_AMBER := Color(0.950, 0.620, 0.180)
+# Кладовая тёмнее общего канона, поэтому часть ролей берётся через `tone()`,
+# а не напрямую: `Pal.STEEL` в три раза светлее того, что здесь было, и
+# прямая подстановка превратила бы ночной склад в серый цех.
+# Затемнённые варианты — `static var`, а не `const`: вызов функции не
+# является константным выражением и `const` с ним не компилируется.
+static var STEEL_DARK := Pal.tone(Pal.STEEL_DARK, -0.35)
+static var STEEL := Pal.tone(Pal.STEEL, -0.65)
+const STEEL_PALE := Pal.SLATE
+const PAINT_DARK := Pal.INK
+const PAINT_WORN := Pal.PAPER_AGED
+const STENCIL := Pal.SIGN_TEXT
+const SHADOW := Pal.DARK
+const HAZARD := Pal.AMBER
+const SIGNAL_GREEN := Pal.MOSS
+const SIGNAL_AMBER := Pal.LED_AMBER
+# Погасшая лампа остаётся своей: в палитре красный только горящий
+# (`LED_RED`, `RUST`), а здесь нужен тёмный стеклянный огарок.
 const SIGNAL_DEAD := Color(0.260, 0.090, 0.080)
-const GRIME := Color(0.150, 0.105, 0.075)
-const BRASS := Color(0.520, 0.460, 0.280)
-const CRATE := Color(0.190, 0.180, 0.150)
-const TOOL_STEEL := Color(0.240, 0.250, 0.270)
-const PAINT_LINE := Color(0.720, 0.710, 0.660)
+# Грязь берётся от `SOIL`, а не от `STAIN`: у `STAIN` есть альфа 0.72,
+# и непрозрачные подтёки стали бы полупрозрачными.
+const GRIME := Pal.SOIL
+const BRASS := Pal.BRASS
+const CRATE := Pal.DESK
+static var TOOL_STEEL := Pal.tone(Pal.STEEL, -0.40)
+const PAINT_LINE := Pal.PAPER
+# Жёлтая разметка пола тоже своя: взять `AMBER` нельзя — она слилась бы
+# с предупредительными полосами `HAZARD` в одном кадре.
 const FLOOR_PAINT := Color(0.620, 0.580, 0.300)
 
 # Two metallic values, not eight. Painted frames and machined parts are the only

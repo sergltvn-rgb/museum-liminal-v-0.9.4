@@ -290,7 +290,7 @@ func _material(color: Color, transparent: bool, emission_energy: float = 0.0,
 
 	# Restrained surface detail. The previous high-frequency nearest-filtered
 	# noise covered every wall and prop with distracting television static.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		if _noise_texture == null:
 			var noise := FastNoiseLite.new()
 			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -1048,6 +1048,44 @@ const OFFICE_NIGHT_MAX_X := -15.4
 const OFFICE_NIGHT_MIN_Z := -6.6
 const OFFICE_NIGHT_MAX_Z := 6.6
 
+# Профили тумана: день, заезд, ночь после блэкаута.
+#
+# Раньше ночные значения были записаны в двух местах сразу — в
+# _add_world_env() как начальное состояние и в _apply_fog_profile() как
+# ночная ветка. Стоило поправить одно, второе тихо расходилось, и разница
+# всплывала только в блэкауте, то есть через полчаса игры. Теперь значение
+# живёт в одном месте, а _add_world_env() задаёт лишь поля, которых профили
+# не касаются.
+#
+# volumetric в профиле — это "нужен ли объёмный туман по замыслу". Реальное
+# включение ещё умножается на пресет качества (см. allow_volumetric_fog).
+const FOG_DAY := {
+	"color": Color(0.78, 0.81, 0.85),
+	"energy": 1.0,
+	"density": 0.0065,
+	"volumetric": false,
+	"vol_density": 0.0,
+	"vol_albedo": Color(1.0, 1.0, 1.0),
+}
+const FOG_DRIVE := {
+	"color": Color(0.74, 0.77, 0.81),
+	"energy": 1.0,
+	"density": 0.016,
+	"volumetric": true,
+	"vol_density": 0.038,
+	"vol_albedo": Color(0.80, 0.83, 0.88),
+}
+const FOG_NIGHT := {
+	"color": Color(0.05, 0.05, 0.065),
+	"energy": 0.6,
+	# Дальний план должен теряться, но не исчезать. Более редкий ночной туман
+	# возвращает силуэты стен без глобального подъёма экспозиции.
+	"density": 0.020,
+	"volumetric": true,
+	"vol_density": 0.018,
+	"vol_albedo": Color(0.62, 0.66, 0.78),
+}
+
 
 func _add_world_env(parent: Node) -> void:
 	var env := Environment.new()
@@ -1067,24 +1105,17 @@ func _add_world_env(parent: Node) -> void:
 	env.tonemap_white = 1.15
 	_environment = env
 
-	# Liminal depth: a faint fog that swallows the far ends of rooms.
-	# Density 0.08 was near-opaque past ~15 m in Godot 4; 0.025 keeps the
-	# far walls readable while still eating the corridors.
-	# Off for the bright daytime intro; _trigger_blackout() turns it on.
-	# Значения ниже — только ночные умолчания. Реальный набор выбирает
-	# _apply_fog_profile() в конце этой функции и на каждой смене сцены:
-	# туман больше не выключен днём наглухо.
+	# Туман. Плотность, цвет и энергия целиком отданы профилям FOG_DAY /
+	# FOG_DRIVE / FOG_NIGHT — здесь их больше нет, чтобы два места не
+	# расходились. Профиль применяется в конце этой функции, до первого
+	# кадра, так что выключенное состояние ниже живёт считанные строки.
 	env.fog_enabled = false
-	env.fog_light_color = Color(0.05, 0.05, 0.065)
-	env.fog_light_energy = 0.6
-	env.fog_density = 0.025
-
-	# Volumetric fog makes the skylight moonbeam and the flashlight cone
-	# visible as actual light shafts (Forward+ renderer only; harmlessly
-	# ignored in Compatibility).
 	env.volumetric_fog_enabled = false
-	env.volumetric_fog_density = 0.022
-	env.volumetric_fog_albedo = Color(0.62, 0.66, 0.78)
+
+	# А эти два поля профили не трогают: они описывают не "сколько тумана",
+	# а как он рассеивает свет. Объёмный туман нужен ради видимых лучей от
+	# луны в световом фонаре и от фонарика (только Forward+; в режиме
+	# совместимости молча игнорируется).
 	env.volumetric_fog_anisotropy = 0.55
 	env.volumetric_fog_gi_inject = 0.4
 
@@ -1106,9 +1137,9 @@ func _add_world_env(parent: Node) -> void:
 	env.adjustment_contrast = 1.20
 	env.adjustment_brightness = 0.96
 
-	# Contact shadow in corners is the one modern effect the retro look
-	# still wants: it grounds low-poly geometry that has no baked detail.
-	env.ssao_enabled = true
+	# SSAO is disabled for the flat low-poly look. Keep the authored tuning
+	# below as a reversible fallback for future visual/performance A/Bs.
+	env.ssao_enabled = false
 	env.ssao_radius = 0.8
 	env.ssao_intensity = 2.0
 	env.ssao_power = 1.5
@@ -1254,30 +1285,30 @@ func _apply_fog_profile() -> void:
 	var volumetric: bool = settings == null or settings.allow_volumetric_fog()
 
 	if _blackout_done:
-		_environment.fog_enabled = true
-		_environment.fog_light_color = Color(0.05, 0.05, 0.065)
-		_environment.fog_light_energy = 0.6
-		_environment.fog_density = 0.025
-		_environment.volumetric_fog_enabled = volumetric
-		_environment.volumetric_fog_density = 0.022
-		_environment.volumetric_fog_albedo = Color(0.62, 0.66, 0.78)
+		_use_fog_profile(FOG_NIGHT, volumetric)
 		return
 
 	if _drive_playing:
-		_environment.fog_enabled = true
-		_environment.fog_light_color = Color(0.74, 0.77, 0.81)
-		_environment.fog_light_energy = 1.0
-		_environment.fog_density = 0.016
-		_environment.volumetric_fog_enabled = volumetric
-		_environment.volumetric_fog_density = 0.038
-		_environment.volumetric_fog_albedo = Color(0.80, 0.83, 0.88)
+		_use_fog_profile(FOG_DRIVE, volumetric)
 		return
 
+	_use_fog_profile(FOG_DAY, volumetric)
+
+
+## Раскладывает профиль тумана в поля Environment. Объёмная часть включается
+## только если её хочет и профиль, и пресет качества; когда она выключена,
+## плотность и альбедо не пишутся вовсе — движок их всё равно не читает, а
+## лишняя запись создаёт впечатление, будто объёмный туман где-то работает.
+func _use_fog_profile(profile: Dictionary, volumetric: bool) -> void:
 	_environment.fog_enabled = true
-	_environment.fog_light_color = Color(0.78, 0.81, 0.85)
-	_environment.fog_light_energy = 1.0
-	_environment.fog_density = 0.0065
-	_environment.volumetric_fog_enabled = false
+	_environment.fog_light_color = profile["color"]
+	_environment.fog_light_energy = profile["energy"]
+	_environment.fog_density = profile["density"]
+	var use_volumetric: bool = volumetric and bool(profile["volumetric"])
+	_environment.volumetric_fog_enabled = use_volumetric
+	if use_volumetric:
+		_environment.volumetric_fog_density = profile["vol_density"]
+		_environment.volumetric_fog_albedo = profile["vol_albedo"]
 
 
 func _add_room_lights(parent: Node) -> void:
@@ -1428,11 +1459,18 @@ func _trigger_blackout() -> void:
 	_dim_office_tube()
 	# Make the transition unmistakably nighttime: the daylight sun is almost
 	# fully extinguished, while a restrained cold moonbeam remains at the atrium.
+	# Яркость ночи поднята 2026-08-03 по просьбе пользователя. Замер по кадрам
+	# (test_night_capture.gd, средняя яркость кадра): кабинет 0.017, атриум
+	# 0.018, коридор 0.017 — это почти чёрный кадр, в нём не читается ни
+	# геометрия, ни материал. Ориентир Shift At Midnight держит темноту
+	# вокруг, но кадр там всегда читаемый. Лунный свет и шахта подняты,
+	# цвет оставлен холодный: теплее делать нельзя, иначе ночь читается
+	# как вечер.
 	if is_instance_valid(_sun):
-		_sun.light_energy = 0.10
+		_sun.light_energy = 0.20
 		_sun.light_color = Color(0.38, 0.46, 0.68)
 	if is_instance_valid(_sun_shaft):
-		_sun_shaft.light_energy = 0.65
+		_sun_shaft.light_energy = 0.95
 		_sun_shaft.light_color = Color(0.42, 0.50, 0.78)
 	# Red emergency light comes up and starts pulsing (see _process).
 	if is_instance_valid(_emergency_light):
@@ -1446,12 +1484,29 @@ func _trigger_blackout() -> void:
 			unit.visible = true
 	# Night sky + creeping fog.
 	if _environment != null:
-		_environment.ambient_light_energy = 0.18
+		# 0.18 -> 1.00: главный вклад в читаемость тёмных комнат, куда не
+		# достаёт ни аварийка, ни луна. Число выглядит огромным рядом
+		# с 0.18, но тонмаппинг FILMIC сильно сжимает низы: проба с energy
+		# 3.00 дала яркость кадра всего 0.039 вместо 0.020, то есть
+		# десятикратный подъём числа даёт двукратный подъём картинки.
+		_environment.ambient_light_energy = 1.00
+		# ВОТ ПОЧЕМУ ОДНОГО ambient_light_energy БЫЛО МАЛО. Источник
+		# рассеянного света — небо (AMBIENT_SOURCE_SKY), а ночное небо ниже
+		# почти чёрное (0.02). При sky_contribution 0.55 больше половины
+		# рассеянного света бралось из черноты, и любой подъём energy
+		# умножался на ноль: замер показал рост яркости кадра всего с
+		# 0.017 до 0.020 при energy 0.18 -> 0.30. Ночью вес отдаётся цвету,
+		# днём всё остаётся по-старому.
+		_environment.ambient_light_sky_contribution = 0.15
+		# Холодный сине-серый — тот же уклон, что у лунного света выше.
+		_environment.ambient_light_color = Color(0.11, 0.14, 0.19)
 		# _blackout_done выставлен в начале этой функции, так что сюда придёт
 		# ночной профиль — те же числа, что были зашиты здесь раньше.
 		_apply_fog_profile()
-		_environment.adjustment_saturation = 0.72
-		_environment.adjustment_brightness = 0.86
+		# Red emergency pools keep their identity, but no longer crush material
+		# separation into one saturated patch.
+		_environment.adjustment_saturation = 0.64
+		_environment.adjustment_brightness = 0.98
 		var sky_mat := _environment.sky.sky_material as ProceduralSkyMaterial
 		if sky_mat != null:
 			sky_mat.sky_top_color = Color(0.02, 0.025, 0.04)
@@ -1704,12 +1759,20 @@ func _add_office_details(parent: Node) -> void:
 				Color(0.12, 0.85 if unit % 3 else 0.25, 0.28), 0.8, 0.0, false)
 
 	# Stabilization locker and equipment shelving.
-	_box(parent, "Stabilization Locker", Vector3(-34.05, 1.25, 4.45),
+	#
+	# x -33.95, not -34.05. The cabinet is 1.35 m deep, so the old centre left
+	# its back face at -34.725 while the office's west wall face is -34.65: 7.5
+	# cm of it, measured as 0.56 m3, sat inside the wall, the largest prop-into-
+	# structure overlap in the building. Ten centimetres into the room leaves the
+	# back 2.5 cm clear of the wall (asserted by _verify_office_fixtures). The
+	# shelf strips and the label travel with it, so the strips stay 2.5 mm off
+	# the new front face at -33.275 instead of being swallowed by the box.
+	_box(parent, "Stabilization Locker", Vector3(-33.95, 1.25, 4.45),
 		Vector3(1.35, 2.5, 3.0), Color(0.075, 0.095, 0.09), 0.0, 0.45)
 	for shelf_y in [0.55, 1.15, 1.75, 2.35]:
-		_box(parent, "Locker Shelf %s" % [shelf_y], Vector3(-33.35, shelf_y, 4.45),
+		_box(parent, "Locker Shelf %s" % [shelf_y], Vector3(-33.25, shelf_y, 4.45),
 			Vector3(0.045, 0.07, 2.65), Color(0.14, 0.16, 0.15), 0.0, 0.5, false)
-	_add_label(parent, "STABILIZATION / AUTHORIZED STAFF", Vector3(-33.2, 2.85, 4.45),
+	_add_label(parent, "STABILIZATION / AUTHORIZED STAFF", Vector3(-33.1, 2.85, 4.45),
 		Color(0.55, 0.88, 0.66))
 
 	# Shift documentation area on the east wall.
@@ -1903,16 +1966,23 @@ func _add_light_fittings(parent: Node) -> void:
 		intercom.add_to_group("lamp_hum")
 		root.add_child(intercom)
 
-	# Battery-backed. Held dark until _trigger_blackout().
-	for at: Array in [[Vector3(-3.5, 2.6, -14.65), 180.0],
-			[Vector3(3.5, 2.6, 14.65), 0.0],
-			[Vector3(-15.35, 2.6, -3.0), 90.0],
-			[Vector3(15.35, 2.6, 3.0), 270.0],
-			[Vector3(3.5, 2.6, -15.35), 0.0],
-			[Vector3(3.5, 2.6, 34.65), 0.0]]:
-		var unit := LightProps.emergency(root, at[0], at[1])
+	# Battery-backed. Held dark until _trigger_blackout(). The last three values
+	# are blackout energy, beam range and cone angle. The lobby already reads
+	# clearly; the atrium, wings and especially the office need broader local
+	# pools rather than more global ambient light.
+	for at: Array in [[Vector3(-3.5, 2.6, -14.65), 180.0, 3.20, 19.0, 88.0],
+			[Vector3(3.5, 2.6, 14.65), 0.0, 3.20, 19.0, 88.0],
+			[Vector3(-15.35, 2.6, -3.0), 90.0, 4.20, 22.0, 78.0],
+			[Vector3(15.35, 2.6, 3.0), 270.0, 3.00, 16.0, 72.0],
+			[Vector3(3.5, 2.6, -15.35), 0.0, 3.00, 16.0, 72.0],
+			[Vector3(3.5, 2.6, 34.65), 0.0, 1.00, 8.0, 58.0]]:
+		var unit := LightProps.emergency(root, at[0], at[1],
+			LightProps.TINT_EMERGENCY, at[2])
 		for light in LightProps.lights_of(unit):
 			light.visible = false
+			if light is SpotLight3D:
+				(light as SpotLight3D).spot_range = float(at[3])
+				(light as SpotLight3D).spot_angle = float(at[4])
 			_emergency_fixtures.append(light)
 
 
@@ -2210,21 +2280,32 @@ func _add_model_archive(parent: Node) -> void:
 	MuseumModels.place(parent, "наблюдатель", Vector3(61.0, 0.0, 6.0), 0.95, 180.0)
 
 	# --- Forecourt and street -----------------------------------------------
-	# A street lamp was standing in the middle of the Central Atrium at
-	# (12, 0, -10). It is a street lamp, so it now stands on the street side of
-	# the forecourt, east of the east planting bed (which ends at x 17.2) and
-	# west of the lot wall at x 31.3. 1.0 makes it 3.23 m, base on origin.
-	MuseumModels.place(parent, "уличная лампа", Vector3(19.5, 0.0, 46.0), 1.0, 0.0)
-	# The bus shelter rendered 7 cm tall (measured 0.034 x 0.072 x 0.071 at the
-	# old 0.6) and stood at (46, -12), 4 m north of Mass Wing D's north wall with
-	# nothing under it. 25.0 makes it 1.42 x 3.00 x 2.96; a shelter belongs at
-	# the kerb, so it stands on the pavement inside the curb at z 54.55.
-	MuseumModels.place(parent, "отсановка", Vector3(20.0, 0.0, 53.0), 25.0, 90.0)
-	# The skip was bisected by the Office/Storage wall at z = 7 (measured
-	# z -1.31..+1.26 about an origin ON that wall). It is refuse handling, so it
-	# joins the delivery bay in the service corner of the forecourt, clear of the
-	# pallet at x -28.7..-26.3 and of the tree at x -25.
-	MuseumModels.place(parent, "dumpsters_glb", Vector3(-23.0, 0.0, 52.0), 0.65, 0.0)
+	# THE FORMAL COURT IS NOT WHERE IMPORTED ONE-OFFS GO
+	#
+	# All three models below used to stand inside the court band (x +-20,
+	# z 38.4..53.0): the lamp at (19.5, 46) beside the authored six-lamp row,
+	# the shelter at (20, 53) on the lawn, the skip at (-23, 52) in the open.
+	# Each was a single object with nothing answering it across the axis, which
+	# is exactly what makes a symmetrical court look thrown together, and
+	# _verify_court_composition now fails if any of them stands there.
+	#
+	# A street lamp belongs beside the road. Street Road spans z 55..63 and the
+	# billboard already marks its far edge at z 62.9, so the lamp joins that far
+	# line at (12, 62.6): clear of the billboard's 7.2 m face at x +-3.6, of the
+	# road cars at z 59 and of the lane line at z 60.6. 1.0 makes it 3.23 m,
+	# base on origin.
+	MuseumModels.place(parent, "уличная лампа", Vector3(12.0, 0.0, 62.6), 1.0, 0.0)
+	# The shelter (25.0 makes it 1.42 x 3.00 x 2.96, so 0.71 m deep either side
+	# at yaw 90) belongs at a stop on the far pavement: (-20, 62.4) spans
+	# z 61.69..63.11, which keeps it 19 cm short of Lot Wall South at z 63.3 and
+	# well west of the billboard.
+	MuseumModels.place(parent, "отсановка", Vector3(-20.0, 0.0, 62.4), 25.0, 90.0)
+	# The skip is refuse handling, so it goes to the service corner behind the
+	# west birch at x -25, hard against the west lot wall (inner face x -31.3)
+	# and out of the court on both axes at (-28.5, 53.4). At 0.65 the group is
+	# about 2.4 m across, spanning x -29.7..-27.3. The pallet and crates that
+	# used to share this corner are deleted (see _add_street_extras).
+	MuseumModels.place(parent, "dumpsters_glb", Vector3(-28.5, 0.0, 53.4), 0.65, 0.0)
 
 	# --- Removed -------------------------------------------------------------
 	# "modern_grey_stone_tile_texture" is NOT placed. It measured 920.9 x 46.9 x
@@ -2519,15 +2600,8 @@ func _add_exhibit(parent: Node, exhibit_name: String, model_name: String,
 
 func _add_planetarium_details(parent: Node) -> void:
 	var c := Vector3(0, 0, -41)
-	# Pixel-star field glued to the ceiling (deterministic scatter).
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	for i in range(46):
-		var star_pos := Vector3(rng.randf_range(-8.6, 8.6), 3.26,
-			rng.randf_range(-48.0, -34.2))
-		var tint := 0.7 + rng.randf() * 0.3
-		_box(parent, "Star %d" % i, star_pos, Vector3(0.06, 0.06, 0.06),
-			Color(tint, tint, 1.0), rng.randf_range(1.2, 2.6), 0.0, false)
+	# The projector-off state is literal: the old 46 emissive pixels glued to
+	# the ceiling were both hidden by the opaque dome and contradicted the sign.
 	# The room proper: a flat saucer dome, the shrouded projector under it, a
 	# raked seating bank and the operator's booth. One call -- the library placed
 	# and measured all four against this room's 20 x 16 footprint and its single
@@ -2633,14 +2707,15 @@ func _add_furnishings(parent: Node) -> void:
 	# the origin and given both of those lookups two candidates to choose
 	# between. The plaque that replaces the label reads tr("EXHIBIT_CONTAINMENT_CORE").
 
-	# Wing banners flanking the atrium doorways.
-	_box(parent, "Wing Banner NW", Vector3(-3.2, 2.4, -14.45),
+	# Wing banners flank the atrium doorways close to the jambs, leaving the
+	# safety signage and emergency luminaires on the outer wall runs unobscured.
+	_box(parent, "Wing Banner NW", Vector3(-1.7, 2.4, -14.45),
 		Vector3(1.1, 1.6, 0.06), Color(0.30, 0.42, 0.72), 0.15, 0.0, false)
-	_box(parent, "Wing Banner NE", Vector3(3.2, 2.4, -14.45),
+	_box(parent, "Wing Banner NE", Vector3(1.7, 2.4, -14.45),
 		Vector3(1.1, 1.6, 0.06), Color(0.72, 0.50, 0.30), 0.15, 0.0, false)
-	_box(parent, "Wing Banner EN", Vector3(14.45, 2.4, -3.2),
+	_box(parent, "Wing Banner EN", Vector3(14.45, 2.4, -1.7),
 		Vector3(0.06, 1.6, 1.1), Color(0.50, 0.36, 0.66), 0.15, 0.0, false)
-	_box(parent, "Wing Banner ES", Vector3(14.45, 2.4, 3.2),
+	_box(parent, "Wing Banner ES", Vector3(14.45, 2.4, 1.7),
 		Vector3(0.06, 1.6, 1.1), Color(0.55, 0.45, 0.28), 0.15, 0.0, false)
 
 	# Entrance hall: brochure stand, posters, floor mat.
@@ -2806,13 +2881,13 @@ func _add_outdoor(parent: Node) -> void:
 		for z: float in [40.0, 45.0, 50.0]:
 			_add_plant(parent, Vector3(side * 6.2, 0, z))
 
-	# Six lights create an even cadence from curb to entrance.
+	# Six finished fixtures create an even cadence from curb to entrance.
+	# Their curved brackets face inward, framing the walk as a paired avenue.
 	for z: float in [39.5, 45.0, 50.5]:
 		for lx: float in [-4.5, 4.5]:
-			_cylinder(parent, "Street Lamp Post %s" % [Vector2(lx, z)], Vector3(lx, 1.6, z), 0.08, 3.2,
-				Color(0.12, 0.13, 0.14))
-			_box(parent, "Street Lamp Head %s" % [Vector2(lx, z)], Vector3(lx, 3.25, z),
-				Vector3(0.42, 0.28, 0.42), Color(0.92, 0.86, 0.68), 0.55)
+			var yaw := -90.0 if lx < 0.0 else 90.0
+			ExteriorProps.build_lamp_post(parent as Node3D,
+				Vector3(lx, 0.0, z), yaw)
 
 	# Facing benches form a deliberate pause point halfway to the entrance.
 	# The seat and the back used to be two planks hanging in mid-air: the seat
@@ -2877,6 +2952,27 @@ func _add_outdoor(parent: Node) -> void:
 			Color(0.26, 0.27, 0.25))
 
 
+## Cars are ExteriorProps silhouettes and ExteriorProps never builds physics.
+## That is right for the driving set behind the lot wall, where nothing is
+## reachable on foot, and wrong for the cars parked in the street the player
+## actually walks down -- a sedan you can step through is worse than no sedan.
+## One box per car, sized to the shell and parented under the car's own root so
+## it inherits the car's yaw, is all the physics a parked prop needs.
+func _car_collider(car: Node3D, size: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.name = "Car Collision"
+	body.position = Vector3(0.0, size.y * 0.5, 0.0)
+	car.add_child(body)
+
+	var shape := BoxShape3D.new()
+	shape.size = size
+
+	var collision := CollisionShape3D.new()
+	collision.name = "Car CollisionShape"
+	collision.shape = shape
+	body.add_child(collision)
+
+
 func _add_street_extras(parent: Node) -> void:
 	# Proper road edge, pedestrian crossing and drainage line.
 	_box(parent, "Street Road", Vector3(0, -0.095, 59), Vector3(64, 0.21, 8),
@@ -2892,30 +2988,32 @@ func _add_street_extras(parent: Node) -> void:
 			Vector3(-2.5 + float(i), 0.016, 57.2), Vector2(0.55, 3.0),
 			Color(0.82, 0.82, 0.79), true, false, 0.0, false)
 
-	# Vehicles are parked parallel to the road in distinct visitor/service bays.
-	_box(parent, "Visitor Car Body", Vector3(15.5, 0.62, 59.0), Vector3(4.0, 0.8, 1.8),
-		Color(0.31, 0.39, 0.48), 0.0, 0.45)
-	_box(parent, "Visitor Car Cabin", Vector3(15.1, 1.25, 59.0), Vector3(2.1, 0.55, 1.6),
-		Color(0.24, 0.29, 0.34), 0.0, 0.35)
-	for off: Vector3 in [Vector3(-1.3, 0, -0.86), Vector3(1.3, 0, -0.86), Vector3(-1.3, 0, 0.86), Vector3(1.3, 0, 0.86)]:
-		var wheel := _cylinder(parent, "Visitor Car Wheel %s" % [off], Vector3(15.5, 0.32, 59.0) + off,
-			0.32, 0.24, Color(0.06, 0.06, 0.07))
-		wheel.rotation_degrees = Vector3(90, 0, 0)
-	_box(parent, "Museum Service Van", Vector3(-17.0, 0.95, 59.0), Vector3(4.4, 1.7, 1.9),
-		Color(0.70, 0.70, 0.68), 0.0, 0.25)
-	_box(parent, "Service Van Stripe", Vector3(-17.0, 1.08, 58.01), Vector3(3.4, 0.32, 0.03),
-		Color(0.24, 0.34, 0.42), 0.15, 0.0, false)
-	for off: Vector3 in [Vector3(-1.45, 0, -0.9), Vector3(1.45, 0, -0.9), Vector3(-1.45, 0, 0.9), Vector3(1.45, 0, 0.9)]:
-		var van_wheel := _cylinder(parent, "Service Van Wheel %s" % [off], Vector3(-17.0, 0.34, 59.0) + off,
-			0.34, 0.26, Color(0.06, 0.06, 0.07))
-		van_wheel.rotation_degrees = Vector3(90, 0, 0)
+	# Finished silhouettes are parked parallel to the road in distinct
+	# visitor/service bays. The road top is y 0.01, so each wheel meets it.
+	# Every one of them carries a collider: this street is walking ground inside
+	# the perimeter walls, not scenery seen from a car window.
+	_car_collider(ExteriorProps.build_parked_car(parent as Node3D,
+		Vector3(15.5, 0.01, 59.0), Color(0.31, 0.39, 0.48), 90.0),
+		Vector3(1.78, 1.32, 4.30))
+	_car_collider(ExteriorProps.build_parked_car(parent as Node3D,
+		Vector3(-17.0, 0.01, 59.0), Color(0.70, 0.70, 0.68), -90.0),
+		Vector3(1.78, 1.32, 4.30))
+	# The player's own sedan, at the kerb in the lane it drove in on. It stands
+	# here and not in the staff lot (_add_drive_set) because the arrival cutscene
+	# hands control back beside it: the ground under it has to carry a collider
+	# and the spot has to be inside the walls. See DRIVE_CAR_PARKED_POS.
+	_car_collider(ExteriorProps.build_player_car(parent as Node3D,
+		DRIVE_CAR_PARKED_POS, DRIVE_CAR_PARKED_YAW),
+		Vector3(1.80, 1.44, 4.90))
 
-	# Symmetrical tree line and flag pair frame the museum facade.
-	for tree_pos: Vector3 in [Vector3(-25, 0, 39.5), Vector3(-25, 0, 50.5), Vector3(25, 0, 39.5), Vector3(25, 0, 50.5)]:
-		_cylinder(parent, "Street Tree Trunk %s" % [tree_pos], tree_pos + Vector3(0, 1.1, 0), 0.18,
-			2.2, Color(0.30, 0.22, 0.14))
-		_cone(parent, "Street Tree Crown %s" % [tree_pos], tree_pos + Vector3(0, 3.3, 0), 1.5, 0.15,
-			2.4, Color(0.18, 0.31, 0.16))
+	# Symmetrical TreeLib silhouettes and flag pair frame the museum facade.
+	# Oaks anchor the building edge; airier birches keep the road-side view open.
+	for side: float in [-1.0, 1.0]:
+		var seed_offset := 0 if side < 0.0 else 10
+		ExteriorProps.build_oak(parent as Node3D,
+			Vector3(side * 25.0, 0.0, 39.5), 401 + seed_offset)
+		ExteriorProps.build_birch(parent as Node3D,
+			Vector3(side * 25.0, 0.0, 50.5), 402 + seed_offset)
 	# The flags used to stand at (+-5.4, z 36.8), which the classical facade now
 	# occupies: the portico's outer columns rise at x +-5.1, z 36.9 and the porch
 	# cheek parapets run out to x +-6.4. Moved onto the formal lawns (beds span
@@ -2924,45 +3022,58 @@ func _add_street_extras(parent: Node) -> void:
 		var flag_tag: String = "West" if fx < 0.0 else "East"
 		_cylinder(parent, "Flag Pole %s" % flag_tag, Vector3(fx, 2.5, 39.9), 0.05, 5.0,
 			Color(0.60, 0.62, 0.66))
-		_box(parent, "Flag %s" % flag_tag, Vector3(fx + 0.5, 4.55, 39.9), Vector3(0.9, 0.5, 0.04),
+		# signf, not a bare +0.5: the cloth hangs outward from its own pole, so
+		# the west flag flies at -9.7 and the east one at 9.7. With a bare offset
+		# both cloths leaned east and the pair read as an error.
+		_box(parent, "Flag %s" % flag_tag,
+			Vector3(fx + 0.5 * signf(fx), 4.55, 39.9), Vector3(0.9, 0.5, 0.04),
 			Color(0.30, 0.42, 0.72) if fx < 0.0 else Color(0.72, 0.50, 0.30),
 			0.15, 0.0, false)
 
-	# Visitor amenities are grouped into clean east/west service zones.
-	_cylinder(parent, "Hours Sign Pole", Vector3(4.8, 0.7, 52.0), 0.04, 1.4,
-		Color(0.18, 0.19, 0.21))
-	_box(parent, "Hours Sign Board", Vector3(4.8, 1.55, 52.0), Vector3(1.5, 0.7, 0.06),
-		Color(0.88, 0.86, 0.80), 0.1, 0.0, false)
-	_add_label(parent, tr("EXHIBIT_OPEN_HOURS"), Vector3(4.8, 1.55, 51.9),
-		Color(0.20, 0.24, 0.20))
+	# UTILITIES BELONG IN THE KERB STRIP, NOT IN THE COURT
+	#
+	# The formal court is the band z 38.4..53.0 between the portico steps and the
+	# kerb, and everything standing in it is mirrored across the axis (see
+	# _verify_court_composition). An hours sign at x 4.8 and a four-hoop bike
+	# rack at x 10..12.4 with nothing answering them on the west half were the
+	# two props that made the court read as filled in at random, and the bins
+	# stood at a pair of unrelated x (-4.8 and 8.0) besides.
+	#
+	# All of it is real museum equipment, so it moves to the strip between the
+	# planting beds (which end at z 52.2) and the kerb (front face z 54.55)
+	# rather than being deleted: z 53.6 clears the beds by 1.4 m and the kerb by
+	# 0.95 m. The rack goes west, the sign east, and the bins become a proper
+	# pair at +-8.6. All three keep clear of the gate piers, which occupy
+	# x 3.97..5.43 mirrored over z 53.47..54.93, and of the hydrant at x 11.5.
+	const KERB_STRIP_Z := 53.6
+	_cylinder(parent, "Hours Sign Pole", Vector3(6.4, 0.7, KERB_STRIP_Z), 0.04,
+		1.4, Color(0.18, 0.19, 0.21))
+	_box(parent, "Hours Sign Board", Vector3(6.4, 1.55, KERB_STRIP_Z),
+		Vector3(1.5, 0.7, 0.06), Color(0.88, 0.86, 0.80), 0.1, 0.0, false)
+	_add_label(parent, tr("EXHIBIT_OPEN_HOURS"),
+		Vector3(6.4, 1.55, KERB_STRIP_Z - 0.1), Color(0.20, 0.24, 0.20))
 	for i in range(4):
 		_torus(parent, "Bike Rack Hoop %d" % i,
-			Vector3(10.0 + float(i) * 0.8, 0.4, 51.2), 0.32, 0.42,
+			Vector3(-10.0 - float(i) * 0.8, 0.4, KERB_STRIP_Z), 0.32, 0.42,
 			Color(0.42, 0.45, 0.48))
-	# z 53.2, not 52.0. The planting beds above are 13.4 x 14.4 centred on
-	# (+-10.5, 45), so they run to z 52.2 -- both bins used to stand with their
-	# bases inside the 12 cm stone border, which measured as a bin sunk 0.11 m
-	# into the ground. 53.2 is a metre clear of the beds and 1.35 m short of the
-	# kerb at 54.55.
 	# r 0.28 x 0.76 was a waste basket, not street furniture. r 0.36 x 1.00 with
-	# a rim puts the opening at 1.0 m, i.e. hand height, and still leaves 0.64 m
-	# to the beds at z 52.2 and 0.99 m to the kerb at 54.55.
-	for bin_pos: Vector3 in [Vector3(-4.8, 0.50, 53.2), Vector3(8.0, 0.50, 53.2)]:
-		_cylinder(parent, "Street Bin %s" % [bin_pos], bin_pos, 0.36, 1.00, Color(0.16, 0.25, 0.18))
-		_cylinder(parent, "Street Bin Rim %s" % [bin_pos], bin_pos + Vector3(0, 0.52, 0), 0.39,
-			0.06, Color(0.12, 0.19, 0.14))
+	# a rim puts the opening at 1.0 m, i.e. hand height.
+	for bin_x: float in [-8.6, 8.6]:
+		var bin_tag: String = "West" if bin_x < 0.0 else "East"
+		var bin_pos := Vector3(bin_x, 0.50, KERB_STRIP_Z)
+		_cylinder(parent, "Street Bin %s" % bin_tag, bin_pos, 0.36, 1.00,
+			Color(0.16, 0.25, 0.18))
+		_cylinder(parent, "Street Bin Rim %s" % bin_tag,
+			bin_pos + Vector3(0, 0.52, 0), 0.39, 0.06, Color(0.12, 0.19, 0.14))
 	_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0), 0.14, 0.6,
 		Color(0.62, 0.14, 0.12))
 	_sphere(parent, "Fire Hydrant Cap", Vector3(11.5, 0.66, 54.0), 0.15,
 		Color(0.62, 0.14, 0.12))
 
-	# Deliveries stay in a dedicated west bay, away from the visitor axis.
-	_box(parent, "Delivery Pallet", Vector3(-27.5, 0.06, 52.0), Vector3(2.4, 0.12, 1.6),
-		Color(0.38, 0.30, 0.20))
-	_box(parent, "Delivery Crate A", Vector3(-28.0, 0.57, 52.0), Vector3(0.9, 0.9, 0.9),
-		Color(0.50, 0.40, 0.27))
-	_box(parent, "Delivery Crate B", Vector3(-26.9, 0.47, 52.3), Vector3(0.7, 0.7, 0.7),
-		Color(0.46, 0.36, 0.24))
+	# The delivery pallet and its two crates are gone. They were three flat-
+	# coloured boxes sitting in the open west half of the forecourt saying the
+	# same thing the imported skip says, and the skip now stands in that very
+	# corner (see _add_models). Refuse handling reads once, not twice.
 
 	# The billboard closes the long vista without competing with the facade.
 	_box(parent, "Lot Wall South", Vector3(0, 0.6, 63.5), Vector3(64, 1.2, 0.4),
@@ -3081,24 +3192,55 @@ func _add_drive_set(parent: Node) -> void:
 	ExteriorProps.build_bus_stop(set_root, Vector3(75, -0.05, 51.6), 180.0)
 
 	# Staff parking, butted against Lot Wall East (x 31.5) so it reads as the
-	# museum's own yard: slab, kerb, five painted bays, two staff cars and the
-	# player's sedan in the middle bay -- the drive cutscene's moving prop.
+	# museum's own yard. Six separators enclose five real bays, three of them
+	# taken. The player's own sedan is deliberately NOT one of these cars: this
+	# slab carries no collider and stands outside the perimeter wall, so anyone
+	# handed control on it is standing on nothing behind a locked fence. It parks
+	# at the street kerb instead (_add_street_extras). Kerbs, wheel stops, signs
+	# and bollards finish the lot edges.
 	var lot := _box(set_root, "Museum Parking Lot", Vector3(42.4, -0.03, 46.5),
 		Vector3(21.2, 0.07, 17.0), ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
 	lot.visibility_range_end = 0.0
 	_box(set_root, "Parking Kerb", Vector3(42.4, 0.03, 38.2),
 		Vector3(21.2, 0.12, 0.4), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
-	for i in range(5):
+	_box(set_root, "Parking Kerb East", Vector3(52.8, 0.03, 46.5),
+		Vector3(0.4, 0.12, 16.2), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
+	for i in range(6):
 		_box(set_root, "Parking Bay Line %d" % i,
 			Vector3(36.0 + float(i) * 3.0, 0.017, 41.8),
 			Vector3(0.12, 0.012, 5.6), ExteriorProps.COL_BAY_LINE,
 			0.1, 0.0, false)
+	for i in range(5):
+		_box(set_root, "Parking Wheel Stop %d" % i,
+			Vector3(37.5 + float(i) * 3.0, 0.10, 41.25),
+			Vector3(1.45, 0.18, 0.22), ExteriorProps.COL_CONCRETE,
+			0.0, 0.0, false)
+
+	# Two supported symbol boards mark parking and exit; neither is a floating
+	# Label3D. Three low bollards hold the east pedestrian margin.
+	_cylinder(set_root, "Parking Sign Pole", Vector3(51.9, 0.90, 40.0),
+		0.05, 1.80, ExteriorProps.COL_IRON)
+	_box(set_root, "Parking Sign Board", Vector3(51.9, 1.92, 40.0),
+		Vector3(0.82, 0.72, 0.08), Color(0.20, 0.34, 0.62), 0.1, 0.0, false)
+	_box(set_root, "Parking Sign Glyph", Vector3(51.9, 1.92, 39.95),
+		Vector3(0.36, 0.36, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	_cylinder(set_root, "Parking Exit Pole", Vector3(33.2, 0.78, 52.6),
+		0.05, 1.56, ExteriorProps.COL_IRON)
+	_box(set_root, "Parking Exit Board", Vector3(33.2, 1.68, 52.6),
+		Vector3(0.92, 0.58, 0.08), Color(0.24, 0.42, 0.30), 0.1, 0.0, false)
+	_box(set_root, "Parking Exit Stripe", Vector3(33.2, 1.68, 52.55),
+		Vector3(0.58, 0.10, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	for i in range(3):
+		_cylinder(set_root, "Parking Bollard %d" % i,
+			Vector3(52.1, 0.40, 45.0 + float(i) * 3.0),
+			0.09, 0.80, ExteriorProps.COL_IRON)
+
 	ExteriorProps.build_parked_car(set_root, Vector3(37.5, 0.005, 42.6),
 		Color(0.25, 0.30, 0.40), 0.0)
 	ExteriorProps.build_parked_car(set_root, Vector3(46.5, 0.005, 42.6),
 		Color(0.38, 0.20, 0.18), 0.0)
-	ExteriorProps.build_player_car(set_root, DRIVE_CAR_PARKED_POS,
-		DRIVE_CAR_PARKED_YAW)
+	ExteriorProps.build_parked_car(set_root, Vector3(49.5, 0.005, 42.6),
+		Color(0.22, 0.34, 0.26), 0.0)
 
 
 ## Species cycle for _add_drive_set's forest bands. The seed is the running
@@ -3157,18 +3299,58 @@ func _apply_dome_shader(dome: MeshInstance3D) -> void:
 var _cutscene: Cutscene = null
 
 # The arrival drive's moving prop and its animation state. The car is the
-# "Player Car" node ExteriorProps parks on the staff lot (_add_drive_set);
+# "Player Car" node ExteriorProps parks at the street kerb (_add_street_extras);
 # during the drive cutscene _sync_drive_car() moves it along _drive_track in
 # step with Cutscene's own clock. All three are runtime only.
 var _drive_car: Node3D = null
 var _drive_track: Array = []
 var _drive_playing := false
 
-# Where the sedan stands whenever it is not being driven: the middle bay of
-# the staff lot, nose to the museum. _add_drive_set builds it here, and
-# _on_drive_finished snaps it back here so a skip cannot strand it mid-road.
-const DRIVE_CAR_PARKED_POS := Vector3(43.5, 0.005, 42.6)
-const DRIVE_CAR_PARKED_YAW := 0.0
+# Where the sedan stands whenever it is not being driven: at the kerb on the
+# museum's side of the street, nose west, in the lane it drove in on.
+#
+# It used to stand in the middle bay of the staff lot at (43.5, 42.6), and that
+# was a bug with a nice view. The lot belongs to the driving set, which is
+# strictly collider-free dressing (see _add_drive_set), and it lies east of Lot
+# Wall East -- so the arrival handed the player control standing on nothing,
+# fenced out of their own forecourt by a 1.2 m unclimbable wall with no gate in
+# it. z 56.2 is Street Road: real collider floor, inside the perimeter, with the
+# forecourt open from the kerb all the way to the portico.
+#
+# _add_street_extras builds it here and _on_drive_finished snaps it back here,
+# so a skipped cutscene cannot strand it mid-road.
+const DRIVE_CAR_PARKED_POS := Vector3(8.5, 0.01, 56.2)
+const DRIVE_CAR_PARKED_YAW := 90.0
+
+# Where the player stands once the drive is over: out of the car, by the
+# driver's door. Without this the player arrived by car and then materialised
+# tens of metres away in the middle of the street, with the car they had just
+# parked standing empty somewhere else -- the arrival read as a video someone
+# else's camera shot rather than as their own.
+#
+# The numbers come off the car, not off taste. The sedan is parked at yaw 90,
+# nose west, so its local -x -- the driver's side, ExteriorProps.DRIVER_EYE.x =
+# -0.37 -- points at world +z, away from the kerb, which is the side anyone
+# parked on the right-hand edge of a road gets out on. The door skin is at
+# |x| 0.895 ("Door" box at 0.86, half-thickness 0.035), so 1.5 m out from the
+# car's centre leaves 0.25 m between the door and a player capsule of radius
+# 0.35. x 8.5 is level with the cabin, i.e. beside the door, not the trunk.
+#
+# The spot stands on Street Road (x +-32, z 55..63, top y 0.01), which carries
+# a collider like every other surface the player is meant to walk on, and it is
+# inside the perimeter walls -- so the way in is a walk and not a search for a
+# gate: north over the 12 cm kerb at z 54.8, across the forecourt, between the
+# Court Gate piers at x +-4.7, up the axis to the doors.
+#
+# y 0.05 is the same drop height _add_player_spawn uses: 4 cm of air over the
+# road, with the capsule's own centre 0.9 up, so this is standing, not sinking.
+const DRIVE_EXIT_POS := Vector3(8.5, 0.05, 57.7)
+# Facing the entrance: from (8.5, 57.7) towards the doors at (0, 40) the heading
+# is mostly -z with a quarter of -x in it, and a yaw of 26 deg turns the
+# player's -z forward axis onto it. So the first thing on screen after the
+# cutscene is the building they came to work in, framed between the gate piers,
+# with the car just behind their shoulder.
+const DRIVE_EXIT_YAW := 26.0
 
 # --- When a cutscene is allowed to play --------------------------------------
 # Both files belong to other scripts and are only read here (the two seen flags
@@ -3291,6 +3473,46 @@ func _start_opening() -> void:
 		_play(_intro_shots(), _on_intro_finished)
 
 
+## Пересмотр заезда на карте, которая УЖЕ стоит в дереве.
+##
+## Кнопка «пересмотреть заезд» в главном меню ставит story/drive_replay и
+## снимает паузу — но _ready() этой карты отработал ещё под меню, и
+## _start_opening() был вызван (deferred) ровно один раз, ДО записи флага.
+## Второй раз его никто не звал, поэтому первое нажатие уходило впустую: заезд
+## отыгрывался только при следующем входе в музей. Это же объясняет и
+## «не всегда проигрывается» — совпадёт вход с уже лежащим флагом, значит
+## сыграет, не совпадёт — нет.
+##
+## Возвращает true, если заезд действительно пошёл. По false MenuManager
+## оставляет флаг лежать в файле, и заезд отыграется при следующей загрузке
+## карты — прежнее поведение сохранено, но как запасной путь, а не основной.
+func replay_drive() -> bool:
+	if Engine.is_editor_hint():
+		return false
+	# Экраном уже кто-то владеет (пролог, интро или сам заезд). Перебивать
+	# нельзя: Cutscene одалживает камеру и управление игрока и возвращает их
+	# своим _finish(), а второй экземпляр поверх первого вернул бы их дважды —
+	# и вторым возвратом отдал бы управление в катсцену, которая ещё идёт.
+	if is_instance_valid(_cutscene):
+		return false
+	# Та же пара проверок, что и в _start_opening(), и по тем же причинам:
+	# без игрока камеру не у кого одолжить, без «Player Car» заезд играл бы
+	# с невидимой машиной.
+	if get_tree().get_first_node_in_group("player") == null:
+		return false
+	var generated := get_node_or_null("GeneratedMap")
+	if generated == null:
+		return false
+	_drive_car = generated.find_child("Player Car", true, false) as Node3D
+	if _drive_car == null:
+		return false
+	_drive_playing = true
+	# Порядок тот же, что в _start_opening(): профиль читает _drive_playing.
+	_apply_fog_profile()
+	_play(_drive_shots(), _on_drive_finished)
+	return true
+
+
 func _play(shots: Array, on_finished: Callable) -> void:
 	_cutscene = Cutscene.new()
 	_cutscene.name = "Opening Cutscene"
@@ -3317,10 +3539,47 @@ func _on_drive_finished(_skipped: bool) -> void:
 	if is_instance_valid(_drive_car):
 		_drive_car.position = DRIVE_CAR_PARKED_POS
 		_drive_car.rotation.y = deg_to_rad(DRIVE_CAR_PARKED_YAW)
+	# И вместе с машиной — сам игрок: он приехал, значит стоит у своей двери,
+	# а не посреди улицы в сорока трёх метрах отсюда.
+	_place_player_at_car()
 	if _prologue_should_play():
 		_play(_prologue_shots(), _on_prologue_finished)
 	elif _intro_should_play():
 		_play(_intro_shots(), _on_intro_finished)
+
+
+## Высаживает игрока у водительской двери припаркованной машины.
+##
+## Зовётся только из _on_drive_finished, то есть ровно тогда, когда по фикции
+## игрок только что приехал — и при пропуске заезда тоже, потому что пропуск
+## меняет длительность, а не событие. Уличный маркер "Player Spawn - Street"
+## при этом не трогается: на него завязаны GameManager.FALL_SPAWN_NAME
+## (возврат после падения за карту) и проверки в test_map_verification, а
+## ночи со второй по третью начинаются без заезда и должны начинаться там же,
+## где начинались всегда.
+##
+## safe_teleport(), а не присваивание global_position: он гасит velocity до и
+## после кадра физики и снимает койот-тайм с буфера прыжка. Без этого игрок
+## приземлялся бы на новом месте с накопленной за катсцену вертикальной
+## скоростью. Вызов не ожидается: функция доходит до своего await, отдаёт
+## управление обратно сюда и доигрывает сама — а следом за ней в этом же кадре
+## может встать пролог, который всё равно отберёт управление.
+##
+## Поворот ставится отдельно и до телепорта: safe_teleport владеет позицией и
+## скоростью, но не курсом, и вращать игрока после того, как он вернул себе
+## управление, значило бы дёрнуть камеру у него из рук.
+func _place_player_at_car() -> void:
+	var player := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	if player == null:
+		return
+	player.rotation.y = deg_to_rad(DRIVE_EXIT_YAW)
+	if player.has_method("safe_teleport"):
+		player.call("safe_teleport", DRIVE_EXIT_POS)
+	else:
+		# Запасной путь на случай, если игрок — не PlayerController (так стоят
+		# заглушки в тестах карты).
+		player.global_position = DRIVE_EXIT_POS
+		player.velocity = Vector3.ZERO
 
 
 func _on_prologue_finished(_skipped: bool) -> void:
@@ -3358,7 +3617,9 @@ func _on_intro_finished(_skipped: bool) -> void:
 ## Track geography (see _add_drive_set): the car rolls west down the road
 ## lane at z 57.2 from deep in the forest (x 236), crosses the river bridge
 ## at x 150 during the second shot, passes the bus stop (x 75) and the lamp
-## rows in the third, then swings off the road into the middle parking bay.
+## rows in the third, then comes in past the lot wall and pulls up at the kerb
+## opposite the museum gate, which is where the player gets out: on collider
+## floor, inside the walls, with the forecourt open in front of them.
 ## Shot cuts hide the two small pose jumps between segments 2->3 and 3->4.
 func _drive_shots() -> Array:
 	_drive_track = [
@@ -3369,9 +3630,9 @@ func _drive_shots() -> Array:
 		{"t0": 13.0, "t1": 19.0, "from": Vector3(124, 0.01, 57.2),
 			"to": Vector3(62, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
 		{"t0": 19.0, "t1": 22.2, "from": Vector3(58, 0.01, 57.2),
-			"to": Vector3(46.5, 0.01, 49.5), "yaw0": 90.0, "yaw1": 40.0},
-		{"t0": 22.2, "t1": 24.5, "from": Vector3(46.5, 0.01, 49.5),
-			"to": DRIVE_CAR_PARKED_POS, "yaw0": 40.0,
+			"to": Vector3(24.0, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 22.2, "t1": 24.5, "from": Vector3(24.0, 0.01, 57.2),
+			"to": DRIVE_CAR_PARKED_POS, "yaw0": 90.0,
 			"yaw1": DRIVE_CAR_PARKED_YAW},
 		{"t0": 24.5, "t1": 30.0, "from": DRIVE_CAR_PARKED_POS,
 			"to": DRIVE_CAR_PARKED_POS, "yaw0": DRIVE_CAR_PARKED_YAW,
@@ -3401,10 +3662,10 @@ func _drive_shots() -> Array:
 			"to": (_drive_track[2]["to"] as Vector3) + eye,
 			"look": Vector3(0, 1.2, 57.0), "text": "STORY_DRIVE_03",
 			"time": 6.0, "card": false},
-		# Exterior: a static camera on the lot watches the sedan swing off the
-		# road and settle into the middle bay between the two staff cars.
-		{"from": Vector3(36.5, 1.9, 50.5), "to": Vector3(36.5, 1.9, 50.5),
-			"look": Vector3(44.0, 0.8, 46.0), "text": "STORY_DRIVE_04",
+		# Exterior: a static camera on the far edge of the road watches the sedan
+		# come in off the open road and pull up at the museum's own kerb.
+		{"from": Vector3(19.0, 1.9, 61.6), "to": Vector3(19.0, 1.9, 61.6),
+			"look": Vector3(10.0, 0.9, 56.6), "text": "STORY_DRIVE_04",
 			"time": 5.5, "card": false},
 		# The reveal: up over the lot wall and across the forecourt onto the
 		# facade, the same (0, 4.2, 35) aim the museum intro opens with.
@@ -3693,7 +3954,9 @@ func _process(delta: float) -> void:
 	if is_instance_valid(_emergency_light):
 		var settings := get_tree().get_first_node_in_group("settings_manager")
 		var pulse_strength := 0.12 if settings != null and settings.reduced_flashes else 0.45
-		_emergency_light.light_energy = 0.9 + pulse_strength * (0.5 + 0.5 * sin(_flicker_time * 2.4))
+		# A higher floor makes the atrium geometry readable between pulse peaks;
+		# reduced_flashes still keeps the modulation restrained.
+		_emergency_light.light_energy = 2.00 + pulse_strength * (0.5 + 0.5 * sin(_flicker_time * 2.4))
 
 
 func _rebuild_generated_map() -> void:

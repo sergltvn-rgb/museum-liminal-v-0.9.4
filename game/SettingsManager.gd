@@ -5,6 +5,20 @@ signal settings_changed
 
 const PATH := "user://museum_settings.cfg"
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080)]
+## Масштаб 3D-буфера. Картинка рендерится в долю от окна и растягивается
+## обратно — это и есть пиксельный курс (блок 9), вместе с nearest-фильтром
+## в MaterialLib. Раньше значение стояло намертво в project.godot
+## (rendering/scaling_3d/scale=0.75) и игрок не мог его тронуть: слабой машине
+## некуда было опуститься, сильной — некуда подняться.
+##
+## 1.0 оставлен намеренно: при нём пиксельность даёт только nearest-фильтр
+## текстур, и это единственный режим, в котором читаются мелкие надписи на
+## табличках экспонатов.
+const RENDER_SCALES := [0.5, 0.6, 0.75, 1.0]
+## Художественный дефолт шага B: 0.60 сохраняет UI в полном разрешении, но
+## уменьшает число 3D-сэмплов на 36% относительно прежних 0.75. Один индекс
+## используется и при первом запуске, и в Reset, и как fallback старого cfg.
+const DEFAULT_RENDER_SCALE_INDEX := 1
 ## Contrast the accessibility toggle guarantees when it is ON. Applied as a
 ## floor over the map's own grade, never as a replacement for it.
 const HIGH_CONTRAST_CONTRAST := 1.18
@@ -15,6 +29,7 @@ var fullscreen := false
 var vsync := true
 var quality_preset := 2 # 0 low, 1 medium, 2 high
 var resolution_index := 1
+var render_scale_index := DEFAULT_RENDER_SCALE_INDEX
 var reduced_flashes := false
 var large_text := false
 var high_contrast := false
@@ -93,6 +108,12 @@ func set_resolution_index(value: int) -> void:
 	_commit()
 
 
+func set_render_scale_index(value: int) -> void:
+	render_scale_index = clampi(value, 0, RENDER_SCALES.size() - 1)
+	_apply_render_scale()
+	_commit()
+
+
 func set_reduced_flashes(value: bool) -> void:
 	reduced_flashes = value
 	_commit()
@@ -124,6 +145,7 @@ func reset_defaults() -> void:
 	vsync = true
 	quality_preset = 2
 	resolution_index = 1
+	render_scale_index = DEFAULT_RENDER_SCALE_INDEX
 	reduced_flashes = false
 	large_text = false
 	high_contrast = false
@@ -147,6 +169,7 @@ func _apply_all() -> void:
 	_apply_volume()
 	_apply_sensitivity()
 	_apply_window()
+	_apply_render_scale()
 	_apply_quality()
 	_apply_ui_scale()
 
@@ -178,15 +201,34 @@ func _apply_window() -> void:
 		DisplayServer.window_set_position(centered)
 
 
+## Масштаб 3D-буфера применяется к корневому окну: 3D рендерится в долю
+## разрешения и растягивается обратно, интерфейс остаётся в полном (за это
+## отвечает stretch/mode=canvas_items в project.godot, не трогать).
+##
+## Режим билинейный, а не FSR: FSR на масштабах ниже 0.6 начинает домысливать
+## края и съедает ровно ту пиксельную сетку, ради которой всё затевалось.
+func _apply_render_scale() -> void:
+	if not is_inside_tree():
+		return
+	var root := get_tree().root
+	if root == null:
+		return
+	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	root.scaling_3d_scale = float(RENDER_SCALES[render_scale_index])
+
+
 func _apply_quality() -> void:
 	var museum := get_tree().get_first_node_in_group("museum_map")
 	if museum == null:
 		return
 	var env: Variant = museum.get("_environment")
 	if env is Environment:
-		env.ssao_enabled = quality_preset >= 1
-		env.ssr_enabled = quality_preset >= 1
-		env.ssil_enabled = quality_preset >= 2
+		# Screen-space effects are art-direction exclusions, not quality upgrades.
+		# Re-enabling any of them here would undo FirstMuseumMap._add_world_env()
+		# every time settings load, reset, or change.
+		env.ssao_enabled = false
+		env.ssr_enabled = false
+		env.ssil_enabled = false
 		env.glow_enabled = quality_preset >= 1
 		# Профиль тумана принадлежит карте: у неё их три (день, заезд, ночь)
 		# и только она знает, какой из них сейчас верен. Раньше здесь стояло
@@ -238,6 +280,7 @@ func _load_settings() -> void:
 	vsync = bool(config.get_value("display", "vsync", true))
 	quality_preset = clampi(int(config.get_value("display", "quality", 2)), 0, 2)
 	resolution_index = clampi(int(config.get_value("display", "resolution", 1)), 0, RESOLUTIONS.size() - 1)
+	render_scale_index = clampi(int(config.get_value("display", "render_scale", DEFAULT_RENDER_SCALE_INDEX)), 0, RENDER_SCALES.size() - 1)
 	reduced_flashes = bool(config.get_value("accessibility", "reduced_flashes", false))
 	large_text = bool(config.get_value("accessibility", "large_text", false))
 	high_contrast = bool(config.get_value("accessibility", "high_contrast", false))
@@ -252,6 +295,7 @@ func _save_settings() -> void:
 	config.set_value("display", "vsync", vsync)
 	config.set_value("display", "quality", quality_preset)
 	config.set_value("display", "resolution", resolution_index)
+	config.set_value("display", "render_scale", render_scale_index)
 	config.set_value("accessibility", "reduced_flashes", reduced_flashes)
 	config.set_value("accessibility", "large_text", large_text)
 	config.set_value("accessibility", "high_contrast", high_contrast)

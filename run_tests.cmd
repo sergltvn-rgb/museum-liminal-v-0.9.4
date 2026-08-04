@@ -57,6 +57,10 @@ call :run test_project_integration.gd
 if errorlevel 1 exit /b %errorlevel%
 call :run test_map_verification.gd
 if errorlevel 1 exit /b %errorlevel%
+call :run test_decor_quality.gd
+if errorlevel 1 exit /b %errorlevel%
+call :run test_decor_layout.gd
+if errorlevel 1 exit /b %errorlevel%
 call :run test_incident_catalog.gd
 if errorlevel 1 exit /b %errorlevel%
 call :run test_full_game_cycle.gd

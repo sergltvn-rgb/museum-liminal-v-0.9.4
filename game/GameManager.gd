@@ -136,6 +136,19 @@ const FALL_SPAWN_FALLBACK := Vector3(0, 1.0, 46)
 # up) when picking where to drop the player back into the museum.
 const FALL_SAFE_MAX_Y := 20.0
 
+# --- Hidden from the cameras -------------------------------------------------
+# The render-layer bit every feed camera drops in SecurityCameraTablet._make_cameras().
+# It is a VisualInstance3D layer, NOT a CanvasLayer -- see the ladder comment
+# further down, which spells out that these are two different namespaces.
+#
+# The value is mirrored rather than imported because the three files that use it
+# (FirstMuseumMap, SecurityCameraTablet, MonitorWall) all declare it themselves;
+# a preload here just to read a constant would tie GameManager's load order to
+# the map's. If it ever moves, test_map_verification reads it off the script
+# constants and the mismatch fails there.
+const CCTV_HIDDEN_LAYER := 20
+const CCTV_HIDDEN_MASK := 1 << (CCTV_HIDDEN_LAYER - 1)
+
 # Night progression: nights 2-3 open the locked wings and stack anomalies.
 const MAX_NIGHT := 3
 const SAVE_PATH := "user://museum_save.cfg"
@@ -1951,6 +1964,16 @@ func _spawn_device(id: String) -> void:
 				Color(0.13, 0.15, 0.17))
 			_mesh_cylinder(body, Vector3(0, 0, 0), 0.13, 0.3, color, 0.5)
 			_mesh_torus(body, Vector3(0, 0.03, 0), 0.13, 0.155, color, 0.8, false)
+	# The device's name tag. This is HUD, not signage: it is billboarded, so it
+	# turns to face whatever camera renders it, and it floats 0.55 m over the
+	# object in open air with nothing holding it. On a CCTV feed that reads as
+	# text pasted onto the picture -- the operator is looking at a recording and
+	# the recording is labelling props for them.
+	#
+	# Hence the CCTV-hidden layer, the same one FirstMuseumMap._add_label() puts
+	# its floating room tags on (hide_from_cctv) and the same one that keeps the
+	# monitor wall from filming itself. The player's own camera keeps the full
+	# default mask, so nothing changes in first person.
 	var label := Label3D.new()
 	label.text = tr(str(info["name"]))
 	label.position = Vector3(0, 0.55, 0)
@@ -1958,6 +1981,7 @@ func _spawn_device(id: String) -> void:
 	label.font_size = 34
 	label.pixel_size = 0.0035
 	label.modulate = color
+	label.layers = CCTV_HIDDEN_MASK
 	body.add_child(label)
 	_devices[id] = body
 	_device_homes[id] = body.global_transform
@@ -2089,6 +2113,13 @@ func _build_terminal() -> void:
 	_terminal_screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(_terminal_screen)
 	_set_screen_color(Color(0.1, 0.3, 0.25))
+
+	# THE TWO TERMINAL SLOTS BELOW STAY VISIBLE TO THE CAMERAS, unlike the device
+	# name tags above. They are not HUD: billboard is DISABLED, they sit 0.07 m
+	# off a physical screen face and are readable only from the desk side, so a
+	# feed that catches them catches a lit console in the room, which is exactly
+	# what a camera pointed at a console should show. Hiding them would blank the
+	# screen on the monitor wall and make the office look dead.
 
 	# Slot 1: system state. Faces the desk side, flat against the glass.
 	_terminal_label = Label3D.new()

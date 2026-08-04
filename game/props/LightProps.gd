@@ -88,10 +88,15 @@ const TINT_FAILING := Color(0.98, 0.74, 0.38)
 
 # Structural greys. The museum's fittings are painted steel, not chrome.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const STEEL_DARK := Color(0.075, 0.080, 0.088)
-const STEEL_MID := Color(0.145, 0.150, 0.155)
-const LAMP_DEAD := Color(0.115, 0.118, 0.122)
+# Корпуса светильников тёмные: светится лампа, а не железо вокруг неё,
+# поэтому роли берутся через `tone()` (и потому `static var`).
+static var STEEL_DARK := Pal.tone(Pal.STEEL_DARK, -0.53)
+static var STEEL_MID := Pal.tone(Pal.STEEL, -0.64)
+const LAMP_DEAD := Pal.CASING
 
 # Flicker patterns for attach_flicker(). All four are closed-form functions of
 # time -- no RNG, no per-frame allocation, and identical on every machine.

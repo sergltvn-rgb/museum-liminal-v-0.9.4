@@ -131,22 +131,26 @@ extends RefCounted
 
 ## Impossible mass. Near-black, faintly metallic, deliberately unreadable.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+# Затемнённые ступени — `static var`: вызов `tone()` не константное выражение.
+const Pal := preload("res://game/props/Palette.gd")
 
-const DENSE := Color(0.042, 0.041, 0.048)
+const DENSE := Pal.DARK
 ## Structural steel: gantry rails, bearing plates, load-frame beams.
-const STEEL := Color(0.145, 0.150, 0.160)
+static var STEEL := Pal.tone(Pal.STEEL, -0.64)
 ## Older, unpainted steel: legs, chains, deck plates.
-const STEEL_WORN := Color(0.095, 0.098, 0.105)
+static var STEEL_WORN := Pal.tone(Pal.STEEL_DARK, -0.41)
 ## Plinth and pad concrete.
-const CONCRETE := Color(0.330, 0.320, 0.295)
+static var CONCRETE := Pal.tone(Pal.STONE, -0.43)
 ## Broken concrete, shims, rubble.
-const CONCRETE_DARK := Color(0.185, 0.180, 0.165)
+static var CONCRETE_DARK := Pal.tone(Pal.STONE, -0.68)
 ## The inside of a crack. Darker than DENSE so cracks read even across a mass.
-const VOID := Color(0.012, 0.012, 0.016)
+static var VOID := Pal.tone(Pal.DARK, -0.65)
 ## Corrosion on bolt heads, turnbuckles and packing shims.
-const RUST := Color(0.245, 0.135, 0.075)
+static var RUST := Pal.tone(Pal.RUST, -0.65)
 ## Faded floor hazard paint. Always applied as chevrons, never as a flat field.
-const CAUTION := Color(0.560, 0.500, 0.330)
+static var CAUTION := Pal.tone(Pal.BEIGE, -0.28)
 
 # --- Mesh resolution ---------------------------------------------------------
 const CYL_SEGMENTS := 12
@@ -917,7 +921,7 @@ static func _material(color: Color, metallic: float) -> StandardMaterial3D:
 	# plinth built by FirstMuseumMap._material() are the same surface. Metal is
 	# left smooth: the noise reads as grit, and grit on a polished ingot fights
 	# the one thing that prop has to communicate.
-	if metallic < 0.35:
+	if not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _shared_noise()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

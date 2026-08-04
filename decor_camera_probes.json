@@ -1,0 +1,48 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/probes",
+  "tiles": 1,
+  "settle": 40,
+  "frames": 3,
+  "shots": [
+    {"name":"lab_tray_a","pos":[-29.5,1.35,19.5],"look_at":[-31.5,0.99,18.1],"fov":40},
+    {"name":"lab_tray_b","pos":[-30.5,1.35,20.0],"look_at":[-31.5,0.99,18.1],"fov":40},
+    {"name":"lab_tray_c","pos":[-31.5,1.45,20.2],"look_at":[-31.5,0.99,18.1],"fov":40},
+    {"name":"lab_tray_d","pos":[-33.0,1.35,19.5],"look_at":[-31.5,0.99,18.1],"fov":40},
+
+    {"name":"flashlight_a","pos":[-22.8,1.25,-0.6],"look_at":[-24.35,0.77,-1.78],"fov":36},
+    {"name":"flashlight_b","pos":[-25.8,1.25,-0.4],"look_at":[-24.35,0.77,-1.78],"fov":36},
+    {"name":"flashlight_c","pos":[-24.35,1.35,0.8],"look_at":[-24.35,0.77,-1.78],"fov":36},
+    {"name":"flashlight_d","pos":[-24.35,1.35,-3.7],"look_at":[-24.35,0.77,-1.78],"fov":36},
+
+    {"name":"vents_east","pos":[-12.0,2.4,-5.87],"look_at":[-15.31,2.55,-5.87],"fov":38},
+    {"name":"vents_west","pos":[-18.5,2.4,-5.87],"look_at":[-15.31,2.55,-5.87],"fov":38},
+    {"name":"vents_south","pos":[-15.31,2.4,-2.5],"look_at":[-15.31,2.55,-5.87],"fov":38},
+    {"name":"vents_north","pos":[-15.31,2.4,-9.0],"look_at":[-15.31,2.55,-5.87],"fov":38},
+
+    {"name":"clock_south","pos":[-12.59,2.3,-14.5],"look_at":[-12.59,2.35,-18.0],"fov":36},
+    {"name":"clock_north","pos":[-12.59,2.3,-21.5],"look_at":[-12.59,2.35,-18.0],"fov":36},
+    {"name":"clock_east","pos":[-9.2,2.3,-18.0],"look_at":[-12.59,2.35,-18.0],"fov":36},
+    {"name":"clock_west","pos":[-16.0,2.3,-18.0],"look_at":[-12.59,2.35,-18.0],"fov":36},
+
+    {"name":"hose_east","pos":[-11.0,1.15,-4.69],"look_at":[-14.23,0.80,-4.69],"fov":38},
+    {"name":"hose_west","pos":[-17.5,1.15,-4.69],"look_at":[-14.23,0.80,-4.69],"fov":38},
+    {"name":"hose_south","pos":[-14.23,1.15,-1.5],"look_at":[-14.23,0.80,-4.69],"fov":38},
+    {"name":"hose_north","pos":[-14.23,1.15,-7.8],"look_at":[-14.23,0.80,-4.69],"fov":38},
+
+    {"name":"player_car_ne","pos":[16.0,2.1,63.0],"look_at":[8.38,0.74,56.2],"fov":48},
+    {"name":"player_car_se","pos":[16.0,2.1,51.0],"look_at":[8.38,0.74,56.2],"fov":48},
+    {"name":"player_car_n","pos":[8.0,2.1,66.0],"look_at":[8.38,0.74,56.2],"fov":48},
+    {"name":"player_car_s","pos":[8.0,2.1,47.0],"look_at":[8.38,0.74,56.2],"fov":48},
+
+    {"name":"exit_south","pos":[-2.6,2.4,-12.0],"look_at":[-2.6,2.25,-14.65],"fov":36},
+    {"name":"exit_north","pos":[-2.6,2.4,-17.3],"look_at":[-2.6,2.25,-14.65],"fov":36},
+    {"name":"exit_east","pos":[0.5,2.4,-14.65],"look_at":[-2.6,2.25,-14.65],"fov":36},
+    {"name":"exit_west","pos":[-5.7,2.4,-14.65],"look_at":[-2.6,2.25,-14.65],"fov":36},
+
+    {"name":"emergency_south","pos":[-3.5,2.5,-11.5],"look_at":[-3.5,2.61,-14.56],"fov":36},
+    {"name":"emergency_north","pos":[-3.5,2.5,-17.5],"look_at":[-3.5,2.61,-14.56],"fov":36},
+    {"name":"emergency_east","pos":[-0.5,2.5,-14.56],"look_at":[-3.5,2.61,-14.56],"fov":36},
+    {"name":"emergency_west","pos":[-6.5,2.5,-14.56],"look_at":[-3.5,2.61,-14.56],"fov":36}
+  ]
+}

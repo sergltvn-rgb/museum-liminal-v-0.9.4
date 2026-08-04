@@ -34,6 +34,10 @@ jobs:
         run: godot --headless --path . --script res://game/test_project_integration.gd
       - name: Map verification
         run: godot --headless --path . --script res://game/test_map_verification.gd
+      - name: Decor quality
+        run: godot --headless --path . --script res://game/test_decor_quality.gd
+      - name: Decor layout
+        run: godot --headless --path . --script res://game/test_decor_layout.gd
       - name: Incident catalog
         run: godot --headless --path . --script res://game/test_incident_catalog.gd
       - name: Full game cycle

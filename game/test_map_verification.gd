@@ -162,6 +162,15 @@ func _init() -> void:
 		var mounts := _camera_mounts(generated)
 		_verify_camera_geometry(mounts)
 		_verify_minimap_rooms(generated)
+		_verify_forecourt_lamps(generated)
+		_verify_block3_landscape(generated)
+		_verify_block3_parking(generated)
+		_verify_arrival_exit(generated)
+		_verify_court_composition(generated)
+		_verify_office_fixtures(generated)
+		_verify_entrance_approach(generated)
+		_verify_plaza_footing(generated)
+		_verify_planetarium_composition(generated)
 		# 10.6. MonitorWall assembles itself in _process and not in _ready --
 		# the player, the bank and the tablet are all created in the same frame
 		# it is -- so it is asserted after one more idle frame, not inside
@@ -203,6 +212,770 @@ func _init() -> void:
 	else:
 		print("\n✅ ALL CHECKS PASSED")
 		_quit(0)
+
+
+## BLOCK 3: THE SIX FORECOURT LAMPS USE THE FINISHED EXTERIOR PROP
+##
+## The visible walk from the parked car to the portico used to be lined by six
+## cylinders with glowing boxes on top. Block 3 explicitly replaces those
+## placeholders with ExteriorProps.build_lamp_post at the authored coordinates.
+## Assert the observable finished hierarchy, not a source-code call: every spot
+## must carry the stepped pedestal, turned column and lantern glass.
+const FORECOURT_LAMP_POSITIONS := [
+	Vector2(-4.5, 39.5), Vector2(4.5, 39.5),
+	Vector2(-4.5, 45.0), Vector2(4.5, 45.0),
+	Vector2(-4.5, 50.5), Vector2(4.5, 50.5),
+]
+const FORECOURT_LAMP_EPSILON := 0.02
+const FORECOURT_LAMP_PARTS := ["Pedestal", "Column", "Lantern Glass"]
+
+
+func _verify_forecourt_lamps(generated: Node) -> void:
+	var found: Array[bool] = []
+	found.resize(FORECOURT_LAMP_POSITIONS.size())
+	found.fill(false)
+	var malformed: Array[String] = []
+	for candidate in generated.find_children("Country Lamp*", "Node3D", true, false):
+		var lamp := candidate as Node3D
+		if lamp == null:
+			continue
+		var xz := Vector2(lamp.global_position.x, lamp.global_position.z)
+		for i in range(FORECOURT_LAMP_POSITIONS.size()):
+			if xz.distance_to(FORECOURT_LAMP_POSITIONS[i]) > FORECOURT_LAMP_EPSILON:
+				continue
+			found[i] = true
+			for part: String in FORECOURT_LAMP_PARTS:
+				if lamp.get_node_or_null(part) == null:
+					malformed.append("%s missing %s" % [lamp.name, part])
+			break
+	var missing: Array[String] = []
+	for i in range(found.size()):
+		if not found[i]:
+			missing.append(str(FORECOURT_LAMP_POSITIONS[i]))
+	if not missing.is_empty() or not malformed.is_empty():
+		_fail("Forecourt lamps: missing [%s], malformed [%s]"
+			% [", ".join(missing), ", ".join(malformed)])
+	else:
+		_ok("Forecourt lamps: six ExteriorProps fixtures at the authored positions")
+
+
+## BLOCK 3: THE OUTER TREE LINE AND ROAD VEHICLES USE EXTERIOR BUILDERS
+##
+## The remaining placeholders in the authored block-3 scope are four trunk/cone
+## trees at x +-25 and two hand-built box vehicles on z 59. TreeLib-backed props
+## are single named meshes; parked cars expose a body, cabin and windshield.
+## Assert those finished products at the existing coordinates and reject the two
+## legacy vehicle roots so adding builders without removing the boxes cannot pass.
+const BLOCK3_TREE_POSITIONS := [
+	Vector2(-25.0, 39.5), Vector2(-25.0, 50.5),
+	Vector2(25.0, 39.5), Vector2(25.0, 50.5),
+]
+const BLOCK3_ROAD_CAR_POSITIONS := [Vector2(-17.0, 59.0), Vector2(15.5, 59.0)]
+const BLOCK3_PROP_EPSILON := 0.02
+const BLOCK3_CAR_PARTS := ["Body", "Cabin", "Windshield"]
+const BLOCK3_TREE_PREFIXES := ["Oak Tree", "Pine Tree", "Birch Tree"]
+const BLOCK3_LEGACY_VEHICLES := ["Visitor Car Body", "Museum Service Van"]
+
+
+func _verify_block3_landscape(generated: Node) -> void:
+	var trees_found: Array[bool] = []
+	trees_found.resize(BLOCK3_TREE_POSITIONS.size())
+	trees_found.fill(false)
+	for candidate in generated.find_children("*Tree*", "MeshInstance3D", true, false):
+		var tree := candidate as MeshInstance3D
+		if tree == null:
+			continue
+		var finished_tree := false
+		for prefix: String in BLOCK3_TREE_PREFIXES:
+			if str(tree.name).begins_with(prefix):
+				finished_tree = true
+				break
+		if not finished_tree:
+			continue
+		var xz := Vector2(tree.global_position.x, tree.global_position.z)
+		for i in range(BLOCK3_TREE_POSITIONS.size()):
+			if xz.distance_to(BLOCK3_TREE_POSITIONS[i]) <= BLOCK3_PROP_EPSILON:
+				trees_found[i] = true
+				break
+
+	var cars_found: Array[bool] = []
+	cars_found.resize(BLOCK3_ROAD_CAR_POSITIONS.size())
+	cars_found.fill(false)
+	var malformed: Array[String] = []
+	for candidate in generated.find_children("Parked Car*", "Node3D", true, false):
+		var car := candidate as Node3D
+		if car == null:
+			continue
+		var xz := Vector2(car.global_position.x, car.global_position.z)
+		for i in range(BLOCK3_ROAD_CAR_POSITIONS.size()):
+			if xz.distance_to(BLOCK3_ROAD_CAR_POSITIONS[i]) > BLOCK3_PROP_EPSILON:
+				continue
+			cars_found[i] = true
+			for part: String in BLOCK3_CAR_PARTS:
+				if car.get_node_or_null(part) == null:
+					malformed.append("%s missing %s" % [car.name, part])
+			break
+
+	var missing_trees: Array[String] = []
+	for i in range(trees_found.size()):
+		if not trees_found[i]:
+			missing_trees.append(str(BLOCK3_TREE_POSITIONS[i]))
+	var missing_cars: Array[String] = []
+	for i in range(cars_found.size()):
+		if not cars_found[i]:
+			missing_cars.append(str(BLOCK3_ROAD_CAR_POSITIONS[i]))
+	var legacy: Array[String] = []
+	for node_name: String in BLOCK3_LEGACY_VEHICLES:
+		if generated.get_node_or_null(node_name) != null:
+			legacy.append(node_name)
+	if not missing_trees.is_empty() or not missing_cars.is_empty() \
+			or not malformed.is_empty() or not legacy.is_empty():
+		_fail("Block 3 landscape: missing trees [%s], cars [%s], malformed [%s], legacy [%s]"
+			% [", ".join(missing_trees), ", ".join(missing_cars),
+				", ".join(malformed), ", ".join(legacy)])
+	else:
+		_ok("Block 3 landscape: four TreeLib trees and two finished road cars")
+
+
+## BLOCK 3: THE STAFF LOT IS A COMPOSITION, NOT AN ASPHALT PLACEHOLDER
+##
+## Five lines only enclosed four bays, the lot had one kerb, no sign or bollards,
+## and the broad east strip was empty. The authored plan explicitly asks for
+## better markings, kerbs, signs, posts and more cars. Pin the finished dressing
+## while leaving the player's centre bay and door-side exit position untouched.
+const BLOCK3_PARKING_REQUIRED := [
+	"Parking Kerb East", "Parking Bay Line 5",
+	"Parking Sign Pole", "Parking Sign Board",
+	"Parking Exit Pole", "Parking Exit Board",
+]
+const BLOCK3_PARKING_WHEEL_STOPS := 5
+const BLOCK3_PARKING_BOLLARDS := 3
+const BLOCK3_EXTRA_CAR_POS := Vector2(49.5, 42.6)
+
+
+func _verify_block3_parking(generated: Node) -> void:
+	var missing: Array[String] = []
+	for node_name: String in BLOCK3_PARKING_REQUIRED:
+		if generated.find_child(node_name, true, false) == null:
+			missing.append(node_name)
+	var wheel_stops := generated.find_children(
+		"Parking Wheel Stop*", "MeshInstance3D", true, false)
+	var bollards := generated.find_children(
+		"Parking Bollard*", "MeshInstance3D", true, false)
+	var extra_car: Node3D = null
+	for candidate in generated.find_children("Parked Car*", "Node3D", true, false):
+		var car := candidate as Node3D
+		if car == null:
+			continue
+		var xz := Vector2(car.global_position.x, car.global_position.z)
+		if xz.distance_to(BLOCK3_EXTRA_CAR_POS) <= BLOCK3_PROP_EPSILON:
+			extra_car = car
+			break
+	var malformed: Array[String] = []
+	if extra_car == null:
+		missing.append("extra parked car at %s" % BLOCK3_EXTRA_CAR_POS)
+	else:
+		for part: String in BLOCK3_CAR_PARTS:
+			if extra_car.get_node_or_null(part) == null:
+				malformed.append("%s missing %s" % [extra_car.name, part])
+	if not missing.is_empty() \
+			or wheel_stops.size() < BLOCK3_PARKING_WHEEL_STOPS \
+			or bollards.size() < BLOCK3_PARKING_BOLLARDS \
+			or not malformed.is_empty():
+		_fail("Block 3 parking: missing [%s], wheel stops %d/%d, bollards %d/%d, malformed [%s]"
+			% [", ".join(missing), wheel_stops.size(), BLOCK3_PARKING_WHEEL_STOPS,
+				bollards.size(), BLOCK3_PARKING_BOLLARDS, ", ".join(malformed)])
+	else:
+		_ok("Block 3 parking: five marked bays, four cars, kerbs, signs and bollards")
+
+
+## ARRIVAL: THE GROUND THE DRIVE HANDS CONTROL BACK ON MUST BE STANDABLE
+##
+## _place_player_at_car() ends the arrival cutscene by teleporting the player to
+## DRIVE_EXIT_POS next to the sedan, and two things have to be true there. The
+## point needs a floor that carries a collider: everything east of Lot Wall East
+## is authored as collider-free dressing -- _add_drive_set says so in as many
+## words -- so an exit inside the driving set is a fall, not a first step. And the
+## point has to be on the museum's side of the perimeter: "Lot Wall West", "Lot
+## Wall East" and "Lot Wall South" are 1.2 m and deliberately unclimbable, so an
+## exit outside them fences the player out of their own forecourt however solid
+## the asphalt under their feet is. The sedan is asserted with them, because the
+## player is set down an arm's length from it and a walk-through silhouette reads
+## as a bug the moment they turn around.
+const ARRIVAL_MAP_SCRIPT := "res://game/FirstMuseumMap.gd"
+const ARRIVAL_FLOOR_DROP := 1.2
+const ARRIVAL_FLOOR_RISE := 0.25
+const ARRIVAL_CAR_REACH := 3.2
+const ARRIVAL_PERIMETER := ["Lot Wall West", "Lot Wall East", "Lot Wall South"]
+
+
+func _verify_arrival_exit(generated: Node) -> void:
+	var raw: Variant = _script_constant(ARRIVAL_MAP_SCRIPT, "DRIVE_EXIT_POS")
+	if typeof(raw) != TYPE_VECTOR3:
+		_fail("Arrival exit: DRIVE_EXIT_POS is not a Vector3 in the map script")
+		return
+	var exit_pos: Vector3 = raw
+	var problems: Array[String] = []
+
+	# 1. Floor: a box whose footprint covers the exit, whose top face is at the
+	#    player's feet rather than a storey below them, and which has a collider.
+	var found_floor := ""
+	for node: Node in generated.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance == null:
+			continue
+		var box := mesh_instance.mesh as BoxMesh
+		if box == null:
+			continue
+		var at: Vector3 = mesh_instance.global_position
+		var half: Vector3 = box.size * 0.5
+		if absf(at.x - exit_pos.x) > half.x or absf(at.z - exit_pos.z) > half.z:
+			continue
+		var top: float = at.y + half.y
+		if top > exit_pos.y + ARRIVAL_FLOOR_RISE \
+				or top < exit_pos.y - ARRIVAL_FLOOR_DROP:
+			continue
+		if mesh_instance.find_children("*", "StaticBody3D", true, false).is_empty():
+			continue
+		found_floor = str(mesh_instance.name)
+		break
+	if found_floor.is_empty():
+		problems.append("no floor with collision under (%.2f, %.2f)"
+			% [exit_pos.x, exit_pos.z])
+
+	# 2. On the museum's side of every wall that closes the grounds.
+	for wall_name: String in ARRIVAL_PERIMETER:
+		var wall := generated.find_child(wall_name, true, false) as Node3D
+		if wall == null:
+			problems.append("%s is missing" % wall_name)
+			continue
+		var wall_at: Vector3 = wall.global_position
+		var outside := false
+		if wall_name == "Lot Wall West":
+			outside = exit_pos.x <= wall_at.x
+		elif wall_name == "Lot Wall East":
+			outside = exit_pos.x >= wall_at.x
+		else:
+			outside = exit_pos.z >= wall_at.z
+		if outside:
+			problems.append("exit is on the far side of %s" % wall_name)
+
+	# 3. The car the player steps out of: within reach, and not walk-through.
+	var car := generated.find_child("Player Car", true, false) as Node3D
+	if car == null:
+		problems.append("Player Car is missing")
+	else:
+		var reach: float = Vector2(car.global_position.x - exit_pos.x,
+			car.global_position.z - exit_pos.z).length()
+		if reach > ARRIVAL_CAR_REACH:
+			problems.append("Player Car stands %.1f m from the exit" % reach)
+		if car.find_children("*", "StaticBody3D", true, false).is_empty():
+			problems.append("Player Car has no collider")
+
+	if problems.is_empty():
+		_ok("Arrival exit: %s under the exit, inside the walls, solid car alongside"
+			% found_floor)
+	else:
+		_fail("Arrival exit: %s" % ", ".join(problems))
+
+
+## THE FORECOURT CORE IS A COMPOSITION, NOT A PROP DUMP
+##
+## Everything between the portico steps and the kerb strip -- x +-20,
+## z 38.4..53.0 -- is the museum's formal court: walkway flags on the axis, then
+## the lamp row, urns, benches, flag poles, topiary, parterres and the fountain,
+## every one of them answered by a twin on the other side of the axis. Single
+## props dropped into that band are what makes the court read as haphazard: an
+## imported street lamp at (19.5, 46) standing beside the authored six-lamp row,
+## a bus shelter and a refuse skip on the lawn, a bike rack and an opening-hours
+## sign on the east half with nothing on the west, and both flag cloths offset
+## the same way (+0.5 in x) instead of outward from their poles.
+##
+## The core therefore carries two hard rules: none of the imported one-offs may
+## stand inside it, and every mesh inside it is either on the axis or has a
+## mirror twin within 6 cm. Utilities a real museum needs but a formal court
+## cannot absorb -- bins, bike rack, hours sign, hydrant -- belong to the kerb
+## strip past z 53, and refuse handling to the service corner past x -20;
+## neither of those claims symmetry, so neither is checked here.
+const COURT_CORE_HALF_X := 20.0
+const COURT_CORE_Z0 := 38.4
+const COURT_CORE_Z1 := 53.0
+const COURT_MIRROR_EPS := 0.06
+const COURT_LONELY_SHOWN := 6
+const COURT_BANNED_IN_CORE := [
+	"dumpster_closed",
+	"dumpster_open",
+	"papers",
+	"trash_bags",
+	"Bench_m_bench*",
+	"Street_Lamp_m_lamp*",
+	"Delivery Pallet",
+	"Delivery Crate*",
+]
+
+
+func _in_court_core(at: Vector3) -> bool:
+	return absf(at.x) <= COURT_CORE_HALF_X and at.z >= COURT_CORE_Z0 \
+		and at.z <= COURT_CORE_Z1
+
+
+func _verify_court_composition(generated: Node) -> void:
+	var problems: Array[String] = []
+	for pattern: String in COURT_BANNED_IN_CORE:
+		for node: Node in generated.find_children(pattern, "Node3D", true, false):
+			var stray := node as Node3D
+			if stray == null or not _in_court_core(stray.global_position):
+				continue
+			problems.append("%s at (%.1f, %.1f)" % [stray.name,
+				stray.global_position.x, stray.global_position.z])
+
+	var spots: Array[Dictionary] = []
+	for node: Node in generated.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh == null or not _in_court_core(mesh.global_position):
+			continue
+		spots.append({"name": str(mesh.name), "at": mesh.global_position})
+
+	var lonely: Array[String] = []
+	for spot: Dictionary in spots:
+		var at: Vector3 = spot["at"]
+		if absf(at.x) <= COURT_MIRROR_EPS:
+			continue
+		var twinned := false
+		for other: Dictionary in spots:
+			var twin: Vector3 = other["at"]
+			if absf(twin.x + at.x) <= COURT_MIRROR_EPS \
+					and absf(twin.y - at.y) <= COURT_MIRROR_EPS \
+					and absf(twin.z - at.z) <= COURT_MIRROR_EPS:
+				twinned = true
+				break
+		if not twinned:
+			lonely.append("%s (%.2f, %.2f)" % [spot["name"], at.x, at.z])
+
+	if not lonely.is_empty():
+		problems.append("%d unmirrored meshes: %s" % [lonely.size(),
+			", ".join(lonely.slice(0, COURT_LONELY_SHOWN))])
+	if problems.is_empty():
+		_ok("Forecourt core: %d meshes, each on the axis or mirrored, no stray one-offs"
+			% spots.size())
+	else:
+		_fail("Forecourt core: %s" % ", ".join(problems))
+
+
+## THE WATCH OFFICE CABINET MUST STAND IN THE ROOM, NOT IN THE WALL
+##
+## The stabilization locker is 1.35 m deep and was centred at x -34.05, which
+## put its back face at -34.725 while the office's west wall face is -34.65:
+## 7.5 cm of the cabinet was buried in the wall, measured by the prop audit as
+## a 0.56 m3 intersection, the largest prop-into-structure overlap in the
+## building. The four shelf strips are drawn a couple of millimetres in front
+## of the cabinet face, so they have to travel with it instead of ending up
+## floating in the room or sunk inside the box.
+const OFFICE_WEST_WALL_FACE := -34.65
+const OFFICE_WALL_CLEAR := 0.01
+const OFFICE_SHELF_STANDOFF := 0.05
+
+
+func _verify_office_fixtures(generated: Node) -> void:
+	var locker := generated.find_child("Stabilization Locker", true, false) as MeshInstance3D
+	if locker == null:
+		_fail("Office fixtures: Stabilization Locker is missing")
+		return
+	var box: AABB = locker.global_transform * locker.get_aabb()
+	var back: float = box.position.x
+	var front: float = box.position.x + box.size.x
+	var problems: Array[String] = []
+	if back < OFFICE_WEST_WALL_FACE + OFFICE_WALL_CLEAR:
+		problems.append("locker back face x %.3f is inside the west wall at %.2f"
+			% [back, OFFICE_WEST_WALL_FACE])
+	var shelves := generated.find_children("Locker Shelf*", "MeshInstance3D", true, false)
+	if shelves.is_empty():
+		problems.append("no Locker Shelf strips found")
+	for shelf in shelves:
+		var mesh := shelf as MeshInstance3D
+		var strip: AABB = mesh.global_transform * mesh.get_aabb()
+		var standoff: float = strip.position.x - front
+		if standoff < 0.0 or standoff > OFFICE_SHELF_STANDOFF:
+			problems.append("%s sits %.3f m off the cabinet face" % [mesh.name, standoff])
+	if problems.is_empty():
+		_ok("Office fixtures: locker back x %.3f clears the west wall at %.2f, %d shelf strips on its face"
+			% [back, OFFICE_WEST_WALL_FACE, shelves.size()])
+	else:
+		_fail("Office fixtures: %s" % ", ".join(problems))
+
+
+## THE FRONT DOOR IS REACHED ON A PROMENADE, NOT THROUGH A SLOT
+##
+## PlayerController gives the body a 0.35 m capsule radius and a step_height of
+## 0.38, so anything whose top rises more than a step above the court floor is a
+## wall to be walked around, and a route exists only where the centre line keeps
+## 0.35 m of clearance on every side. Measured on the built map, the widest walk
+## from the arrival exit to the perron was 0.90 m across, because three things
+## crowd the same 6.4 m Museum Walkway: the fountain basin fills its full width,
+## the bollard ring drops posts at x +-2.55 inside that paving -- in the gate
+## throat to the north and on the approach to the south -- and the parterre hedge
+## closes on the basin to 1.09 m. A guest should not have to shuffle sideways
+## between a hedge and a fountain to reach the front door, so the widest route
+## has to beat APPROACH_MIN_WIDTH, which is wider than the museum's own 1.20 m
+## doors and lets two people pass.
+##
+## The search is a clearance field over the court plus a widest-path flood fill:
+## for every cell the distance to the nearest wall, then the largest radius that
+## still connects the exit to the perron. Reporting the tightest cell and the two
+## walls that pinch it keeps the failure actionable instead of merely red.
+##
+## Standing beside one's own car is not a corridor. The drop-off deliberately
+## leaves the body 0.65 m off the car's flank, so measuring the promenade from
+## that cell would only ever report the width of a car door. The first
+## APPROACH_START_GRACE metres therefore have to admit the body and nothing more,
+## the promenade is measured beyond them, and that the driver can stand up at all
+## is asserted on its own as APPROACH_EXIT_ROOM of room at the exit.
+const APPROACH_MIN_WIDTH := 1.6
+const APPROACH_BODY_RADIUS := 0.35
+const APPROACH_EXIT_ROOM := 0.45
+const APPROACH_START_GRACE := 2.5
+const APPROACH_STEP_HEIGHT := 0.38
+const APPROACH_HEAD_ROOM := 1.75
+const APPROACH_CELL := 0.25
+const APPROACH_X_LIMIT := 22.0
+const APPROACH_Z_MIN := 35.5
+const APPROACH_Z_MAX := 59.0
+const APPROACH_GOAL := Vector2(0.0, 38.6)
+const APPROACH_RADII := [1.4, 1.2, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.45, 0.4, 0.35]
+
+
+func _verify_entrance_approach(generated: Node) -> void:
+	var raw: Variant = _script_constant(ARRIVAL_MAP_SCRIPT, "DRIVE_EXIT_POS")
+	if typeof(raw) != TYPE_VECTOR3:
+		_fail("Entrance approach: DRIVE_EXIT_POS is not a Vector3 in the map script")
+		return
+	var exit_pos: Vector3 = raw
+	var walls := _approach_walls(generated)
+	var nx := int((APPROACH_X_LIMIT * 2.0) / APPROACH_CELL) + 1
+	var nz := int((APPROACH_Z_MAX - APPROACH_Z_MIN) / APPROACH_CELL) + 1
+	var field := PackedFloat32Array()
+	field.resize(nx * nz)
+	for iz: int in nz:
+		for ix: int in nx:
+			field[iz * nx + ix] = _approach_clearance(walls, _approach_point(ix, iz))
+	var start := Vector2(exit_pos.x, exit_pos.z)
+	var from_idx := _approach_index(nx, nz, start)
+	var to_idx := _approach_index(nx, nz, APPROACH_GOAL)
+	if from_idx < 0 or to_idx < 0:
+		_fail("Entrance approach: the exit or the perron falls outside the measured court")
+		return
+	if field[from_idx] < APPROACH_EXIT_ROOM:
+		_fail("Entrance approach: only %.2f m of standing room where the driver steps out, %s"
+			% [field[from_idx], _approach_pinch(walls, start)])
+		return
+	var best_radius := 0.0
+	var best_path := PackedInt32Array()
+	for radius: float in APPROACH_RADII:
+		var path := _approach_route(field, nx, nz, from_idx, to_idx, radius, start)
+		if path.size() > 0:
+			best_radius = radius
+			best_path = path
+			break
+	if best_path.is_empty():
+		_fail("Entrance approach: nothing walkable joins the arrival exit to the perron, %d walls stand in the court"
+			% walls.size())
+		return
+	var tight_idx := -1
+	for idx: int in best_path:
+		if _approach_point(idx % nx, idx / nx).distance_to(start) <= APPROACH_START_GRACE:
+			continue
+		if tight_idx < 0 or field[idx] < field[tight_idx]:
+			tight_idx = idx
+	if tight_idx < 0:
+		tight_idx = best_path[best_path.size() - 1]
+	var tight := _approach_point(tight_idx % nx, tight_idx / nx)
+	var width: float = best_radius * 2.0
+	if width < APPROACH_MIN_WIDTH - 0.001:
+		_fail("Entrance approach: the widest walk from the car to the perron is %.2f m, under %.2f m, pinched at (%.2f, %.2f) by %s"
+			% [width, APPROACH_MIN_WIDTH, tight.x, tight.y,
+				_approach_pinch(walls, tight)])
+	else:
+		_ok("Entrance approach: %.2f m of walking width from the arrival exit to the perron, narrowest at (%.2f, %.2f)"
+			% [width, tight.x, tight.y])
+
+
+func _approach_walls(generated: Node) -> Array[Dictionary]:
+	var walls: Array[Dictionary] = []
+	for node: Node in generated.find_children("*", "CollisionShape3D", true, false):
+		var shape_node := node as CollisionShape3D
+		if shape_node == null:
+			continue
+		var extents := Vector3.ZERO
+		var round_radius := 0.0
+		if shape_node.shape is BoxShape3D:
+			extents = (shape_node.shape as BoxShape3D).size * 0.5
+		elif shape_node.shape is CylinderShape3D:
+			var cyl := shape_node.shape as CylinderShape3D
+			extents = Vector3(cyl.radius, cyl.height * 0.5, cyl.radius)
+			round_radius = cyl.radius
+		else:
+			continue
+		var xf := shape_node.global_transform
+		var lo := Vector3(1e9, 1e9, 1e9)
+		var hi := Vector3(-1e9, -1e9, -1e9)
+		for sx: float in [-1.0, 1.0]:
+			for sy: float in [-1.0, 1.0]:
+				for sz: float in [-1.0, 1.0]:
+					var corner: Vector3 = xf * Vector3(extents.x * sx,
+						extents.y * sy, extents.z * sz)
+					lo = lo.min(corner)
+					hi = hi.max(corner)
+		if hi.x < -APPROACH_X_LIMIT or lo.x > APPROACH_X_LIMIT \
+				or hi.z < APPROACH_Z_MIN or lo.z > APPROACH_Z_MAX:
+			continue
+		if hi.y <= APPROACH_STEP_HEIGHT or lo.y > APPROACH_HEAD_ROOM:
+			continue
+		var label := str(shape_node.name)
+		var body := shape_node.get_parent()
+		if body != null:
+			label = str(body.name)
+		var wall := {
+			"name": label,
+			"lo": Vector2(lo.x, lo.z),
+			"hi": Vector2(hi.x, hi.z),
+			"round": false,
+			"centre": Vector2.ZERO,
+			"radius": 0.0,
+		}
+		# A round basin is round. Measured by its bounding square the fountain
+		# grows corners nobody can walk into, and those corners reach to within
+		# 0.91 m of the gate piers and report the promenade as a slot, while the
+		# real arc keeps 2.55 m of stone-free ground there. Upright cylinders are
+		# therefore measured as the circles they are.
+		if round_radius > 0.0 and absf(xf.basis.y.normalized().dot(Vector3.UP)) > 0.99:
+			wall["round"] = true
+			wall["centre"] = Vector2(xf.origin.x, xf.origin.z)
+			wall["radius"] = round_radius * xf.basis.x.length()
+		walls.append(wall)
+	return walls
+
+
+func _approach_point(ix: int, iz: int) -> Vector2:
+	return Vector2(-APPROACH_X_LIMIT + float(ix) * APPROACH_CELL,
+		APPROACH_Z_MIN + float(iz) * APPROACH_CELL)
+
+
+func _approach_index(nx: int, nz: int, at: Vector2) -> int:
+	var ix := int(round((at.x + APPROACH_X_LIMIT) / APPROACH_CELL))
+	var iz := int(round((at.y - APPROACH_Z_MIN) / APPROACH_CELL))
+	if ix < 0 or ix >= nx or iz < 0 or iz >= nz:
+		return -1
+	return iz * nx + ix
+
+
+func _wall_distance(wall: Dictionary, at: Vector2) -> float:
+	if bool(wall["round"]):
+		var centre: Vector2 = wall["centre"]
+		return maxf(centre.distance_to(at) - float(wall["radius"]), 0.0)
+	var lo: Vector2 = wall["lo"]
+	var hi: Vector2 = wall["hi"]
+	var dx: float = maxf(maxf(lo.x - at.x, 0.0), at.x - hi.x)
+	var dz: float = maxf(maxf(lo.y - at.y, 0.0), at.y - hi.y)
+	return sqrt(dx * dx + dz * dz)
+
+
+func _approach_clearance(walls: Array[Dictionary], at: Vector2) -> float:
+	var best := 99.0
+	for wall: Dictionary in walls:
+		var d: float = _wall_distance(wall, at)
+		if d < best:
+			best = d
+			if best <= 0.0:
+				return 0.0
+	return best
+
+
+func _approach_route(field: PackedFloat32Array, nx: int, nz: int, from_idx: int,
+		to_idx: int, radius: float, start: Vector2) -> PackedInt32Array:
+	if field[to_idx] < radius or field[from_idx] < APPROACH_BODY_RADIUS:
+		return PackedInt32Array()
+	var came := PackedInt32Array()
+	came.resize(nx * nz)
+	came.fill(-2)
+	came[from_idx] = -1
+	var queue := PackedInt32Array()
+	queue.push_back(from_idx)
+	var head := 0
+	while head < queue.size():
+		var idx := queue[head]
+		head += 1
+		if idx == to_idx:
+			var path := PackedInt32Array()
+			var walk := idx
+			while walk != -1:
+				path.push_back(walk)
+				walk = came[walk]
+			return path
+		var ix := idx % nx
+		var iz := idx / nx
+		for step: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1),
+				Vector2i(0, -1)]:
+			var jx := ix + step.x
+			var jz := iz + step.y
+			if jx < 0 or jx >= nx or jz < 0 or jz >= nz:
+				continue
+			var jdx := jz * nx + jx
+			if came[jdx] != -2:
+				continue
+			# Getting clear of the car only needs the body to fit; the promenade is
+			# what has to be wide, and it starts once the car is behind you.
+			var reach: float = radius
+			if _approach_point(jx, jz).distance_to(start) <= APPROACH_START_GRACE:
+				reach = APPROACH_BODY_RADIUS
+			if field[jdx] < reach:
+				continue
+			came[jdx] = idx
+			queue.push_back(jdx)
+	return PackedInt32Array()
+
+
+func _approach_pinch(walls: Array[Dictionary], at: Vector2) -> String:
+	var ranked: Array[Dictionary] = []
+	for wall: Dictionary in walls:
+		ranked.append({"name": wall["name"], "d": _wall_distance(wall, at)})
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["d"]) < float(b["d"]))
+	var shown: Array[String] = []
+	for i: int in mini(2, ranked.size()):
+		shown.append("%s at %.2f m" % [str(ranked[i]["name"]), float(ranked[i]["d"])])
+	return " and ".join(shown)
+
+
+## STONE STANDS ON STONE: PLAZA FIXTURES KEEP BOTH FEET ON THE PAVING
+##
+## The urns carry their weight on a plinth, and a plinth with one edge hanging
+## over bare ground reads as dropped rather than placed. The pair at z 41.4 was
+## exactly that: 0.83 m of its 0.86 m footprint stood off the "Entrance Plaza"
+## slab, which ends at z 41.0. Such fixtures must sit inside the paving with a
+## margin, and they must not crowd the rest of the court furniture -- a plinth
+## grazing a lamp or a hedge is the same defect seen from the side.
+const PLAZA_HALF_X := 8.5
+const PLAZA_Z_MIN := 35.4
+const PLAZA_Z_MAX := 41.0
+const PLAZA_FOOT_INSET := 0.15
+const PLAZA_PROP_GAP := 0.40
+const PLAZA_PLINTH_NAMES := ["Urn Plinth"]
+
+
+func _verify_plaza_footing(generated: Node) -> void:
+	var plinths: Array[Dictionary] = []
+	for node: Node in generated.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node == null or mesh_node.mesh == null:
+			continue
+		# Repeated props get their position appended to the name, so compare the
+		# stem: "Urn Plinth" and "Urn Plinth (7_7, 0_22, 38_6)" are both plinths.
+		var stem: String = str(mesh_node.name).split(" (")[0]
+		if not PLAZA_PLINTH_NAMES.has(stem):
+			continue
+		var box := mesh_node.get_aabb()
+		var xf := mesh_node.global_transform
+		var lo := Vector3(1e9, 1e9, 1e9)
+		var hi := Vector3(-1e9, -1e9, -1e9)
+		for sx: float in [0.0, 1.0]:
+			for sy: float in [0.0, 1.0]:
+				for sz: float in [0.0, 1.0]:
+					var corner: Vector3 = xf * (box.position + Vector3(
+						box.size.x * sx, box.size.y * sy, box.size.z * sz))
+					lo = lo.min(corner)
+					hi = hi.max(corner)
+		plinths.append({
+			"name": str(mesh_node.name),
+			"lo": Vector2(lo.x, lo.z),
+			"hi": Vector2(hi.x, hi.z),
+		})
+	if plinths.is_empty():
+		_fail("Plaza footing: no plinth-footed fixture stands on the entrance plaza")
+		return
+	var adrift: Array[String] = []
+	for plinth: Dictionary in plinths:
+		var lo: Vector2 = plinth["lo"]
+		var hi: Vector2 = plinth["hi"]
+		var over: float = maxf(-PLAZA_HALF_X + PLAZA_FOOT_INSET - lo.x,
+			hi.x - PLAZA_HALF_X + PLAZA_FOOT_INSET)
+		over = maxf(over, maxf(PLAZA_Z_MIN + PLAZA_FOOT_INSET - lo.y,
+			hi.y - PLAZA_Z_MAX + PLAZA_FOOT_INSET))
+		if over > 0.0:
+			adrift.append("%s [x %.2f..%.2f, z %.2f..%.2f] hangs over the edge by %.2f m"
+				% [str(plinth["name"]), lo.x, hi.x, lo.y, hi.y, over])
+	if not adrift.is_empty():
+		_fail("Plaza footing: %d of %d plinths do not stand on the paving: %s"
+			% [adrift.size(), plinths.size(), ", ".join(adrift)])
+		return
+	var walls := _approach_walls(generated)
+	var crowded: Array[String] = []
+	for plinth: Dictionary in plinths:
+		var lo: Vector2 = plinth["lo"]
+		var hi: Vector2 = plinth["hi"]
+		var centre: Vector2 = (lo + hi) * 0.5
+		var reach: float = maxf(hi.x - centre.x, hi.y - centre.y)
+		var nearest := 99.0
+		var nearest_name := "nothing"
+		for wall: Dictionary in walls:
+			var wlo: Vector2 = wall["lo"]
+			var whi: Vector2 = wall["hi"]
+			# The urn's own collider wraps its plinth; skip whatever this plinth
+			# stands inside of.
+			if wlo.x <= centre.x and centre.x <= whi.x \
+					and wlo.y <= centre.y and centre.y <= whi.y:
+				continue
+			var gap: float = _wall_distance(wall, centre) - reach
+			if gap < nearest:
+				nearest = gap
+				nearest_name = str(wall["name"])
+		if nearest < PLAZA_PROP_GAP:
+			crowded.append("%s is %.2f m from %s"
+				% [str(plinth["name"]), nearest, nearest_name])
+	if not crowded.is_empty():
+		_fail("Plaza footing: %d plinths crowd the court furniture: %s"
+			% [crowded.size(), ", ".join(crowded)])
+		return
+	_ok("Plaza footing: %d plinths stand on the paving, %.2f m clear of its edges and of the furniture"
+		% [plinths.size(), PLAZA_FOOT_INSET])
+
+
+## PLANETARIUM: THE NEW SILHOUETTE ROOM MUST NOT KEEP THE LEGACY STAR GRID
+##
+## PlanetariumProps defines the current composition as a switched-off machine
+## read by flashlight: shallow dome, shrouded projector, raked seating and an
+## operator booth. The older map layer still glues emissive pixel boxes to the
+## ceiling, contradicting that state and bleeding through the dome's oculus.
+## Keep both halves of the contract here: the new four-part room is present and
+## no legacy "Star N" mesh remains inside its 20 x 16 m footprint.
+const PLANETARIUM_RECT := Rect2(Vector2(-10.0, -49.0), Vector2(20.0, 16.0))
+const PLANETARIUM_PARTS := [
+	"Planetarium Dome", "Planetarium Projector",
+	"Planetarium Seating Bank", "Planetarium Operator Booth",
+]
+
+
+func _verify_planetarium_composition(generated: Node) -> void:
+	var props := generated.get_node_or_null("Planetarium Props") as Node3D
+	var missing: Array[String] = []
+	if props == null:
+		missing.append("Planetarium Props")
+	else:
+		for part: String in PLANETARIUM_PARTS:
+			if props.get_node_or_null(part) == null:
+				missing.append(part)
+	var legacy_stars: Array[String] = []
+	for candidate in generated.find_children("Star *", "MeshInstance3D", true, false):
+		var star := candidate as MeshInstance3D
+		if star == null:
+			continue
+		var xz := Vector2(star.global_position.x, star.global_position.z)
+		if PLANETARIUM_RECT.has_point(xz):
+			legacy_stars.append(str(star.name))
+	if not missing.is_empty() or not legacy_stars.is_empty():
+		_fail("Planetarium composition: missing [%s], legacy ceiling stars %d"
+			% [", ".join(missing), legacy_stars.size()])
+	else:
+		_ok("Planetarium composition: dome/projector/seating/booth, projector-off ceiling")
 
 
 ## WALKING INTO THE OFFICE MUST ACTUALLY PUT THE LIGHTS OUT

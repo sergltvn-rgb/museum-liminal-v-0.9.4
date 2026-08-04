@@ -596,6 +596,12 @@ func _build_graphics() -> void:
 	_option_row(tr("SET_RESOLUTION"), tr("SET_RESOLUTION_DESC"),
 		["1280 × 720", "1600 × 900", "1920 × 1080"], _settings.resolution_index,
 		func(index: int) -> void: _settings.set_resolution_index(index))
+	# Подписи — проценты, а не слова вроде "низкий / высокий": рядом уже
+	# стоит трёхступенчатое качество эффектов, и два соседних ряда с одинаковыми
+	# словами читались бы как дубль. Цифры вне каталога перевода намеренно.
+	_option_row(tr("SET_RENDER_SCALE"), tr("SET_RENDER_SCALE_DESC"),
+		["50%", "60%", "75%", "100%"], _settings.render_scale_index,
+		func(index: int) -> void: _settings.set_render_scale_index(index))
 	_toggle_row(tr("SET_FULLSCREEN"), tr("SET_FULLSCREEN_DESC"), _settings.fullscreen,
 		func(value: bool) -> void: _settings.set_fullscreen(value))
 	_toggle_row(tr("SET_VSYNC"), tr("SET_VSYNC_DESC"), _settings.vsync,

@@ -193,6 +193,27 @@ static var _missing := {}
 ## собирается один раз за запуск.
 const FLAT_STYLE := true
 const FLAT_ROUGHNESS := 0.92
+const FLAT_SPECULAR := 0.15
+
+
+## Применяет единый плоский policy к любому процедурному StandardMaterial3D.
+## Возвращает false, когда плоский курс выключен: вызывающий код тогда может
+## собрать прежние normal/roughness/AO/metal карты без второй константы.
+static func apply_flat_style(mat: StandardMaterial3D) -> bool:
+	if not FLAT_STYLE or mat == null:
+		return false
+	mat.metallic = 0.0
+	mat.metallic_specular = FLAT_SPECULAR
+	mat.roughness = FLAT_ROUGHNESS
+	mat.normal_enabled = false
+	mat.normal_texture = null
+	mat.roughness_texture = null
+	mat.ao_enabled = false
+	mat.ao_texture = null
+	mat.metallic_texture = null
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return true
+
 
 static func get_material(
 	pack_name: String,
@@ -228,9 +249,7 @@ static func get_material(
 		# Никаких нормалей, карт шероховатости, AO и металла: именно они
 		# дают влажный PBR-блеск, которого на референсах нет.
 		# Побочно: из памяти уходят десятки 2K-карт, это работает на блок 5.
-		mat.metallic = 0.0
-		mat.roughness = FLAT_ROUGHNESS
-		mat.specular = 0.15
+		apply_flat_style(mat)
 	else:
 		var normal := _texture(pack, "nrm")
 		if normal != null:

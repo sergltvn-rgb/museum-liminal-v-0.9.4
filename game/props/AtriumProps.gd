@@ -66,18 +66,29 @@ extends RefCounted
 # Museum-grade steel and concrete. Values are deliberately dark: the atrium
 # walls are near-white marble (0.87) and the core has to read as a hole in it.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const CONCRETE := Color(0.128, 0.134, 0.140)
-const CONCRETE_DARK := Color(0.088, 0.092, 0.096)
-const STEEL := Color(0.175, 0.185, 0.195)
-const STEEL_DARK := Color(0.100, 0.105, 0.110)
+# Атриум строится на контрасте: стены — почти белый мрамор (0.87), а ядро
+# и его каркас обязаны читаться как дыра в нём. Прямой `Pal.STONE` в
+# четыре раза светлее здешнего бетона и этот контраст убивает, поэтому
+# тёмные роли — производные через `tone()` и потому `static var`, а не `const`.
+static var CONCRETE := Pal.tone(Pal.SLATE, -0.55)
+static var CONCRETE_DARK := Pal.tone(Pal.SLATE, -0.68)
+static var STEEL := Pal.tone(Pal.STEEL, -0.56)
+static var STEEL_DARK := Pal.tone(Pal.STEEL_DARK, -0.38)
+# Чёрное железо и кабель остаются своими: нужны две ступени ниже
+# `STEEL_DARK`, чтобы оплётка ядра не слилась с его каркасом.
 const IRON := Color(0.062, 0.066, 0.070)
 const CABLE := Color(0.045, 0.048, 0.052)
-const PANEL := Color(0.072, 0.076, 0.082)
-const SIGN_TEXT := Color(0.82, 0.86, 0.84)
+const PANEL := Pal.PANEL
+const SIGN_TEXT := Pal.SIGN_TEXT
+# Глухая предупредительная краска — своя: это тёмная пара к `AMBER`,
+# одним тоном полосатую разметку не собрать.
 const HAZARD := Color(0.50, 0.39, 0.10)
-const HAZARD_BRIGHT := Color(0.88, 0.62, 0.16)
-const BRASS := Color(0.34, 0.28, 0.14)
+const HAZARD_BRIGHT := Pal.AMBER
+static var BRASS := Pal.tone(Pal.BRASS, -0.32)
 ## The core at rest. Not a colour choice so much as a brightness one: at the old
 ## (0.42, 0.92, 0.74) the emissive pass pushed green to 1.47 and blue to 1.18,
 ## both past unity, so the sphere clipped into the glow buffer and bloomed white
@@ -88,8 +99,8 @@ const BRASS := Color(0.34, 0.28, 0.14)
 ## gone grey, and GameManager's incident tint still reads as a change of state
 ## rather than as the core finally turning on.
 const CORE_GLOW := Color(0.44, 0.58, 0.52)
-const WOOD := Color(0.105, 0.088, 0.070)
-const STONE := Color(0.140, 0.145, 0.150)
+static var WOOD := Pal.tone(Pal.WOOD, -0.52)
+static var STONE := Pal.tone(Pal.STONE, -0.76)
 const ACCENT_DEEP := Color(0.115, 0.235, 0.215)
 
 ## Wing tabs on the directory board. Same four hues as the wing banners

@@ -62,19 +62,25 @@ static var _materials := {}
 
 # Palette kept in step with FacadeProps so the new stone matches the portico.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+# Снаружи здание светлее своих интерьеров, поэтому камень берётся с
+# положительным `tone()`. Всё производное — `static var`.
+const Pal := preload("res://game/props/Palette.gd")
 
-const COL_STONE := Color(0.75, 0.73, 0.70)
-const COL_STONE_WARM := Color(0.71, 0.68, 0.63)
-const COL_PLINTH := Color(0.55, 0.53, 0.50)
-const COL_MOLDING := Color(0.82, 0.80, 0.77)
-const COL_RECESS := Color(0.44, 0.43, 0.41)
-const COL_GLASS := Color(0.05, 0.06, 0.08)
-const COL_MUNTIN := Color(0.22, 0.20, 0.17)
-const COL_ROOF := Color(0.26, 0.28, 0.30)
-const COL_ROOF_RIDGE := Color(0.20, 0.22, 0.24)
-const COL_COPPER := Color(0.29, 0.44, 0.39)
-const COL_BRONZE := Color(0.35, 0.30, 0.20)
-const COL_LEAD := Color(0.38, 0.39, 0.40)
+static var COL_STONE := Pal.tone(Pal.STONE, 0.40)
+static var COL_STONE_WARM := Pal.tone(Pal.STONE, 0.31)
+static var COL_PLINTH := Pal.tone(Pal.STONE, -0.05)
+static var COL_MOLDING := Pal.tone(Pal.STONE, 0.57)
+static var COL_RECESS := Pal.tone(Pal.STONE, -0.24)
+static var COL_GLASS := Pal.tone(Pal.SHELL, -0.20)
+static var COL_MUNTIN := Pal.tone(Pal.WOOL, -0.27)
+static var COL_ROOF := Pal.tone(Pal.SLATE, -0.16)
+static var COL_ROOF_RIDGE := Pal.tone(Pal.SLATE, -0.34)
+# Патина на меди — тот же зелёный, что у индикаторов нормы, только глуше.
+static var COL_COPPER := Pal.tone(Pal.MOSS, -0.35)
+static var COL_BRONZE := Pal.tone(Pal.BRASS, -0.30)
+static var COL_LEAD := Pal.tone(Pal.STEEL, -0.15)
 
 const WALL_T := 0.70        # elevation slab thickness, turned inward
 const PLINTH_TOP := 0.95

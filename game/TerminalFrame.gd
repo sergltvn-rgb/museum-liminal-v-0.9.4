@@ -402,6 +402,10 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	# Before refresh(), so the first paint already has the measured plan height
+	# rather than the pre-layout fallback. See _plan_height().
+	resized.connect(_resize_floor_plans)
+	_resize_floor_plans()
 	refresh()
 
 
@@ -904,9 +908,25 @@ func _draw_stability(bar: Control) -> void:
 # the mark still reads with the accent held elsewhere on the page (RULE OF ONE
 # ACCENT) and for a player who cannot separate the greens at all.
 
-## Height of the plan. Fixed, because the body is a VBox and a block that grew
-## with its content would shove the sections under it around.
-const PLAN_HEIGHT := 132.0
+## Height of the plan, as a FRACTION of the frame's own height, clamped.
+##
+## It was a flat 132.0 px, and that is the bug the review caught: the page is a
+## full-rect Control, so its body column grows with the window while a fixed
+## block does not. On a tall window the plan kept its 132 px and the drawing sat
+## in a strip with the sections crowding it; on a short one the same 132 px ate
+## the column and the plan pushed past the body edge. The block still cannot
+## grow with its CONTENT -- that was the original reason for a constant and it
+## stands, a VBox would shove every section under it around -- but it now
+## measures itself against the surface it is drawn on.
+##
+## The clamps are what keep it a plan rather than a stripe or a poster: under
+## PLAN_HEIGHT_MIN the eleven rooms stop being separable at all and the labels
+## drop out (PLAN_LABEL_MIN_WIDTH), over PLAN_HEIGHT_MAX the plan starts
+## competing with the report it belongs to. 0.17 puts a 1080-tall window at
+## ~184 px and a 720-tall one at ~122 px, both inside the clamps.
+const PLAN_HEIGHT_FRACTION := 0.17
+const PLAN_HEIGHT_MIN := 92.0
+const PLAN_HEIGHT_MAX := 240.0
 ## Margin between the outermost wall and the edge of the block.
 const PLAN_INSET := 8.0
 ## Under this width a room cannot carry its name and goes unlabelled.
@@ -933,7 +953,7 @@ func add_floor_plan(column: VBoxContainer, caption_key: String) -> Control:
 	plan.name = "Plan"
 	plan.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	plan.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	plan.custom_minimum_size = Vector2(0, PLAN_HEIGHT)
+	plan.custom_minimum_size = Vector2(0, _plan_height())
 	plan.set_meta("rooms", [])
 	plan.set_meta("night", 0)
 	plan.set_meta("mark", Vector2.ZERO)
@@ -946,6 +966,45 @@ func add_floor_plan(column: VBoxContainer, caption_key: String) -> Control:
 	block.add_child(plan)
 	_plan_ids.append(plan.get_instance_id())
 	return plan
+
+
+## The plan's height for the frame as it stands right now.
+##
+## Measured against this Control and not the window, because that is what the
+## body column is laid out inside: a frame parented into something smaller than
+## the screen (a test harness, a future split view) gets a plan sized to the
+## page it is on rather than to the monitor. The viewport is the fallback for
+## the one frame between _init() -- where add_floor_plan() can already be
+## called, from a caller's own construction -- and the first layout pass, when
+## `size` is still zero; _resize_floor_plans() corrects it the moment the frame
+## is measured.
+func _plan_height() -> float:
+	var height := size.y
+	if height <= 0.0:
+		var viewport := get_viewport()
+		if viewport != null:
+			height = viewport.get_visible_rect().size.y
+	if height <= 0.0:
+		return PLAN_HEIGHT_MIN
+	return clampf(height * PLAN_HEIGHT_FRACTION,
+		PLAN_HEIGHT_MIN, PLAN_HEIGHT_MAX)
+
+
+## Re-measure every live plan. Connected to this Control's own `resized`, which
+## fires on a window resize, a resolution change and the first layout pass
+## alike -- one signal covers all three.
+##
+## The sweep frees dead ids as it goes, the same way _render() does: a caller
+## may free the page a plan lives on without telling this file.
+func _resize_floor_plans() -> void:
+	var height := _plan_height()
+	for index in range(_plan_ids.size() - 1, -1, -1):
+		var plan := instance_from_id(_plan_ids[index]) as Control
+		if plan == null:
+			_plan_ids.remove_at(index)
+			continue
+		plan.custom_minimum_size = Vector2(0, height)
+		plan.queue_redraw()
 
 
 ## Drive a plan built by add_floor_plan().

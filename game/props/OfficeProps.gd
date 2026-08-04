@@ -107,25 +107,35 @@ const MatLib := preload("res://game/props/MaterialLib.gd")
 ## была своим бруском со своей яркостью; теперь это одна модель с обоймой и линзой.
 const Lamp := preload("res://game/props/StatusLamp.gd")
 
-const COL_STEEL := Color(0.105, 0.115, 0.125)
-const COL_SHELL := Color(0.062, 0.070, 0.078)
-const COL_DARK := Color(0.035, 0.040, 0.046)
-const COL_DESK := Color(0.155, 0.130, 0.100)
-const COL_LAMINATE := Color(0.105, 0.112, 0.108)
-const COL_PAPER := Color(0.700, 0.680, 0.600)
-const COL_PAPER_AGED := Color(0.540, 0.505, 0.420)
-const COL_INK := Color(0.160, 0.150, 0.140)
-const COL_SCREEN := Color(0.055, 0.085, 0.090)
-const COL_SCREEN_DEAD := Color(0.018, 0.020, 0.024)
-const COL_SCREEN_GLARE := Color(0.420, 0.450, 0.440)
-const COL_LED := Color(0.850, 0.100, 0.070)
-const COL_LED_AMBER := Color(0.900, 0.560, 0.120)
-const COL_PLASTIC := Color(0.560, 0.545, 0.480)
-const COL_SOIL := Color(0.120, 0.098, 0.078)
-const COL_DEAD_LEAF := Color(0.215, 0.180, 0.120)
-const COL_WOOL := Color(0.300, 0.220, 0.180)
-const COL_STAIN := Color(0.130, 0.075, 0.045, 0.720)
-const COL_CANCELLED := Color(0.420, 0.100, 0.090)
+# Цвета взяты из общей палитры (game/props/Palette.gd). Имена с приставкой
+# COL_ оставлены, чтобы не трогать остальные тысячу строк файла.
+# Яркость кабинета сохранена намеренно: это ночное помещение, и если
+# поднять тёмные тона хотя бы на сотые, стены перестанут тонуть в темноте.
+# Изменился не уровень, а оттенок: серое ушло в сине-серый, красный
+# индикатор и янтарный стали чуть глуше — чистых насыщенных тонов канон не допускает.
+# Через preload, а не через имя класса Palette: глобальное имя класса для
+# парсера не является константным выражением, а preload — является.
+const Pal := preload("res://game/props/Palette.gd")
+
+const COL_STEEL := Pal.CASING
+const COL_SHELL := Pal.SHELL
+const COL_DARK := Pal.DARK
+const COL_DESK := Pal.DESK
+const COL_LAMINATE := Pal.LAMINATE
+const COL_PAPER := Pal.PAPER
+const COL_PAPER_AGED := Pal.PAPER_AGED
+const COL_INK := Pal.INK_TEXT
+const COL_SCREEN := Pal.SCREEN
+const COL_SCREEN_DEAD := Pal.SCREEN_DEAD
+const COL_SCREEN_GLARE := Pal.SCREEN_GLARE
+const COL_LED := Pal.LED_RED
+const COL_LED_AMBER := Pal.LED_AMBER
+const COL_PLASTIC := Pal.PLASTIC
+const COL_SOIL := Pal.SOIL
+const COL_DEAD_LEAF := Pal.DEAD_LEAF
+const COL_WOOL := Pal.WOOL
+const COL_STAIN := Pal.STAIN
+const COL_CANCELLED := Pal.CANCELLED
 
 # --- Static caches ----------------------------------------------------------
 # The map already builds ~1270 MeshInstance3D nodes in a single frame. Materials
@@ -326,7 +336,7 @@ static func _material(color: Color, transparent: bool,
 	# Matches the museum's restrained surface detail: enough grain that painted
 	# steel is not a flat swatch, not so much that it turns into television
 	# static.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _shared_roughness_noise()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

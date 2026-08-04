@@ -45,25 +45,31 @@ extends RefCounted
 # dust sheet over the projector is the single light-valued mass in the room, so
 # it owns the silhouette; nothing else competes with it.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+# Ступени через `tone()` — `static var`: вызов функции не константен.
+const Pal := preload("res://game/props/Palette.gd")
 
-const CONCRETE := Color(0.20, 0.20, 0.21)
-const CONCRETE_DARK := Color(0.14, 0.14, 0.15)
+static var CONCRETE := Pal.tone(Pal.STONE, -0.65)
+static var CONCRETE_DARK := Pal.tone(Pal.STONE, -0.755)
 ## Step nosings are lighter in VALUE, not in hue -- the edge of a 0.45 m drop
 ## has to read for a colour-blind player and in a greyscale CCTV feed alike.
-const NOSING := Color(0.52, 0.51, 0.47)
-const DOME_PANEL := Color(0.30, 0.30, 0.32)
-const DOME_RIB := Color(0.15, 0.15, 0.17)
-const DOME_RIM := Color(0.21, 0.21, 0.22)
-const SEAT_FABRIC := Color(0.13, 0.12, 0.16)
-const SEAT_FRAME := Color(0.10, 0.10, 0.11)
-const MACHINE_DARK := Color(0.09, 0.09, 0.10)
-const MACHINE_STEEL := Color(0.34, 0.34, 0.36)
-const BRASS := Color(0.31, 0.26, 0.14)
-const SHROUD := Color(0.46, 0.45, 0.42)
-const BOOTH_WALL := Color(0.24, 0.24, 0.25)
-const BOOTH_TRIM := Color(0.16, 0.16, 0.17)
-const DEAD_SCREEN := Color(0.05, 0.06, 0.06)
-const CABLE := Color(0.07, 0.07, 0.08)
+static var NOSING := Pal.tone(Pal.STONE, -0.11)
+static var DOME_PANEL := Pal.tone(Pal.SLATE, -0.20)
+static var DOME_RIB := Pal.tone(Pal.SLATE, -0.58)
+static var DOME_RIM := Pal.tone(Pal.SLATE, -0.45)
+# Обивка кресел — единственное место сиреневого в зале, и то почти
+# чёрного: канонический `LILAC`, затемнённый до ткани.
+static var SEAT_FABRIC := Pal.tone(Pal.LILAC, -0.85)
+const SEAT_FRAME := Pal.CASING
+static var MACHINE_DARK := Pal.tone(Pal.CASING, -0.15)
+static var MACHINE_STEEL := Pal.tone(Pal.STEEL, -0.20)
+static var BRASS := Pal.tone(Pal.BRASS, -0.38)
+static var SHROUD := Pal.tone(Pal.STONE, -0.20)
+static var BOOTH_WALL := Pal.tone(Pal.SLATE, -0.36)
+static var BOOTH_TRIM := Pal.tone(Pal.SLATE, -0.56)
+static var DEAD_SCREEN := Pal.tone(Pal.SHELL, -0.20)
+const CABLE := Pal.SHELL
 
 # --- Fixed heights -----------------------------------------------------------
 # Tied to WALL_HEIGHT 3.4 and to the player capsule (r 0.35, h 1.8). Nothing

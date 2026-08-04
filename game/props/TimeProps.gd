@@ -59,19 +59,27 @@ const WALL_THICKNESS := 0.35
 
 # Wing B palette: warm amber brass, bone-pale dials, cold water for the drop.
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
-const BRASS := Color(0.30, 0.25, 0.13)
-const BRASS_LIT := Color(0.46, 0.38, 0.20)
-const IRON := Color(0.10, 0.11, 0.12)
-const CASE_DARK := Color(0.13, 0.12, 0.11)
-const DIAL_PALE := Color(0.74, 0.71, 0.62)
-const DIAL_DEAD := Color(0.28, 0.27, 0.24)
-const HAND_BLACK := Color(0.05, 0.05, 0.05)
+# Ступени одного материала (латунь в тени и латунь под светом) — через
+# `tone()`, поэтому `static var`: вызов функции не константное выражение.
+static var BRASS := Pal.tone(Pal.BRASS, -0.40)
+static var BRASS_LIT := Pal.tone(Pal.BRASS, -0.08)
+static var IRON := Pal.tone(Pal.STEEL_DARK, -0.38)
+static var CASE_DARK := Pal.tone(Pal.DESK, -0.20)
+const DIAL_PALE := Pal.PAPER
+static var DIAL_DEAD := Pal.tone(Pal.PAPER_AGED, -0.50)
+const HAND_BLACK := Pal.DARK
+# Вода и песок — единственное содержимое приборов, по ним читается
+# показание. Синего в каноне нет, а `BEIGE` для песка слишком бледен —
+# оба материала остаются своими вместе со своими тёмными парами.
 const WATER := Color(0.22, 0.45, 0.58)
 const WATER_DIM := Color(0.13, 0.26, 0.33)
 const SAND := Color(0.72, 0.62, 0.40)
 const SAND_DIM := Color(0.56, 0.48, 0.32)
-const SHADOW := Color(0.02, 0.02, 0.025)
+static var SHADOW := Pal.tone(Pal.DARK, -0.45)
 
 static var _materials: Dictionary = {}
 static var _noise_texture: NoiseTexture2D = null
@@ -654,7 +662,7 @@ static func _material(color: Color, emission_energy: float,
 
 	# Matte, non-emissive surfaces pick up the museum's restrained grain so
 	# these props sit in the same material family as the walls around them.
-	if metallic < 0.35 and emission_energy <= 0.0:
+	if emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _grain_texture()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

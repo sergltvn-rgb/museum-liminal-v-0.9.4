@@ -79,15 +79,21 @@ const SHADOW_CUTOFF := 0.65
 # the wing lights fail.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
 
 ## Exhibit casework and arch stone.
-const STONE := Color(0.155, 0.165, 0.185)
+# Зал космоса тёмный по замыслу: светятся только звёзды и инкрустация,
+# поэтому камень и чернота — затемнённые производные палитры (`static var`,
+# так как вызов `tone()` не константное выражение).
+static var STONE := Pal.tone(Pal.SLATE, -0.48)
 ## Lit faces of the same stone -- top surfaces, crowns.
-const STONE_LIT := Color(0.235, 0.245, 0.265)
+static var STONE_LIT := Pal.tone(Pal.SLATE, -0.25)
 ## Near-black. Holes, thresholds, the far end of things.
-const VOID := Color(0.020, 0.022, 0.030)
+static var VOID := Pal.tone(Pal.DARK, -0.42)
 ## Tarnished instrument brass for rings, arms and plaques.
-const BRASS := Color(0.330, 0.285, 0.165)
+static var BRASS := Pal.tone(Pal.BRASS, -0.34)
 ## Cold light leaking from somewhere the player cannot get to.
 const GLOW := Color(0.560, 0.680, 0.820)
 ## Pin-point starlight.
@@ -95,7 +101,7 @@ const STAR := Color(0.800, 0.860, 1.000)
 ## The membrane in the arch: visible, not passable.
 const MEMBRANE := Color(0.105, 0.135, 0.195, 0.42)
 ## Inlaid floor lines.
-const INLAY := Color(0.420, 0.500, 0.600)
+static var INLAY := Pal.tone(Pal.SLATE, 0.20)
 
 
 # --- Material cache ---------------------------------------------------------
@@ -150,7 +156,7 @@ static func _mat(color: Color, emission := 0.0, metallic := 0.0,
 		# Seen from both sides: the player walks around the arch.
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	if not transparent and emission <= 0.0 and metallic < 0.35:
+	if not transparent and emission <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _surface_noise()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

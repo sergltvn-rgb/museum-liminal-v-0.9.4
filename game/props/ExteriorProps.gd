@@ -44,6 +44,12 @@ extends RefCounted
 # either. Warm lamp glow matches FacadeProps' COL_LAMP_GLOW family.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+# Здесь на палитру переводится только рукотворное (асфальт, бетон,
+# металл, машина). Зелень, горы, вода, снег и фары — мир за окном музея,
+# у него свои цвета, и канон их не описывает.
+const Pal := preload("res://game/props/Palette.gd")
 
 # Preloaded rather than reached through its global class name: the capture and
 # audit tools run as bare --script, where class_name registration is absent.
@@ -51,8 +57,8 @@ const TreeLib := preload("res://game/props/TreeLib.gd")
 
 const COL_GRASS := Color(0.31, 0.36, 0.27)
 const COL_EARTH := Color(0.36, 0.30, 0.22)
-const COL_ASPHALT := Color(0.16, 0.17, 0.19)
-const COL_SHOULDER := Color(0.42, 0.40, 0.35)
+static var COL_ASPHALT := Pal.tone(Pal.SLATE, -0.50)
+static var COL_SHOULDER := Pal.tone(Pal.STONE, -0.28)
 const COL_MARKING := Color(0.88, 0.84, 0.65)
 const COL_BAY_LINE := Color(0.85, 0.85, 0.82)
 const COL_BARK_OAK := Color(0.30, 0.23, 0.15)
@@ -68,16 +74,16 @@ const COL_MOUNT_FAR := Color(0.58, 0.63, 0.70)
 const COL_SNOW := Color(0.82, 0.85, 0.88)
 const COL_WATER := Color(0.16, 0.26, 0.32)
 const COL_ROCK := Color(0.45, 0.44, 0.41)
-const COL_IRON := Color(0.12, 0.13, 0.14)
-const COL_BRONZE := Color(0.35, 0.30, 0.20)
+static var COL_IRON := Pal.tone(Pal.STEEL_DARK, -0.29)
+static var COL_BRONZE := Pal.tone(Pal.BRASS, -0.30)
 const COL_LAMP_GLOW := Color(0.95, 0.83, 0.55)
-const COL_CONCRETE := Color(0.58, 0.57, 0.54)
-const COL_WOOD := Color(0.42, 0.32, 0.20)
+static var COL_CONCRETE := Pal.tone(Pal.STONE, 0.05)
+static var COL_WOOD := Pal.tone(Pal.WOOD_LIGHT, 0.09)
 const COL_SIGN := Color(0.20, 0.32, 0.55)
 const COL_GLASS_TINT := Color(0.10, 0.13, 0.16, 0.35)
-const COL_CAR_TRIM := Color(0.09, 0.09, 0.10)
-const COL_CAR_INTERIOR := Color(0.13, 0.12, 0.11)
-const COL_CAR_SEAT := Color(0.22, 0.19, 0.15)
+static var COL_CAR_TRIM := Pal.tone(Pal.CASING, -0.15)
+static var COL_CAR_INTERIOR := Pal.tone(Pal.DESK, -0.20)
+static var COL_CAR_SEAT := Pal.tone(Pal.WOOL, -0.27)
 const COL_HEADLIGHT := Color(0.92, 0.90, 0.80)
 const COL_TAILLIGHT := Color(0.55, 0.10, 0.08)
 
@@ -262,7 +268,7 @@ static func _material(color: Color, transparent: bool,
 
 	# Same restrained grain policy as FacadeProps: matte natural surfaces get
 	# noise, glass / lit / metallic surfaces stay clean.
-	if not transparent and metallic < 0.35 and emission_energy <= 0.0:
+	if not transparent and emission_energy <= 0.0 and not MatLib.apply_flat_style(mat) and metallic < 0.35:
 		mat.roughness_texture = _shared_roughness_noise()
 		mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		mat.normal_enabled = true

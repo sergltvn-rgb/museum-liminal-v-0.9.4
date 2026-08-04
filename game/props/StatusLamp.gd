@@ -35,11 +35,17 @@ const ENERGY_DEAD := 0.0
 
 ## Канонные цвета индикации. Те же семь тонов, что у UITheme, но в 3D:
 ## зелёный — норма, янтарный — внимание, красный — тревога, серый — мёртвая.
-const COL_BEZEL := Color(0.055, 0.062, 0.070)
-const COL_OK := Color(0.505, 0.658, 0.541)
-const COL_WARN := Color(0.900, 0.560, 0.120)
-const COL_ALERT := Color(0.710, 0.290, 0.260)
-const COL_DEAD := Color(0.220, 0.235, 0.245)
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана).
+const Pal := preload("res://game/props/Palette.gd")
+
+# Лампа состояния — ровно тот случай, ради которого в палитре есть сигнальные
+# цвета: три состояния берутся один в один, без своих литералов.
+static var COL_BEZEL := Pal.tone(Pal.SHELL, -0.13)
+const COL_OK := Pal.MOSS
+const COL_WARN := Pal.LED_AMBER
+const COL_ALERT := Pal.RUST
+static var COL_DEAD := Pal.tone(Pal.STEEL_DARK, 0.07)
 
 ## Материалы кэшируются по цвету и яркости, но ТОЛЬКО для ламп, которые не
 ## меняются: общий материал у управляемой лампы перекрасил бы все остальные

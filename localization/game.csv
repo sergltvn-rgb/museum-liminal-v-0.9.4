@@ -273,6 +273,8 @@ SET_QUALITY_HIGH,High,Высокое
 SET_QUALITY_LOW,Low,Низкое
 SET_QUALITY_MEDIUM,Medium,Среднее
 SET_REDUCED_FLASHES_DESC,Softens the emergency lighting and the void effect,Смягчает аварийный свет и эффект пустоты
+SET_RENDER_SCALE,Render scale,Масштаб рендера
+SET_RENDER_SCALE_DESC,"Sharpness of the 3D picture, the interface is unaffected","Чёткость картинки, интерфейс не меняется"
 SET_RESET_DEFAULTS,Restore default settings,Восстановить настройки по умолчанию
 SET_RESOLUTION,Window resolution,Разрешение окна
 SET_RESOLUTION_DESC,Size of the test and windowed mode,Размер тестового и оконного режима

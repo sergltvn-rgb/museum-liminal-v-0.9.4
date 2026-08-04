@@ -27,6 +27,14 @@ extends RefCounted
 
 # --- Palette ------------------------------------------------------------------
 
+# Только через preload: глобальное имя класса в голом --script-прогоне не
+# регистрируется и вся цепочка падает (раздел 14 плана). Объявлен
+# выше всех цветов, чтобы порядок объявлений читался сверху вниз.
+# На палитру переведено рукотворное: камень, мощение, асфальт,
+# металл, дерево. Трава, вода, цветы и камыш остаются своими.
+# Производные — `static var`: вызов `tone()` не константное выражение.
+const Pal := preload("res://game/props/Palette.gd")
+
 const COL_MEADOW := Color(0.29, 0.35, 0.24)
 const COL_LAWN := Color(0.26, 0.38, 0.22)
 const COL_FIELD_A := Color(0.35, 0.38, 0.24)
@@ -34,22 +42,22 @@ const COL_FIELD_B := Color(0.44, 0.42, 0.26)
 const COL_FIELD_C := Color(0.31, 0.37, 0.26)
 const COL_HEDGE := Color(0.17, 0.27, 0.16)
 const COL_EARTH := Color(0.33, 0.27, 0.20)
-const COL_GRAVEL := Color(0.47, 0.45, 0.41)
-const COL_ASPHALT := Color(0.17, 0.18, 0.20)
-const COL_KERB := Color(0.60, 0.59, 0.56)
-const COL_STONE := Color(0.68, 0.66, 0.62)
-const COL_STONE_DARK := Color(0.52, 0.51, 0.48)
-const COL_COPING := Color(0.74, 0.72, 0.68)
+static var COL_GRAVEL := Pal.tone(Pal.STONE, -0.19)
+static var COL_ASPHALT := Pal.tone(Pal.SLATE, -0.47)
+static var COL_KERB := Pal.tone(Pal.STONE, 0.05)
+static var COL_STONE := Pal.tone(Pal.STONE, 0.24)
+static var COL_STONE_DARK := Pal.tone(Pal.STONE, -0.10)
+static var COL_COPING := Pal.tone(Pal.STONE, 0.38)
 const COL_WATER := Color(0.17, 0.28, 0.33)
 const COL_ROCK := Color(0.44, 0.43, 0.40)
-const COL_IRON := Color(0.12, 0.13, 0.14)
-const COL_BRONZE := Color(0.35, 0.30, 0.20)
+static var COL_IRON := Pal.tone(Pal.STEEL_DARK, -0.29)
+static var COL_BRONZE := Pal.tone(Pal.BRASS, -0.30)
 const COL_GLOW := Color(0.95, 0.83, 0.55)
 const COL_REED := Color(0.36, 0.40, 0.24)
 const COL_FLOWER_A := Color(0.72, 0.30, 0.32)
 const COL_FLOWER_B := Color(0.84, 0.74, 0.36)
 const COL_FLOWER_C := Color(0.56, 0.43, 0.70)
-const COL_WOOD := Color(0.30, 0.23, 0.16)
+static var COL_WOOD := Pal.tone(Pal.WOOD, 0.10)
 
 # --- Estate geometry ----------------------------------------------------------
 # The building's bounding box is x -36..64, z -50..35. Everything below is set
@@ -192,13 +200,14 @@ static func _material(kind: String, color: Color, emission := 0.0) -> StandardMa
 		return mat
 
 	mat.albedo_texture = _grain(kind)
-	mat.normal_enabled = true
-	mat.normal_texture = _bump(kind)
-	mat.normal_scale = float(spec[6])
 	mat.uv1_triplanar = true
 	var s := float(spec[4])
 	mat.uv1_scale = Vector3(s, s, s)
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if not MatLib.apply_flat_style(mat):
+		mat.normal_enabled = true
+		mat.normal_texture = _bump(kind)
+		mat.normal_scale = float(spec[6])
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_materials[key] = mat
 	return mat
@@ -789,9 +798,11 @@ static func _hedge_row(parent: Node3D, tag: String, a: float, b: float,
 
 
 static func _flower_bed(parent: Node3D, centre: Vector3, radius: float,
-		seed_value: int) -> void:
+		seed_value: int, flip_x := false) -> void:
 	var rng := _rng(seed_value)
 	var tag := "Bed %d" % seed_value
+	if flip_x:
+		tag = "Bed %d Mirror" % seed_value
 	_cyl(parent, "%s Soil" % tag, centre + Vector3(0, 0.08, 0), radius, 0.20,
 		"earth", COL_EARTH, 220.0, 14)
 	_torus(parent, "%s Rim" % tag, centre + Vector3(0, 0.16, 0), radius,
@@ -801,7 +812,13 @@ static func _flower_bed(parent: Node3D, centre: Vector3, radius: float,
 	for i in range(18):
 		var angle: float = rng.randf_range(0.0, TAU)
 		var dist: float = sqrt(rng.randf()) * (radius - 0.22)
-		var at := centre + Vector3(cos(angle) * dist, 0.26, sin(angle) * dist)
+		# flip_x mirrors the scatter for beds west of the museum axis: given the
+		# same seed, such a bed reads as the reflection of its twin instead of an
+		# unrelated spray of flowers.
+		var offset_x: float = cos(angle) * dist
+		if flip_x:
+			offset_x = -offset_x
+		var at := centre + Vector3(offset_x, 0.26, sin(angle) * dist)
 		_sphere(parent, "%s Bloom %d" % [tag, i], at, rng.randf_range(0.11, 0.19),
 			"foliage", tints[rng.randi() % tints.size()], 90.0, false)
 
@@ -900,15 +917,20 @@ static func _bench(parent: Node3D, at: Vector3, yaw_deg: float) -> void:
 #  bowl. At 3.5 m from spawn it stands just off the shoulder instead, framed
 #  by the gate behind it and the portico ahead.
 
-const COL_PAVING_A := Color(0.72, 0.70, 0.66)
-const COL_PAVING_B := Color(0.63, 0.61, 0.58)
-const COL_JOINT := Color(0.29, 0.28, 0.26)
-const COL_BASIN := Color(0.66, 0.64, 0.60)
+static var COL_PAVING_A := Pal.tone(Pal.STONE, 0.33)
+static var COL_PAVING_B := Pal.tone(Pal.STONE, 0.12)
+static var COL_JOINT := Pal.tone(Pal.STONE, -0.50)
+static var COL_BASIN := Pal.tone(Pal.STONE, 0.19)
 
 const COURT_SLAB_TOP := 0.055
 const FOUNTAIN_Z := 49.5
 const FOUNTAIN_BASIN_R := 2.95
 const FOUNTAIN_APRON_R := 4.25
+# Half width of the Museum Walkway the map paves down the axis (6.4 m wide).
+# Court dressing has to stay off it: the walk from the gate to the perron is the
+# one route every guest takes, and test_map_verification measures how wide it is
+# left in _verify_entrance_approach.
+const COURT_WALK_HALF := 3.2
 
 
 static func build_forecourt(parent: Node3D) -> void:
@@ -1121,9 +1143,17 @@ static func _parterres(root: Node3D) -> void:
 	root.add_child(parterre)
 
 	for side: float in [-1.0, 1.0]:
-		var cx: float = side * 10.5
+		# 12.0 and not 10.5: at 10.5 the inner hedge face stood 4.15 from the axis
+		# and closed on the fountain basin to 1.09 m, so the way round the fountain
+		# was a slot between clipped yew and stone. Moved out, the hedge clears the
+		# walkway paving and the bollard ring, and the parterres still read as the
+		# pair of squares that flank the court.
+		var cx: float = side * 12.0
 		var tag: String = "West" if side < 0.0 else "East"
-		var rng := _rng(9100 + int(side) * 7)
+		# One seed for both halves. The west parterre has to be the east one
+		# reflected, so its random hedge module heights must match its twin
+		# across the axis rather than merely resemble it.
+		var rng := _rng(9100)
 
 		# Gravel cross walk over the lawn inset (top 0.105).
 		_box(parterre, "Parterre %s Walk X" % tag, Vector3(cx, 0.135, 45.0),
@@ -1140,8 +1170,13 @@ static func _parterres(root: Node3D) -> void:
 		# Four beds and four topiary cones, one per quarter.
 		for qx: float in [-3.0, 3.0]:
 			for qz: float in [-3.2, 3.2]:
-				_flower_bed(parterre, Vector3(cx + qx, 0.10, 45.0 + qz), 1.05,
-					9200 + int(cx) * 5 + int(qx) * 3 + int(qz))
+				# Seeded by distance from the axis instead of signed x, so the bed
+				# at -13.5 and the bed at +13.5 draw the same scatter, and the west
+				# halves are flipped so that scatter is its reflection.
+				var bed_at := Vector3(cx + qx, 0.10, 45.0 + qz)
+				_flower_bed(parterre, bed_at, 1.05,
+					9200 + int(absf(bed_at.x) * 10.0) + int(qz),
+					bed_at.x < 0.0)
 		for tx: float in [-4.8, 4.8]:
 			for tz: float in [-4.9, 4.9]:
 				var at := Vector3(cx + tx, 0.0, 45.0 + tz)
@@ -1161,6 +1196,12 @@ static func _parterre_hedge(parent: Node3D, tag: String, a: float, b: float,
 		var run: float = minf(3.3, b - u)
 		var h: float = rng.randf_range(0.52, 0.64)
 		var centre: float = u + run * 0.5
+		# The sweep always starts at the low end, so the short closing module
+		# lands on the high-x side of whichever bed is being built. Reflecting the
+		# centre about the run's own midpoint on the west side makes the two runs
+		# mirror images instead of copies shifted by 1.1 m.
+		if along_x and a + b < 0.0:
+			centre = a + b - centre
 		var at := Vector3(centre, 0.11 + h * 0.5, fixed) if along_x \
 			else Vector3(fixed, 0.11 + h * 0.5, centre)
 		var size := Vector3(run - 0.06, h, 0.62) if along_x \
@@ -1228,9 +1269,13 @@ static func _court_fixtures(root: Node3D) -> void:
 	fixtures.name = "Court Fixtures"
 	root.add_child(fixtures)
 
-	# Urns flanking the perron, on the plaza corners.
+	# Urns flanking the perron. Both ranks have to stand on the "Entrance Plaza"
+	# slab (x +-8.5, z 35.4..41.0): the old north rank at z 41.4 carried 0.98 m of
+	# its 0.86 m plinth over bare ground, which reads as dropped, not placed. The
+	# pair is now set symmetrically about the slab's centre line at z 38.2, with
+	# 0.97 m of paving left beyond each foot.
 	for ux: float in [-7.7, 7.7]:
-		for uz: float in [38.6, 41.4]:
+		for uz: float in [36.8, 39.6]:
 			var at := Vector3(ux, 0.0, uz)
 			_box(fixtures, "Urn Plinth", at + Vector3(0, 0.22, 0),
 				Vector3(0.86, 0.44, 0.86), "stone", COL_STONE_DARK, 0.0)
@@ -1247,15 +1292,19 @@ static func _court_fixtures(root: Node3D) -> void:
 			_solid_cyl(fixtures, "Urn Collision", at + Vector3(0, 0.85, 0), 0.48,
 				1.70)
 
-	# Bollards ringing the fountain apron, with the axis left open so the walk
-	# through is never obstructed.
+	# Bollards ring the fountain apron and the walk down the axis is left clear.
+	# Skipping the four axial posts was not enough: the ones at 60, 120, 240 and
+	# 300 degrees landed at x +-2.55, inside the 6.4 m walkway they were meant to
+	# leave open, so two stood in the gate throat and two on the perron approach
+	# and squeezed the walk to 1.00 m against the basin. A post is placed only
+	# where it clears the paving by more than a body's width, which leaves the
+	# promenade the full width of the paving it runs on.
 	for i in range(12):
 		var angle: float = TAU * float(i) / 12.0
-		# Skip the four positions straddling the north-south axis.
-		if i in [0, 3, 6, 9]:
-			continue
 		var at := Vector3(cos(angle) * (FOUNTAIN_APRON_R + 0.85), 0.0,
 			FOUNTAIN_Z + sin(angle) * (FOUNTAIN_APRON_R + 0.85))
+		if absf(at.x) < COURT_WALK_HALF + 0.7:
+			continue
 		_cyl(fixtures, "Court Bollard", at + Vector3(0, 0.46, 0), 0.115, 0.92,
 			"metal", COL_IRON, 0.0, 10)
 		_sphere(fixtures, "Court Bollard Cap", at + Vector3(0, 0.94, 0), 0.12,
