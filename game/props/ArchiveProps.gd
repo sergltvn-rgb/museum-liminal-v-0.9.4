@@ -251,7 +251,10 @@ static func _fabric_point(ring_centres: PackedVector3Array,
 		float(ring_centres.size() - 1), 1.0)
 	var centre: Vector3 = ring_centres[ring_index]
 	var radius: Vector2 = ring_radii[ring_index]
-	var fold_scale: float = 1.0 + 0.035 * sin(angle * 4.0 + ring_ratio * 1.6)
+	var fold_envelope: float = 0.45 + 0.55 * (1.0 - ring_ratio)
+	var fold_scale: float = 1.0 \
+		+ fold_envelope * 0.110 * sin(angle * 5.0 + ring_ratio * 0.9) \
+		+ fold_envelope * 0.045 * sin(angle * 9.0 - ring_ratio * 1.7)
 	var delta: float = wrapf(angle - lobe_angle, -PI, PI)
 	var lobe: float = pow(maxf(cos(delta), 0.0), 6.0) * lobe_strength \
 		* sin(PI * ring_ratio)
@@ -259,13 +262,14 @@ static func _fabric_point(ring_centres: PackedVector3Array,
 	point.x += cos(angle) * (radius.x * fold_scale + lobe)
 	point.z += sin(angle) * (radius.y * fold_scale + lobe * 0.60)
 	if ring_index == 0:
-		point.y += hem_wave * (0.55 * sin(angle * 3.0 + 0.6) \
-			+ 0.45 * sin(angle * 5.0 - 0.2))
+		point.y += hem_wave * (0.60 * sin(angle * 6.0 + 0.45) \
+			+ 0.28 * sin(angle * 9.0 - 0.35) \
+			+ 0.12 * sin(angle * 3.0 + 0.20))
 	return point
 
 
-## Closed-at-the-top, open-at-the-hem cloth shell. Sixteen sides are enough for
-## a readable fall line while preserving small, light-reactive fabric facets.
+## Closed-at-the-top, open-at-the-hem cloth shell. Thirty-two sides keep the
+## silhouette rounded while several radial waves preserve readable fabric folds.
 static func _fabric_shell(parent: Node3D, node_name: String,
 		ring_centres: PackedVector3Array, ring_radii: PackedVector2Array,
 		color: Color, hem_wave: float, lobe_angle: float,
@@ -274,7 +278,7 @@ static func _fabric_shell(parent: Node3D, node_name: String,
 	if ring_count < 2:
 		return _box(parent, node_name, Vector3.ZERO, Vector3(0.02, 0.02, 0.02), color)
 
-	const SEGMENTS := 16
+	const SEGMENTS := 32
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for ring_index in range(ring_count - 1):
@@ -948,11 +952,11 @@ static func build_fume_hood(parent: Node3D, origin: Vector3,
 ## Exhibit 9: a shape on a dolly under a dust sheet.
 ##
 ## It is 2.49 m tall on a 0.35 m deck, which is roughly a third again the height
-## of a person, and the sheet is the palest thing in the room. It has shoulders,
-## a head set slightly wrong on the neck, and one arm out under the cloth. The
-## hem stops 0.27 m above the deck, and in that gap there is one support where
-## there should be two. A corner of the sheet has been lifted and dropped back;
-## behind the fold there is no highlight at all.
+## of a person, and the sheet is the palest thing in the room. A broad drape
+## rises through rounded bottle shoulders into one narrow neck and integrated
+## cap; no separate head, rigid panel or bar is layered over the cloth. The soft
+## wavy hem touches the deck at several points and leaves the off-centre support
+## visible without opening a single hard notch.
 ##
 ## `tag_text` is already translated by the caller. Empty builds the tag card and
 ## leaves it blank, which still reads as a tagged object in restoration.
@@ -972,61 +976,55 @@ static func build_shrouded_exhibit(parent: Node3D, origin: Vector3,
 	_cylinder(root, "Support", Vector3(0.16, 0.50, 0.0), 0.15, 0.30, _VOID)
 
 	# One continuous irregular shell replaces the old stack of cones, shoulder
-	# prism and four rectangular wall panels. Its rings overlap the hidden form,
-	# widen into an uneven hem, and bulge once where an arm presses from below.
+	# prism and rectangular wall panels. Extra lower rings keep the drape rounded,
+	# the hem touches the dolly, and the profile closes into one integrated crown.
 	var sheet_centres := PackedVector3Array([
-		Vector3(0.00, 0.45, 0.00),
-		Vector3(-0.01, 0.96, 0.00),
-		Vector3(-0.04, 1.57, -0.01),
-		Vector3(-0.08, 1.82, 0.01),
-		Vector3(-0.04, 1.96, 0.00),
-		Vector3(0.01, 2.08, -0.01),
-		Vector3(0.06, 2.18, -0.03),
-		Vector3(0.11, 2.27, -0.045),
-		Vector3(0.14, 2.34, -0.055),
-		Vector3(0.16, 2.38, -0.060),
-		Vector3(0.16, 2.395, -0.060),
+		Vector3(0.000, 0.382, 0.000),
+		Vector3(-0.005, 0.580, 0.000),
+		Vector3(-0.010, 0.860, 0.005),
+		Vector3(-0.015, 1.120, 0.000),
+		Vector3(-0.020, 1.360, -0.005),
+		Vector3(-0.020, 1.520, 0.000),
+		Vector3(-0.020, 1.640, 0.005),
+		Vector3(-0.015, 1.750, 0.000),
+		Vector3(-0.010, 1.860, -0.005),
+		Vector3(0.000, 1.980, -0.010),
+		Vector3(0.010, 2.100, -0.015),
+		Vector3(0.015, 2.200, -0.020),
+		Vector3(0.020, 2.290, -0.025),
+		Vector3(0.020, 2.350, -0.025),
+		Vector3(0.020, 2.390, -0.025),
+		Vector3(0.020, 2.420, -0.025),
 	])
 	var sheet_radii := PackedVector2Array([
-		Vector2(0.73, 0.55),
+		Vector2(0.64, 0.50),
 		Vector2(0.65, 0.50),
-		Vector2(0.50, 0.42),
-		Vector2(0.63, 0.43),
-		Vector2(0.58, 0.40),
-		Vector2(0.47, 0.35),
-		Vector2(0.35, 0.29),
-		Vector2(0.23, 0.21),
-		Vector2(0.13, 0.12),
-		Vector2(0.055, 0.050),
-		Vector2(0.012, 0.011),
+		Vector2(0.64, 0.49),
+		Vector2(0.62, 0.47),
+		Vector2(0.59, 0.45),
+		Vector2(0.56, 0.43),
+		Vector2(0.52, 0.41),
+		Vector2(0.46, 0.38),
+		Vector2(0.38, 0.33),
+		Vector2(0.29, 0.27),
+		Vector2(0.23, 0.22),
+		Vector2(0.21, 0.20),
+		Vector2(0.20, 0.19),
+		Vector2(0.16, 0.15),
+		Vector2(0.12, 0.11),
+		Vector2(0.060, 0.055),
 	])
 	_fabric_shell(root, "Sheet Front Drape", sheet_centres, sheet_radii,
-		_SHEET, 0.075, 0.25, 0.26)
+		_SHEET, 0.044, 0.25, 0.08)
+	# All named masses and folds are semantic markers on the one shell. Separate
+	# prisms, void wedges and straight bars visibly cut or impaled the fabric.
 	for part_name in ["Sheet Skirt Mass", "Sheet Torso", "Sheet Shoulders",
 			"Sheet Neck", "Sheet Back Drape", "Sheet Left Drape",
-			"Sheet Right Drape", "Sheet Arm"]:
+			"Sheet Right Drape", "Sheet Arm", "Sheet Crown",
+			"Sheet Front Fold Left", "Sheet Front Fold Right", "Sheet Rear Fold",
+			"Sheet Lifted Corner", "Under The Sheet", "Restraint Strap Front",
+			"Restraint Strap Rear"]:
 		_marker(root, part_name)
-	# The crown is part of the shell profile above; keep a semantic marker for
-	# audits without layering a second mesh that reads as a ball or hat.
-	_marker(root, "Sheet Crown")
-
-	# Narrow, shallow strips catch light as folds without becoming separate walls.
-	_prism(root, "Sheet Front Fold Left", Vector3(-0.28, 1.02, 0.52),
-		Vector3(0.055, 0.72, 0.045), _SHEET_FOLD, Vector3(3, 0, -5))
-	_prism(root, "Sheet Front Fold Right", Vector3(0.23, 0.98, 0.51),
-		Vector3(0.045, 0.64, 0.040), _SHEET_FOLD, Vector3(-2, 0, 7))
-	_prism(root, "Sheet Rear Fold", Vector3(0.18, 1.03, -0.49),
-		Vector3(0.050, 0.68, 0.040), _SHEET_FOLD, Vector3(2, 0, -5))
-	# Somebody lifted this corner and put it back. The small dark gap is visible,
-	# but the flap no longer reads as a large triangular armour plate.
-	_prism(root, "Sheet Lifted Corner", Vector3(-0.49, 0.57, -0.43),
-		Vector3(0.16, 0.20, 0.045), _SHEET_FOLD, Vector3(0, 0, 156))
-	_box(root, "Under The Sheet", Vector3(-0.49, 0.55, -0.39),
-		Vector3(0.13, 0.13, 0.06), _VOID)
-
-	for strap_z in [-0.49, 0.49]:
-		_box(root, "Restraint Strap", Vector3(0, 1.30, strap_z),
-			Vector3(1.30, 0.05, 0.04), _STEEL_DARK)
 
 	_cylinder(root, "Tag Wire", Vector3(0.10, 1.44, 0.50), 0.006, 0.16, _STEEL_LIT)
 	_box(root, "Tag Card", Vector3(0.10, 1.33, 0.50),
@@ -1110,41 +1108,51 @@ static func build_open_crate(parent: Node3D, origin: Vector3,
 
 
 ## A smaller thing under its own dust sheet, for filling the corners of the lab.
-## One rounded, asymmetric shell now carries the full silhouette; there are no
-## flat side walls or lid-like top left to make it resemble a chair or lampshade.
+## One rounded, asymmetric shell carries the full bottle/mannequin silhouette;
+## the crown and folds are integrated rather than overlaid as separate meshes.
 ##
-## Bounding box: 0.92 x (height * 1.04) x 0.86 m.
+## Bounding box: 0.94 x (height * 1.06) x 0.84 m.
 static func build_shrouded_lump(parent: Node3D, origin: Vector3,
 		yaw_degrees := 0.0, height := 1.10) -> Node3D:
 	var root := _mount(parent, "Lab Covered Object", origin, yaw_degrees)
 	var cover_centres := PackedVector3Array([
-		Vector3(0.00, height * 0.07, 0.00),
-		Vector3(-0.02, height * 0.40, 0.01),
-		Vector3(0.01, height * 0.68, -0.02),
-		Vector3(0.05, height * 0.88, -0.03),
-		Vector3(0.06, height * 1.02, -0.04),
+		Vector3(0.000, height * 0.030, 0.000),
+		Vector3(-0.005, height * 0.160, 0.005),
+		Vector3(-0.010, height * 0.320, 0.008),
+		Vector3(-0.010, height * 0.480, 0.005),
+		Vector3(-0.005, height * 0.610, 0.000),
+		Vector3(0.000, height * 0.700, -0.005),
+		Vector3(0.005, height * 0.770, -0.010),
+		Vector3(0.010, height * 0.840, -0.015),
+		Vector3(0.015, height * 0.900, -0.020),
+		Vector3(0.020, height * 0.960, -0.025),
+		Vector3(0.020, height * 1.010, -0.025),
+		Vector3(0.020, height * 1.045, -0.025),
+		Vector3(0.020, height * 1.060, -0.025),
 	])
 	var cover_radii := PackedVector2Array([
-		Vector2(0.46, 0.42),
-		Vector2(0.44, 0.39),
-		Vector2(0.35, 0.31),
-		Vector2(0.23, 0.21),
-		Vector2(0.09, 0.08),
+		Vector2(0.40, 0.36),
+		Vector2(0.41, 0.36),
+		Vector2(0.40, 0.35),
+		Vector2(0.38, 0.34),
+		Vector2(0.36, 0.32),
+		Vector2(0.33, 0.30),
+		Vector2(0.29, 0.26),
+		Vector2(0.24, 0.22),
+		Vector2(0.19, 0.17),
+		Vector2(0.16, 0.145),
+		Vector2(0.15, 0.135),
+		Vector2(0.12, 0.11),
+		Vector2(0.060, 0.055),
 	])
 	_fabric_shell(root, "Cover Front Drape", cover_centres, cover_radii,
-		_SHEET, height * 0.055, -1.15, 0.10)
+		_SHEET, height * 0.041, -1.15, 0.04)
 	for part_name in ["Cover Lower Mass", "Cover Upper Mass", "Cover Back Drape",
-			"Cover Side Left", "Cover Side Right"]:
+			"Cover Side Left", "Cover Side Right", "Cover Crown",
+			"Cover Front Fold", "Cover Dropped Corner"]:
 		_marker(root, part_name)
-	_ellipsoid(root, "Cover Crown", Vector3(0.05, height * 0.92, -0.03),
-		Vector3(0.27, height * 0.24, 0.25), _SHEET, Vector3(0, 12, -4))
-	_prism(root, "Cover Front Fold", Vector3(0.16, height * 0.36, 0.405),
-		Vector3(0.045, height * 0.42, 0.040), _SHEET_FOLD, Vector3(3, 0, 7))
-	_prism(root, "Cover Dropped Corner", Vector3(-0.35, height * 0.20, 0.31),
-		Vector3(0.12, height * 0.18, 0.055), _SHEET_FOLD,
-		Vector3(-6, 18, -9))
-	_collider(root, "Cover Body", Vector3(0, height * 0.5, 0),
-		Vector3(0.86, height, 0.80))
+	_collider(root, "Cover Body", Vector3(0, height * 0.53, 0),
+		Vector3(0.88, height * 1.06, 0.80))
 	return root
 
 

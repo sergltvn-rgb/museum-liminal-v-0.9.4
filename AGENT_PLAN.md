@@ -82,7 +82,7 @@
 аномалию изнутри. Измерений десять. Со второй ночи по музею ходит КУРАТОР. RU + EN.
 
 Порядок величин: ~11 300 строк игрового GDScript + ~1 200 строк тестов, 398 ключей
-локализации, 42 сцены, 312 скриптов, 22 GLB, 20 WAV, 5 headless-наборов тестов.
+локализации, 42 сцены, 312 скриптов, 21 GLB в `models/` и 16 в `models/lowpoly/`, 20 WAV, 5 headless-наборов тестов.
 
 **Проект состоит из двух почти независимых слоёв, и агенты обычно видят только один:**
 
@@ -213,7 +213,8 @@ pack-маршрутизации в единую точку материала.
   `cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File tools\<name>.ps1"`
 - `textures/` — 14 наборов (Poliigon даёт готовый `_Roughness`; ambientCG требует конверсии
   GLOSS→ROUGHNESS; `WoodProcedural/`)
-- `models/` — 1.67 ГБ, 22 GLB + FBX + 42 исходных ZIP; кандидат на диету
+- `models/` — 1.67 ГБ, 21 GLB + FBX + 42 исходных ZIP; кандидат на диету
+- `models/lowpoly/` — 16 собственных `lp_*.glb`, собранных скриптами из `tools/lowpoly/`
 - `localization/game.csv` (398 ключей, `keys,en,ru`) + скомпилированные
   `game.en.translation` / `game.ru.translation`
 
@@ -2057,3 +2058,115 @@ headless smoke завершился с code 0 и без missing-resource/autoloa
 - `test_full_game_cycle` печатает `ERROR: 3 resources still in use at exit` при `[PASS]` —
   это шум движка, не провал.
 - `--import` ругается на dll terrabrush — норма, аддон в `project.godot` не включён.
+
+## Модели и декор — статус на 2026-08-06 и очередь работ
+
+### Правило по моделям (требование пользователя, 2026-08-06)
+
+**Если пользователь говорит «сделай модель» — модель делается в Blender и кладётся
+в проект как `.glb`.** Не коробками из примитивов в GDScript.
+
+- Скрипт-сборщик — в `tools/lowpoly/` тем же идиомом, что `blender_build.py`
+  (`bb.Part`, один материал, один палитровый атлас 128x128, плоское затенение,
+  metallic 0, roughness 0.92, forward -Z, фаски и inset вместо шейдерных трюков).
+  Свежий пример — `tools/lowpoly/blender_cameras.py`.
+- Экспорт в `models/lowpoly/<имя>.glb`; имя слота = имя файла.
+- Blender не в PATH:
+  `"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b -P tools\lowpoly\<script>.py`
+- **После экспорта обязателен `--import`.** Без него `ResourceLoader.exists()`
+  вернёт false, `MapModels.place()` отдаст `null`, нарисуется старый примитивный
+  fallback — а тест останется зелёным. Зелёный тест с неизменившимся счётчиком
+  `MeshInstance3D` — это молчаливый провал, а не приёмка.
+- Примитивы в GDScript остаются только как fallback на случай отсутствия файла.
+
+### Закрыто (гейты зелёные, кадры сняты)
+
+- **Лавочки атриума.** `лавочки.glb` (4.7 МБ, парная модель — каждый вызов искал и
+  прятал вторую половину) удалён вместе с `.import` и обоими вызовами; четыре
+  скамьи строит `AtriumProps.build_rotunda_bench()` на диагоналях r 8.4 лицом к ядру.
+- **Камеры наблюдения.** `tools/lowpoly/blender_cameras.py` → `lp_security_camera.glb`
+  (196 трис) и `lp_camera_plate.glb` (102 триса), встроены в `FirstMuseumMap._camera()`
+  с сохранением примитивного fallback, оба добавлены в `NON_BLOCKING`. Мешей
+  10126 → 10115 (−11 = ровно одиннадцать постов) — это и есть доказательство, что
+  модели встали. `test_map_verification` — `ALL CHECKS PASSED`, 11 камер совпадают
+  с лентами планшета.
+- **Конфетти на полу.** Из медальона удалены 24 клина, железный обод, 32 плитки и
+  8 брусчаток; мелкие вставки сняты с фотопаков MaterialLib и переведены на плоские
+  тона (`_flat_material`). Фотопаки — только на поверхностях метрового масштаба.
+- **Центр сдерживания — собран моделями (2026-08-06, принято пользователем).**
+  `tools/lowpoly/blender_core.py` → `lp_core_base.glb` (316 трис), `lp_core_column.glb`
+  (844), `lp_core_gantry.glb` (146), `lp_core_plant.glb` (282); все в бюджете.
+  Оркестровка — `AtriumProps.build_containment_core()`: база в начале координат, колонна
+  на палубе (y 0.24), три гантри на 45/135/225° при r 1.36, два насосных скида на
+  285/345° при r 1.20. Под каждым вызовом сохранён примитивный fallback.
+  Углы скидов сдвинуты с 292.5/337.5: скид 0.90 м на r 1.20 субтендирует ≈41° и закрыл бы
+  окно 305…325°, а камера 03 смотрит по лучу 317°; новые углы дают свободный сектор
+  305.6…324.4°. Мешей 10115 → 9988 (−127) — доказательство, что модели реально встали.
+  Процедурными остались только те узлы, которые моделью быть не могут: `Anomalous Core`
+  (glow), `Containment Dome` (шейдер), `Core Beacon Lamp` (эмиссия), четыре кабельных
+  ствола (длина считается от `ceiling_y`) и табличка с `Label3D`.
+  Коллизия: снятые процедурные `_collider` заменены convex-хуллами `MapModels`;
+  в `NON_BLOCKING` `lp_core_*` намеренно **не** вносились, иначе в центре атриума
+  открылась бы дыра в навмеше.
+  Приёмка: 9 кадров конфигом `decor_core_cams.json` в `shots/decor_audit/core_model/`,
+  открыты все девять.
+- **Идиом Blender дополнен двумя примитивами.** В `tools/lowpoly/blender_build.py`
+  добавлены `Part.prism(base_centre, radius, height, sides, swatch, top_radius=None,
+  cap_swatch=None, phase=0.0)` — цилиндры и усечённые конусы с обоими колпачками — и
+  `Part.swing(mark_verts, angle_rad)` — рыскание вокруг Y (`pitch` умел только X).
+  Ограничение `swing`: вращает вокруг оси модели, произвольный пивот не поддерживается,
+  поэтому спицы маховика в скиде пришлось выбросить.
+- **Арка на входе в Крыло времени B убрана (2026-08-06).** Вызов
+  `MuseumModels.place(parent, "арка дверь", …)` снят из `FirstMuseumMap.gd`, слот убран
+  из `MapModels.NON_BLOCKING`, ракурс `import_arch_door` удалён из `decor_shots.json`
+  (132 → 131). Файл `models/арка дверь.glb` оставлен на диске.
+- **Мерцание пола и мерцание в дверных проёмах — закрыто, подтверждено пользователем
+  2026-08-06.**
+- Гейты после захода: `ALL CHECKS PASSED` (11 камер), материалы 14 наборов / 0 ошибок,
+  `Blocker regressions: 0 failure(s)`, `Integration smoke test: 0 failure(s)`,
+  `[OK] No shell geometry reaches into any room.`
+- Гейт материалов: 59 карт, 14 наборов, 0 ошибок.
+
+### Открыто — очередь работ по приоритету
+
+Нумерация сохранена той, которой пользуется пользователь: пункты 1–3 закрыты, следующий
+в работе — 4.
+
+1. ~~Мерцание пола.~~ **ЗАКРЫТО**, подтверждено пользователем 2026-08-06.
+2. ~~Мерцание в проёмах всех дверей.~~ **ЗАКРЫТО**, подтверждено пользователем 2026-08-06.
+3. ~~Центр сдерживания.~~ **ЗАКРЫТО 2026-08-06** — собран моделями в Blender,
+   подробности выше в разделе «Закрыто».
+4. **Убрать висящие сине-жёлтые плакаты в атриуме** (Wing Banners,
+   `FirstMuseumMap.gd` ~2710–2719, сверить актуальные строки).
+5. **Единые модели ламп** — несколько типов потолочных и несколько нижних
+   (настенные/напольные), один комплект на весь музей.
+6. **Единая модель сирены.**
+7. **Единые модели шкафов персонала.**
+8. **Офис:** нормальный компьютерный стол и стена за ним.
+9. **Зона входа:** улучшить моделями и перестановкой всех объектов.
+10. **Планетарий:** обставить моделями.
+11. **Оптимизация:** мешей ~10115, плюс вызовы отрисовки, тени, дальности видимости.
+
+### Хвост прежнего плана (после моделей)
+
+Полный обход 132 ракурсов `decor_shots.json`, `shots/decor_audit/audit.tsv`, ассерты
+на скамьи/пол/камеры в `game/test_decor_layout.gd`, `run_tests.cmd`,
+`check_materials.gd`, `check_localization.py`, `git diff --check`, обновление
+`CREDITS.md` и `MODELS_GUIDE.md` (обновлены 2026-08-06: 21 GLB в `models/`, 16 в
+`models/lowpoly/`, размещённых архивных 14 → 13 после снятия арки), новый Windows
+export и smoke-тест. Коммиты — только с разрешения пользователя.
+
+### Временные файлы этого захода (удалить после приёмки)
+
+Заход 2026-08-06 (ядро и арка): `tools/tmp_patch_prism.py`, `tmp_patch_swing.py`,
+`tmp_patch_core.py`, `tmp_patch_arch.py`, `tmp_patch_shots.py`, `tmp_patch_mapmodels.py`,
+`tmp_slice3.py`, `tmp_slice4.py`, `tmp_slice5.py`, `tmp_docs_scan.py`, `tmp_docs_slice.py`,
+`tmp_patch_docs2.py`.
+
+Остатки прежних заходов: `tools/tmp_grep_bench.py`, `tmp_slice.py`, `tmp_find.py`,
+`tmp_probe.py`, `tmp_patch_atrium.py`, `tmp_patch_map.py`, `tmp_grep_lav.py`,
+`tmp_del_lav.py`, `tmp_patch_docs.py`, `tmp_patch_floor2.py`, `tmp_fixblanks.py`,
+`tmp_patch_cams.py`, `tmp_patch_plan.py`, `tmp_plan_append.md`.
+
+Постоянные — `tools/lowpoly/blender_cameras.py`, `tools/lowpoly/blender_core.py`,
+`decor_focus_cams.json`, `decor_core_cams.json`.

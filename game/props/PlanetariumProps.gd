@@ -18,9 +18,9 @@ extends RefCounted
 ## BOUNDING BOXES, measured off the built tree, in metres relative to the
 ## `origin` each function is handed:
 ##   build_dome ........... 10.12 x 1.09 x 10.12   y  2.23 .. 3.32
-##   build_projector ......  2.94 x 2.32 x  2.71   y -0.03 .. 2.28, x -1.02 .. 1.92,
-##                                                 z -1.62 .. 1.09
-##   build_seating_bank ... 15.24 x 2.28 x  5.79   y  0.00 .. 2.28, z -2.25 .. 3.54
+##   build_projector ......  2.44 x 2.22 x  2.44   y -0.03 .. 2.19, x -1.22 .. 1.92,
+##                                                 z -1.22 .. 1.22
+##   build_seating_bank ... 15.24 x 2.51 x  5.79   y  0.00 .. 2.51, z -2.25 .. 3.54
 ##   build_operator_booth .  3.73 x 2.89 x  5.43   y  0.00 .. 2.89
 ## build_all() together spans 17.19 x 3.35 x 14.68 (x -7.62..9.57, z -7.10..7.58)
 ## and fits the 20 x 16 room with at least 0.07 m to every wall face. Nothing
@@ -29,10 +29,9 @@ extends RefCounted
 ## collider to the doorway is the booth window sill, 4.9 m east of it.
 ##
 ## Some of those numbers are wider than the visible silhouette because they are
-## AABBs: the projector's +X reach is its floor cable, its 2.32 top is the
-## dust-sheet cone's bounding cylinder (the cloth itself tops out at 2.20), and
-## its -0.03 floor is the mounting ring deliberately recessed into the 0.16 m
-## floor slab.
+## AABBs: the projector's +X reach is its floor cable, its 2.19 top is the
+## raised star ball with its drive belt, and its -0.03 floor is the mounting
+## ring deliberately recessed into the 0.16 m floor slab.
 ##
 ## Measured with the props injected into the real map and the navmesh re-baked:
 ## NavigationServer3D paths from the Central Atrium reach the room centre, the
@@ -60,12 +59,24 @@ static var DOME_RIB := Pal.tone(Pal.SLATE, -0.58)
 static var DOME_RIM := Pal.tone(Pal.SLATE, -0.45)
 # Обивка кресел — единственное место сиреневого в зале, и то почти
 # чёрного: канонический `LILAC`, затемнённый до ткани.
-static var SEAT_FABRIC := Pal.tone(Pal.LILAC, -0.85)
-const SEAT_FRAME := Pal.CASING
+#
+# Лестница яркостей в блоке кресел задана намеренно и проверена по палитре:
+# ткань 0.15 < бетон ступеней 0.19 < рама 0.25 < кромка ступени 0.49.
+# Было иначе: SEAT_FRAME = CASING (0.12) почти совпадал с обивкой (0.11) и
+# был темнее бетона, поэтому в луче фонаря весь блок читался как три пустые
+# бетонные террасы без единого силуэта кресла.
+static var SEAT_FABRIC := Pal.tone(Pal.LILAC, -0.80)
+static var SEAT_FRAME := Pal.tone(Pal.STEEL, -0.45)
 static var MACHINE_DARK := Pal.tone(Pal.CASING, -0.15)
 static var MACHINE_STEEL := Pal.tone(Pal.STEEL, -0.20)
 static var BRASS := Pal.tone(Pal.BRASS, -0.38)
-static var SHROUD := Pal.tone(Pal.STONE, -0.20)
+# Чехол. Было -0.20. Пока ткань висела на поднятой голове, это было
+# незаметно; после того как она сползла к подножию, конус оказался
+# прямо под потолочным светильником и стал самым светлым пятном зала --
+# ярче даже кромок ступеней. -0.52 оставляет ткань чуть светлее бетона
+# (0.27 против 0.19), чтобы она читалась как чехол, но убирает её из числа
+# ярких пятен кадра.
+static var SHROUD := Pal.tone(Pal.STONE, -0.52)
 static var BOOTH_WALL := Pal.tone(Pal.SLATE, -0.36)
 static var BOOTH_TRIM := Pal.tone(Pal.SLATE, -0.56)
 static var DEAD_SCREEN := Pal.tone(Pal.SHELL, -0.20)
@@ -103,8 +114,10 @@ static func build_all(parent: Node3D, origin: Vector3) -> Node3D:
 # --- Dome --------------------------------------------------------------------
 
 ## Shallow saucer dome over the room centre: a hanging rim, four open-ended
-## frusta and eight meridian ribs, with the oculus left as a hole rather than a
-## plate so the room's existing ceiling fixture shows through it.
+## frusta and eight meridian ribs, with the oculus shuttered by a blanking
+## plate. It used to be left open, and the annexe fixture above it burned a
+## blown-out white ellipse through the middle of the dome -- the brightest
+## thing by far in a room whose own sign says the projector is switched off.
 ##
 ## `origin` is the floor point the dome is centred on; the shell itself occupies
 ## y 2.30 .. 3.32 regardless. A hemisphere of this radius simply does not fit
@@ -140,10 +153,22 @@ static func build_dome(parent: Node3D, origin: Vector3, radius := 5.0) -> Node3D
 			radius * float(seg[2]), radius * float(seg[3]), y1 - y0,
 			DOME_PANEL, 24)
 
-	# Oculus. Deliberately open: a black disc punched out of the dome, ringed by
-	# a rim so the hole has an edge to catch light. Sits below CEILING_CLEAR_Y.
+	# Oculus, shuttered. The rim still gives the aperture an edge to catch light,
+	# but a blanking plate is seated in its throat so nothing above the dome
+	# shines through it. Plate radius 0.225 lands inside the rim tube's
+	# 0.216 .. 0.252 band: no gap at the join, and no coplanar face to z-fight.
 	_torus(root, "Dome Oculus Rim", Vector3(0, CEILING_CLEAR_Y - 0.08, 0),
 		radius * 0.216, radius * 0.252, DOME_RIM, 24, 6)
+	_cylinder(root, "Dome Oculus Plate", Vector3(0, CEILING_CLEAR_Y - 0.09, 0),
+		radius * 0.225, 0.06, CONCRETE_DARK, 24, 0.0, false)
+	# Three blades across the blank so it reads as a closed shutter and not as a
+	# flat grey disc. They overlap the plate's underside by 15 mm.
+	for i in range(3):
+		var blade_a: float = PI * float(i) / 3.0
+		var blade := _box(root, "Dome Oculus Blade %d" % (i + 1), Vector3.ZERO,
+			Vector3(radius * 0.44, 0.05, 0.09), DOME_RIB, 0.0, false)
+		blade.transform = Transform3D(Basis(Vector3.UP, blade_a),
+			Vector3(0, CEILING_CLEAR_Y - 0.13, 0))
 
 	# Meridian ribs, struck as straight chords from the spring line to the top
 	# of shell 3. A chord sags inside the curve, which puts the ribs slightly
@@ -171,10 +196,10 @@ static func build_dome(parent: Node3D, origin: Vector3, radius := 5.0) -> Node3D
 ## the seating and half covered by a slipped dust sheet. `origin` is the floor
 ## point the pedestal stands on.
 ##
-## Bounding box 2.20 x 2.20 x 2.65 -- X and Z ranges are -1.10 .. +1.10 and
-## -1.65 .. +1.00 respectively (the sheet hangs over the raised head, so the
-## footprint is not symmetric in Z). Top of the sheet reaches 2.20, clearing the
-## dome rim at 2.30 by 0.10.
+## Bounding box 2.44 x 2.22 x 2.44 about the pedestal axis, plus the floor
+## cable's reach to +X 1.92. The widest thing is the dust sheet's puddled hem
+## at radius 1.22; the tallest is the raised star ball with its belt at 2.19,
+## which passes 1.01 m under the dome's oculus blank at 3.20.
 ##
 ## Collision is the pedestal drum only: a 0.58 m tall obstacle at the room
 ## centre that both the player and the Curator walk around. Everything above it
@@ -243,21 +268,34 @@ static func build_projector(parent: Node3D, origin: Vector3,
 	return root
 
 
-## Dust sheet slipped off the raised star ball. Built as an open-ended cone so
-## it is a single hooded silhouette rather than a pile of detail, plus three
-## folds to stop the cone reading as a perfect solid of revolution.
+## Dust sheet that has slid off the machine and collapsed around its pedestal.
+##
+## It used to be a 1.32 m cone centred on the raised star ball, and it hid the
+## yoke, the trunnions, the axle and both balls: the projector read as a chess
+## pawn instead of as a machine, and nothing in the room said "planetarium".
+## The cloth now stops at 0.74, below the lower ball's underside at 0.808, so
+## every part that carries the read -- drum collar, yoke arms, trunnions, axle,
+## two balls with their belts and lens ports -- stands clear above it.
+##
+## Cone slope is atan((1.06 - 0.64) / 0.74) = 29.6 degrees and the folds are
+## struck at exactly that angle on the mid radius 0.85, so they lie on the
+## surface instead of hovering off it. The cone starts at radius 1.06 and the
+## flared hem stands at 0.97 .. 1.22, both outside the floor ring's 1.00, so
+## cloth and ring never interpenetrate at any height.
 static func _build_shroud(root: Node3D) -> void:
-	var centre := Vector3(0, 1.52, -0.557)
-	var sheet := _tube(root, "Projector Dust Sheet", centre,
-		1.02, 0.28, 1.32, SHROUD, 20)
-	sheet.rotation.x = deg_to_rad(4.0)
+	var centre := Vector3(0, 0.37, 0)
+	_tube(root, "Projector Dust Sheet", centre, 1.06, 0.64, 0.74, SHROUD, 20)
+	# Puddled hem: the cloth flares where it reaches the floor instead of ending
+	# on a hard cut edge. Its top radius matches the cone's radius at y 0.16.
+	_tube(root, "Dust Sheet Hem", Vector3(0, 0.08, 0),
+		1.22, 0.97, 0.16, SHROUD, 20)
 	for i in range(3):
 		var a: float = TAU * float(i) / 3.0 + 0.6
 		var fold := _box(root, "Dust Sheet Fold %d" % (i + 1), Vector3.ZERO,
-			Vector3(0.09, 1.34, 0.09), SHROUD, 0.0, false)
+			Vector3(0.09, 0.75, 0.09), SHROUD, 0.0, false)
 		fold.transform = Transform3D(
-			Basis(Vector3.UP, a) * Basis(Vector3.BACK, deg_to_rad(29.3)),
-			centre + Vector3(cos(a) * 0.64, 0.0, -sin(a) * 0.64))
+			Basis(Vector3.UP, a) * Basis(Vector3.BACK, deg_to_rad(29.6)),
+			centre + Vector3(cos(a) * 0.85, 0.0, -sin(a) * 0.85))
 
 
 # --- Seating bank ------------------------------------------------------------
@@ -265,7 +303,7 @@ static func _build_shroud(root: Node3D) -> void:
 ## Raked seating at the deep end of the room, rising away from the projector
 ## toward the north wall. `origin` is the floor centre of the bank footprint.
 ##
-## Bounding box 15.24 x 2.28 x 5.65. The solid stepped mass is 15.00 x 1.35 x
+## Bounding box 15.24 x 2.51 x 5.65. The solid stepped mass is 15.00 x 1.35 x
 ## 4.50 (x -7.50..7.50, z -2.25..2.25); the extra depth on +Z is one toppled
 ## seat lying on the floor in front of the front row.
 ##
@@ -296,18 +334,32 @@ static func build_seating_bank(parent: Node3D, origin: Vector3,
 		# Continuous bench rather than separate chairs: three unbroken
 		# horizontal bands read far better through a torch beam than forty
 		# little boxes, and cost a fraction of the nodes.
+		#
+		# The pan used to hover 0.37 m above the tier on nothing at all, and the
+		# bench was one 0.11 m slab of near-black fabric in front of a near-black
+		# riser, so the whole bank read as three blank concrete terraces. It now
+		# stands on a plinth and carries a frame-valued cap rail.
+		_box(root, "Seating Bench Plinth %d" % (i + 1),
+			Vector3(0, h + 0.19, z_c + 0.22),
+			Vector3(bench_width - 0.30, 0.38, 0.42), SEAT_FRAME, 0.0, false)
 		_box(root, "Seating Bench Pan %d" % (i + 1),
-			Vector3(0, h + 0.42, z_c + 0.24),
-			Vector3(bench_width, 0.11, 0.58), SEAT_FABRIC, 0.0, false)
+			Vector3(0, h + 0.44, z_c + 0.24),
+			Vector3(bench_width, 0.14, 0.62), SEAT_FABRIC, 0.0, false)
 		var back := _box(root, "Seating Bench Back %d" % (i + 1),
-			Vector3(0, h + 0.68, z_c - 0.22),
-			Vector3(bench_width, 0.50, 0.10), SEAT_FABRIC, 0.0, false)
+			Vector3(0, h + 0.80, z_c - 0.20),
+			Vector3(bench_width, 0.62, 0.12), SEAT_FABRIC, 0.0, false)
 		back.rotation.x = deg_to_rad(-11.0)
-		for k in range(6):
-			var t: float = (float(k) + 0.5) / 6.0
+		# Cap rail along the top edge of the back, in the lighter frame value:
+		# one horizontal line per row at the height a torch beam always crosses.
+		var rail := _box(root, "Seating Bench Rail %d" % (i + 1),
+			Vector3(0, h + 1.12, z_c - 0.26),
+			Vector3(bench_width + 0.10, 0.07, 0.16), SEAT_FRAME, 0.0, false)
+		rail.rotation.x = deg_to_rad(-11.0)
+		for k in range(8):
+			var t: float = (float(k) + 0.5) / 8.0
 			_box(root, "Seating Divider %d-%d" % [i + 1, k + 1],
-				Vector3(-bench_width * 0.5 + bench_width * t, h + 0.62, z_c + 0.24),
-				Vector3(0.07, 0.30, 0.62), SEAT_FRAME, 0.0, false)
+				Vector3(-bench_width * 0.5 + bench_width * t, h + 0.66, z_c + 0.24),
+				Vector3(0.09, 0.32, 0.64), SEAT_FRAME, 0.0, false)
 
 	# One seat pulled out of the bank and left on its side on the floor. The
 	# rows are otherwise perfectly regular, so a single wrong element carries

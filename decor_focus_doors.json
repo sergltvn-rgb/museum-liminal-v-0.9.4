@@ -1,0 +1,19 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_doors",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "door_a1_storage_front", "pos": [-25.0, 1.65, 3.6], "look_at": [-25.0, 1.45, 7.0], "fov": 55},
+    {"name": "door_a2_storage_back", "pos": [-25.0, 1.65, 10.4], "look_at": [-25.0, 1.45, 7.0], "fov": 55},
+    {"name": "door_a3_storage_quarter", "pos": [-23.4, 1.60, 4.4], "look_at": [-25.2, 1.35, 7.0], "fov": 50},
+    {"name": "door_a4_storage_handle", "pos": [-24.2, 1.25, 5.9], "look_at": [-24.6, 1.10, 6.95], "fov": 42},
+    {"name": "door_a5_storage_hinge", "pos": [-26.2, 1.40, 5.8], "look_at": [-25.85, 1.30, 7.0], "fov": 40},
+    {"name": "door_b1_archive_front", "pos": [-25.0, 1.65, -3.6], "look_at": [-25.0, 1.45, -7.0], "fov": 55},
+    {"name": "door_b2_archive_quarter", "pos": [-23.4, 1.60, -4.6], "look_at": [-25.2, 1.35, -7.0], "fov": 50},
+    {"name": "door_c1_lab_front", "pos": [-25.0, 1.65, 13.6], "look_at": [-25.0, 1.45, 17.0], "fov": 55},
+    {"name": "door_c2_lab_quarter", "pos": [-26.6, 1.60, 14.2], "look_at": [-25.0, 1.40, 17.0], "fov": 50},
+    {"name": "door_c3_lab_head", "pos": [-25.0, 2.05, 14.9], "look_at": [-25.0, 2.55, 17.0], "fov": 52}
+  ]
+}

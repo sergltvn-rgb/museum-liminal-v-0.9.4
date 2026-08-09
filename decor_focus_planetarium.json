@@ -1,0 +1,16 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_planetarium",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name":"overview_planetarium","pos":[0,1.65,-35],"look_at":[0,1.6,-42],"fov":72},
+    {"name":"planetarium_dome","pos":[-1.8,1.65,-37.4],"look_at":[0.4,3.15,-41.4],"fov":74},
+    {"name":"planetarium_projector","pos":[2.6,1.55,-38.6],"look_at":[0,1.35,-41.0],"fov":48},
+    {"name":"planetarium_seating","pos":[-5.6,1.75,-41.0],"look_at":[0.2,0.95,-45.8],"fov":60},
+    {"name":"planetarium_booth","pos":[3.4,1.62,-36.6],"look_at":[6.6,1.35,-36.0],"fov":52},
+    {"name":"planetarium_sign","pos":[-6.2,1.75,-39.6],"look_at":[-9.6,1.95,-39.4],"fov":40},
+    {"name":"planetarium_door","pos":[0,1.7,-36.4],"look_at":[0,2.3,-33.1],"fov":50}
+  ]
+}

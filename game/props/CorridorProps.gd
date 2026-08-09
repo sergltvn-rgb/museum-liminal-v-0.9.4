@@ -544,24 +544,114 @@ static func floor_scuffs(parent: Node3D, origin: Vector3, spread := 2.0,
 	var rng := RandomNumberGenerator.new()
 	rng.seed = rng_seed if rng_seed != 0 else hash(origin)
 	var marks: int = maxi(0, count)
+	var specs: Array = []
 	for i in range(marks):
 		var width: float = rng.randf_range(0.30, 0.55)
 		var length: float = width * (rng.randf_range(2.6, 4.2) if i % 3 == 2
 			else rng.randf_range(0.7, 1.3))
-		# Half-diagonal, so the quad stays inside `spread` at any rotation.
-		var half_diagonal: float = sqrt(width * width + length * length) * 0.5
-		var reach: float = maxf(0.0, spread * 0.5 - half_diagonal)
-		var angle: float = rng.randf_range(0.0, TAU)
-		var offset: float = rng.randf_range(0.0, reach)
-		var shade: float = rng.randf_range(0.10, 0.22)
+		specs.append({
+			"i": i,
+			"w": width,
+			"l": length,
+			"shade": rng.randf_range(0.10, 0.22),
+			"yaw": rng.randf_range(0.0, 360.0),
+			"at": Vector2.ZERO,
+		})
+	# Крупные ставятся первыми. Длинной полосе почти некуда деться
+	# внутри квадрата spread, и если ставить её последней, она гарантированно
+	# ложится на чужое место — именно так выжили три пары после первой правки.
+	specs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["w"] * a["l"] > b["w"] * b["l"])
+	var placed: Array = []
+	for spec: Dictionary in specs:
+		var width: float = spec["w"]
+		var length: float = spec["l"]
+		var yaw: float = spec["yaw"]
+		var spot := Vector2.ZERO
+		var free := false
+		for _shrink in range(SCUFF_SHRINKS):
+			# Half-diagonal, so the quad stays inside `spread` at any rotation.
+			var half_diagonal: float = sqrt(width * width
+				+ length * length) * 0.5
+			var reach: float = maxf(0.0, spread * 0.5 - half_diagonal)
+			for _attempt in range(SCUFF_TRIES):
+				var angle: float = rng.randf_range(0.0, TAU)
+				var offset: float = rng.randf_range(0.0, reach)
+				spot = Vector2(cos(angle) * offset, sin(angle) * offset)
+				if not _mark_overlaps(placed, spot, width, length, yaw):
+					free = true
+					break
+			if free:
+				break
+			# Места не нашлось — метка ужимается и пробует снова.
+			# Выбросить её нельзя: число мешей карты считается тестом.
+			width *= SCUFF_SHRINK_STEP
+			length *= SCUFF_SHRINK_STEP
+		spec["w"] = width
+		spec["l"] = length
+		spec["at"] = spot
+		placed.append(spec)
+	specs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a["i"]) < int(b["i"]))
+	for spec: Dictionary in specs:
+		var at: Vector2 = spec["at"]
+		var index: int = spec["i"]
 		# Each mark a hair higher than the last: co-planar transparent quads
 		# fight for depth, stacked ones do not.
-		_decal(root, "Scuff %d" % i,
-			Vector3(cos(angle) * offset, 0.010 + 0.0012 * float(i),
-				sin(angle) * offset),
-			Vector2(width, length), Color(0.05, 0.05, 0.055, shade),
-			rng.randf_range(0.0, 360.0))
+		# База 0.014, а не 0.010: кайма пола атриума лежит на 0.008, и на
+		# старой высоте метка проходила в двух миллиметрах над камнем.
+		# Верхняя метка стопки — 0.0176, всё ещё ниже латунных линий 0.018.
+		_decal(root, "Scuff %d" % index,
+			Vector3(at.x, 0.014 + 0.0012 * float(index), at.y),
+			Vector2(spec["w"], spec["l"]),
+			Color(0.05, 0.05, 0.055, spec["shade"]), spec["yaw"])
 	return root
+
+
+## Сколько раз ищем пятну свободное место. Тридцати двух попыток хватает
+## на четыре метки в квадрате 2.2 м; если не хватило, пусть лучше ляжет как
+## есть, чем пропадёт: пропавшая метка меняет число мешей карты.
+const SCUFF_TRIES := 32
+## Зазор между метками: впритык они всё равно дерутся по общему ребру.
+const MARK_CLEARANCE := 0.02
+## Сколько раз метка ужимается, если свободного места не нашлось.
+const SCUFF_SHRINKS := 4
+const SCUFF_SHRINK_STEP := 0.82
+
+
+## Пересекается ли новая метка хотя бы с одной уже поставленной.
+static func _mark_overlaps(placed: Array, at: Vector2, width: float,
+		length: float, yaw_deg: float) -> bool:
+	for mark in placed:
+		if _rects_overlap(at, width, length, yaw_deg, mark["at"],
+				float(mark["w"]), float(mark["l"]), float(mark["yaw"])):
+			return true
+	return false
+
+
+## SAT для двух повёрнутых прямоугольников на полу: если проекции расходятся
+## хотя бы на одной из четырёх осей, тела не касаются. Квадратная оболочка
+## здесь не годится: полоса 2.1 м под 45 градусов заняла бы весь квадрат.
+static func _rects_overlap(a_at: Vector2, a_w: float, a_l: float,
+		a_yaw: float, b_at: Vector2, b_w: float, b_l: float,
+		b_yaw: float) -> bool:
+	var a_u := Vector2(cos(deg_to_rad(a_yaw)), -sin(deg_to_rad(a_yaw)))
+	var a_v := Vector2(-a_u.y, a_u.x)
+	var b_u := Vector2(cos(deg_to_rad(b_yaw)), -sin(deg_to_rad(b_yaw)))
+	var b_v := Vector2(-b_u.y, b_u.x)
+	var a_hw: float = a_w * 0.5 + MARK_CLEARANCE
+	var a_hl: float = a_l * 0.5 + MARK_CLEARANCE
+	var b_hw: float = b_w * 0.5
+	var b_hl: float = b_l * 0.5
+	var delta: Vector2 = b_at - a_at
+	for axis: Vector2 in [a_u, a_v, b_u, b_v]:
+		var reach_a: float = absf(a_hw * a_u.dot(axis)) \
+			+ absf(a_hl * a_v.dot(axis))
+		var reach_b: float = absf(b_hw * b_u.dot(axis)) \
+			+ absf(b_hl * b_v.dot(axis))
+		if absf(delta.dot(axis)) > reach_a + reach_b:
+			return false
+	return true
 
 
 # =============================================================================

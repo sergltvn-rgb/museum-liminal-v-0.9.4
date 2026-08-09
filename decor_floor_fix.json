@@ -1,0 +1,16 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/floor_fix",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "kerb1_dais_edge", "pos": [4.2, 1.20, 4.2], "look_at": [1.2, 0.18, 1.2], "fov": 45},
+    {"name": "kerb2_grazing", "pos": [0.0, 0.35, 11.5], "look_at": [0.0, 0.06, -2.0], "fov": 55},
+    {"name": "kerb3_step_close", "pos": [0.0, 0.55, 8.2], "look_at": [0.0, 0.12, 5.1], "fov": 42},
+    {"name": "kerb4_annulus", "pos": [3.9, 1.05, 3.9], "look_at": [2.6, 0.14, 2.6], "fov": 40},
+    {"name": "kerb5_field", "pos": [-9.5, 2.40, -9.5], "look_at": [-3.2, 0.05, -3.2], "fov": 62},
+    {"name": "kerb6_medallion", "pos": [0.0, 2.70, -7.6], "look_at": [0.0, 0.10, -2.0], "fov": 60},
+    {"name": "kerb7_core_base", "pos": [3.3, 0.80, 0.0], "look_at": [0.9, 0.42, 0.0], "fov": 45}
+  ]
+}

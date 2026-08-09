@@ -32,6 +32,9 @@ func _init() -> void:
 	_require_child(exhibit, "Sheet Front Fold Right")
 	_require_mesh_class(exhibit, "Sheet Front Drape", "ArrayMesh")
 	_require_marker(exhibit, "Sheet Crown")
+	_require_marker(exhibit, "Sheet Front Fold Left")
+	_require_marker(exhibit, "Sheet Front Fold Right")
+	_require_marker(exhibit, "Sheet Lifted Corner")
 
 	var covered := ArchiveProps.build_shrouded_lump(
 		host, Vector3(14, 0, 0), 0.0, 1.10)
@@ -39,8 +42,13 @@ func _init() -> void:
 	_require_child(covered, "Cover Back Drape")
 	_require_child(covered, "Cover Side Left")
 	_require_child(covered, "Cover Side Right")
+	_require_child(covered, "Cover Crown")
 	_require_child(covered, "Cover Front Fold")
+	_require_child(covered, "Cover Dropped Corner")
 	_require_mesh_class(covered, "Cover Front Drape", "ArrayMesh")
+	_require_marker(covered, "Cover Crown")
+	_require_marker(covered, "Cover Front Fold")
+	_require_marker(covered, "Cover Dropped Corner")
 
 	host.free()
 	if _failures == 0:

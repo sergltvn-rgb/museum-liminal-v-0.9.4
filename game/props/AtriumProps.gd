@@ -26,7 +26,8 @@ extends RefCounted
 ##   Doorways (DOOR_GAP 1.8 m) at (0,0,15) entrance, (0,0,-15) Time Wing B,
 ##   (15,0,0) Gravity Wing A, (-15,0,0) Watcher Office.
 ##   Existing atrium furniture this file is routed clear of: rotunda kerb r 5.8
-##   and rotunda floor r 4.9 (top y 0.16), four columns at (+-11.5, +-11.5),
+##   and rotunda floor r 4.9 (top y 0.16; the kerb tops out 1 cm lower at
+##   0.15 so the two never share a plane), four columns at (+-11.5, +-11.5),
 ##   four benches at radius 8.4 on the cardinal axes, planters at
 ##   (+-10.8, 0, 10.8), distribution board at (12.5, ., 14.5).
 ##
@@ -53,13 +54,20 @@ extends RefCounted
 ## lighting the map throws at it.
 ##
 ## LIGHTING NOTE FOR THE INTEGRATOR
-## FirstMuseumMap's "Skylight Beam" is a SpotLight3D at (0, 3.28, 0) aimed down
-## with spot_angle 24 deg, so its cone is only 1.39 m across at the floor and the
-## core column stands inside it. The column will occlude the beam and throw a
-## hard radial shadow instead of a floor pool. That is a better image than the
-## bare pool was, but if a light pool is wanted back, widen spot_angle to about
-## 40 deg (2.6 m radius at the floor) so the beam lands as a ring around the
-## dais. This file adds no lights of its own.
+## FirstMuseumMap's "Skylight Beam" is a SpotLight3D at (0, 3.28, 0) aimed down.
+## spot_angle is 40 deg now, so the beam lands as a ring around the dais instead
+## of the 1.39 m pinspot it used to be. Careful reading that number: Godot's
+## spot_angle is the HALF angle, so 40 deg is a pool about 5.5 m across at the
+## floor (3.28 * tan 40 = 2.75 m radius), not the 2.6 m radius an earlier note
+## here claimed.
+##
+## That beam cannot light the core, and no amount of energy will change it. It
+## is a point source sitting dead over the column, and the head cap is a 0.66 m
+## cone at 2.74 with the collar above it, so the whole drum stands in the umbra
+## of its own head; the three gantry decks finish off whatever is left. Only
+## side light reaches the column. _build_core_spots() therefore adds the two
+## lights this file owns -- a pair of ceiling rigs on the +-X axis that rake the
+## drum and give it back a silhouette. Everything else here is unlit geometry.
 
 
 # --- Palette -----------------------------------------------------------------
@@ -69,6 +77,13 @@ const MatLib := preload("res://game/props/MaterialLib.gd")
 # Только через preload: глобальное имя класса в голом --script-прогоне не
 # регистрируется и вся цепочка падает (раздел 14 плана).
 const Pal := preload("res://game/props/Palette.gd")
+## Same reason as Pal above: reached by preload, never by global class name, so
+## the atrium still builds under a bare `--script` run. Models.place() returns
+## null when the .glb is absent, and that null is exactly the signal every
+## procedural fallback below keys off -- delete models/lowpoly/ and this file
+## still produces the same atrium it produced before batch 3.
+const Models := preload("res://game/MapModels.gd")
+const Lights := preload("res://game/props/LightProps.gd")
 
 # Атриум строится на контрасте: стены — почти белый мрамор (0.87), а ядро
 # и его каркас обязаны читаться как дыра в нём. Прямой `Pal.STONE` в
@@ -101,6 +116,14 @@ static var BRASS := Pal.tone(Pal.BRASS, -0.32)
 const CORE_GLOW := Color(0.44, 0.58, 0.52)
 static var WOOD := Pal.tone(Pal.WOOD, -0.52)
 static var STONE := Pal.tone(Pal.STONE, -0.76)
+## Столешницы ресепшена — единственная светлая горизонталь в зале, и они
+## сознательно выведены из-под общего правила «тёмное ядро». `STONE` при -0.76
+## даёт около 0.14 люмы: рядом с чёрным корпусом стойки весь ресепшен слипался
+## в одно чёрное пятно и от входа (13 м) его просто не было видно. -0.08 — это
+## тот же тон, что свотч `stone_pale` в tools/lowpoly/glb.py, поэтому модель
+## `lp_reception_counter`, её процедурный фолбэк и приставной стол читаются
+## одним и тем же камнем, а не тремя разными.
+static var COUNTER_STONE := Pal.tone(Pal.STONE, -0.08)
 const ACCENT_DEEP := Color(0.115, 0.235, 0.215)
 
 ## Wing tabs on the directory board. Same four hues as the wing banners
@@ -161,11 +184,36 @@ static func build_containment_core(parent: Node3D, origin: Vector3,
 	var trunk_top: float = maxf(3.05, ceiling_y - origin.y - 0.16)
 
 	_build_core_slab(root)
-	_build_core_column(root)
-	_build_core_status_ring(root)
-	_build_core_head(root, trunk_top)
+
+	# The column is ONE model now. lp_core_column carries both shield drums,
+	# both bolted flanges, the eight-rib cage, the heat fins, the status ring
+	# and the head cap and collar -- everything _build_core_column,
+	# _build_core_status_ring, _build_core_head_cap and the bolts and fins of
+	# _build_core_service used to draw as eighty-odd separate primitives, each
+	# with its own material and each meeting its neighbour on a shared plane.
+	# It stands ON the base deck, hence the 0.24: the model's own origin is its
+	# floor, so every height inside it is measured from there.
+	var column := Models.place(root, "lp_core_column", Vector3(0, 0.24, 0))
+	if column == null:
+		_build_core_column(root)
+		_build_core_status_ring(root)
+		_build_core_head_cap(root)
+		_build_core_service(root)
+	else:
+		column.name = "Core Shield Column"
+
+	# Four things are never part of any model and are built either way. The
+	# sphere and the window are the two nodes GameManager drives by name, the
+	# window is shader-driven, the trunks are sized per-map from the soffit
+	# height, and the beacon lamp is emissive -- nothing in the lp_ pipeline
+	# emits, by design.
+	_build_core_glow(root)
+	_build_core_trunks(root, trunk_top)
+	_build_core_beacon(root)
+
 	_build_core_gantries(root)
 	_build_core_shutters(root)
+	_build_core_plant(root)
 	_build_core_plaque(root)
 	return root
 
@@ -173,16 +221,34 @@ static func build_containment_core(parent: Node3D, origin: Vector3,
 ## Slab, kerb and the painted hazard hatching on the deck. Two shallow steps of
 ## 0.11 and 0.13 m, both well under the bake's agent_max_climb of 0.4, so the
 ## deck stays connected to the atrium floor and the Curator can walk onto it.
+##
+## The slab starts 8 mm above the lip's underside on purpose. Both used to
+## begin at the assembly origin, which is 13.54 m2 of coplanar downward face
+## and the second-largest z-fight in the atrium. The 8 mm is inside the lip
+## (r 2.22 against the slab's 2.05) and is never seen; the deck top is
+## unchanged at 0.24 so nothing standing on it moves.
 static func _build_core_slab(root: Node3D) -> void:
-	_cyl(root, "Core Base Lip", Vector3(0, 0.055, 0), 2.22, 0.11,
-		CONCRETE_DARK, 12, 0.0, 0.0, true)
-	_cyl(root, "Core Base Slab", Vector3(0, 0.12, 0), 2.05, 0.24,
-		CONCRETE, 12, 0.0, 0.0, true)
-	# Radial hazard dashes at the deck edge: geometry, not a texture.
-	for i in range(8):
-		var a: float = TAU * float(i) / 8.0 + PI / 8.0
-		_radial_box(root, "Core Deck Hatch %d" % i, a, 1.72, 0.247,
-			Vector3(0.44, 0.014, 0.13), HAZARD, 0.10)
+	# lp_core_base is the lip, the deck and all eight hatch covers as one mesh.
+	# Same radii as the primitives it replaces (2.22 / 2.05 / 1.72) because the
+	# barrier ring, the floor signage and the three gantries are all surveyed
+	# against them, and the same 0.240 deck top so nothing standing on it moves.
+	#
+	# The model is NOT in MapModels.NON_BLOCKING: its convex hull is the dais,
+	# which is what the two CylinderShape3D colliders below described anyway,
+	# and losing it would open a hole in the middle of the atrium navmesh.
+	var dais := Models.place(root, "lp_core_base", Vector3.ZERO)
+	if dais == null:
+		_cyl(root, "Core Base Lip", Vector3(0, 0.055, 0), 2.22, 0.11,
+			CONCRETE_DARK, 12, 0.0, 0.0, true)
+		_cyl(root, "Core Base Slab", Vector3(0, 0.124, 0), 2.05, 0.232,
+			CONCRETE, 12, 0.0, 0.0, true)
+		# Radial hazard dashes at the deck edge: geometry, not a texture.
+		for i in range(8):
+			var a: float = TAU * float(i) / 8.0 + PI / 8.0
+			_radial_box(root, "Core Deck Hatch %d" % i, a, 1.72, 0.254,
+				Vector3(0.44, 0.014, 0.13), HAZARD, 0.10)
+	else:
+		dais.name = "Core Base"
 
 
 ## Two bolted drums with an open window band between them. The band is what
@@ -207,19 +273,26 @@ static func _build_core_column(root: Node3D) -> void:
 			Vector3(0.14, 0.84, 0.18), IRON, 0.0, 0.50, true)
 	_ring(root, "Core Cage Belt", Vector3(0, 1.44, 0), 0.70, 0.78, IRON, 16)
 
-	# The two nodes GameManager drives. Keep the names.
-	# 1.8, up from 1.6, buys back the throw that the darker CORE_GLOW gave up:
-	# 0.58 * 1.8 = 1.044 puts green a hair over unity, so the sphere still
-	# carries a thin halo and is still the first thing seen from the entrance
-	# 15 m away, while the two channels that used to blow out (0.792 and 0.936)
-	# now stay inside the frame and the glow stays a colour instead of a flare.
-	_sphere(root, CORE_NODE_NAME, Vector3(0, 1.44, 0), 0.33, CORE_GLOW, 1.8)
-	_containment_window(root, Vector3(0, 1.44, 0), 0.50, 0.86)
-
 	_cyl(root, "Core Shield Flange Upper", Vector3(0, 1.92, 0), 0.82, 0.12,
 		STEEL_DARK, 12, 0.60)
 	_cyl(root, "Core Shield Drum Upper", Vector3(0, 2.30, 0), 0.66, 0.64,
 		STEEL, 12, 0.55, 0.0, true)
+
+
+## The two nodes GameManager drives, and the only part of the column that is
+## never a model. Built whether lp_core_column landed or not, and at the same
+## height either way: the model's rib cage leaves its inner faces at r 0.540
+## and runs from local y 0.77 to 1.63, which is assembly y 1.01 to 1.87 -- the
+## exact band the 0.86 m window occupies, with 40 mm of clearance.
+##
+## 1.8, up from 1.6, buys back the throw that the darker CORE_GLOW gave up:
+## 0.58 * 1.8 = 1.044 puts green a hair over unity, so the sphere still carries
+## a thin halo and is still the first thing seen from the entrance 15 m away,
+## while the two channels that used to blow out (0.792 and 0.936) now stay
+## inside the frame and the glow stays a colour instead of a flare.
+static func _build_core_glow(root: Node3D) -> void:
+	_sphere(root, CORE_NODE_NAME, Vector3(0, 1.44, 0), 0.33, CORE_GLOW, 1.8)
+	_containment_window(root, Vector3(0, 1.44, 0), 0.50, 0.86)
 
 
 ## Containment status: eight cells around the upper drum, six live and two
@@ -241,11 +314,19 @@ static func _build_core_status_ring(root: Node3D) -> void:
 
 ## Cap, collar and the four cable trunks that splay out to the ceiling. The
 ## trunks are what break the column's silhouette against the skylight.
-static func _build_core_head(root: Node3D, trunk_top: float) -> void:
+static func _build_core_head_cap(root: Node3D) -> void:
 	_cone(root, "Core Head Cap", Vector3(0, 2.74, 0), 0.66, 0.36, 0.24,
 		STEEL_DARK, 12)
 	_cyl(root, "Core Head Collar", Vector3(0, 2.95, 0), 0.40, 0.18,
 		CONCRETE_DARK, 10)
+
+
+## The four cable trunks that splay out to the ceiling. Always procedural:
+## their length is derived per-map from the soffit height, so they cannot be
+## baked into a mesh. They leave at y 3.00, which is inside lp_core_column's
+## cap ring (assembly 2.98 .. 3.035), so they read as coming out of the head
+## rather than as starting in mid-air above it.
+static func _build_core_trunks(root: Node3D, trunk_top: float) -> void:
 	for i in range(4):
 		var a: float = TAU * float(i) / 4.0 + PI / 4.0
 		var dir := Vector3(cos(a), 0.0, sin(a))
@@ -259,10 +340,32 @@ static func _build_core_head(root: Node3D, trunk_top: float) -> void:
 ## and the quarter the two dead status cells face.
 static func _build_core_gantries(root: Node3D) -> void:
 	for i in range(3):
-		var a: float = deg_to_rad(45.0 + 90.0 * float(i))
+		var angle: float = 45.0 + 90.0 * float(i)
+		var a: float = deg_to_rad(angle)
 		var tag := "Gantry %d" % (i + 1)
+		# lp_core_gantry is one mesh: kicked feet, two legs, the deck, three toe
+		# boards and the whole guardrail. It is authored with the WALKWAY ALONG
+		# ITS LOCAL Z and local +Z pointing AWAY from the core, standing on its
+		# own floor -- so it goes on the base deck at y 0.24, at radius 1.36, and
+		# the yaw follows from Godot sending local +Z to (sin y, 0, cos y) while
+		# the outward radius is (cos a, 0, sin a): y = 90 - angle.
+		#
+		# "Along Z" is the load-bearing half of that sentence. Authored along X
+		# instead -- which is how it shipped the first time -- the same yaw turns
+		# the walkway into a tangential balcony at r 0.93 .. 1.79: 190 mm short of
+		# the cage, 260 mm short of the slab edge, and clipping the south shutter
+		# rails by 105 mm. tools/lowpoly/check_core_layout.py asserts all three.
+		var deck := Models.place(root, "lp_core_gantry",
+			Vector3(cos(a) * 1.36, 0.24, sin(a) * 1.36), 1.0, 90.0 - angle)
+		if deck != null:
+			deck.name = tag
+			continue
 		# Deck spans r 0.64 .. 2.08 at waist height, so it blocks rather than
-		# invites -- there is no way up onto it, which is the point.
+		# invites -- there is no way up onto it, which is the point. The model
+		# above reproduces this span exactly. Note that _radial_box takes size as
+		# (radial, y, tangential), so the 1.44 below is the RADIAL run and the
+		# 0.86 is the width underfoot -- the model has them the other way round in
+		# its own axes, and that is not a discrepancy, it is the convention swap.
 		_radial_box(root, "%s Deck" % tag, a, 1.36, 1.21,
 			Vector3(1.44, 0.10, 0.86), Color(0.115, 0.120, 0.125), 0.0, 0.45, true)
 		for s in range(2):
@@ -283,8 +386,13 @@ static func _build_core_gantries(root: Node3D) -> void:
 ## Four blast shutter bays on the cardinal axes. Three read as retracted -- only
 ## the header housing is out. The south bay, the one the player walks straight
 ## into coming from the entrance, is jammed a third of the way down: five slats
-## hanging to local y 1.60, alternating steel and hazard so the pattern is
-## legible without colour, with the core glow leaking out underneath.
+## hanging to local y 1.60. The count is carried by geometry, not by paint:
+## every lath is tapered so it leans away from the eye and drops a hard shadow
+## line onto the one below it, and a recessed 7.5 mm gap separates them. That
+## reads in greyscale, in colour blindness and in the blackout alike, which the
+## old alternating hazard stripe only managed in the first of the three.
+## Hazard paint survives on the bottom rail. The core glow still leaks out
+## underneath.
 static func _build_core_shutters(root: Node3D) -> void:
 	for i in range(4):
 		var a: float = TAU * float(i) / 4.0
@@ -300,11 +408,141 @@ static func _build_core_shutters(root: Node3D) -> void:
 	# Lowest slat bottoms out at local y 1.60. Standing on the 0.40 deck the
 	# player is stopped by it; the eyeline from the entrance doorway passes
 	# 14 cm under it, so the core is still framed by the half-open bay.
-	for s in range(5):
-		var slat_y: float = 2.38 - 0.175 * float(s)
-		var tint: Color = HAZARD if s % 2 == 1 else Color(0.130, 0.135, 0.140)
-		_radial_box(root, "Blast Shutter Slat %d" % s, south, 1.70, slat_y,
-			Vector3(0.14, 0.16, 1.34), tint, 0.0, 0.40, true)
+	#
+	# The curtain is a single model now. Five flat boxes painted alternately
+	# hazard and near-black read from the gantry as a striped BILLBOARD leaning
+	# against the core -- no depth, no shadow, just a sign. lp_blast_shutter
+	# keeps the same 1.34 x 0.86 x 0.15 envelope but tapers every lath and
+	# recesses a shadow gap between them, so the same five laths read as a
+	# jammed shutter. Yaw 180 turns the model's -Z public face out towards the
+	# entrance; the model's origin is its own floor, so the 1.60 below is the
+	# underside of the bottom rail exactly, not a centre.
+	var curtain := Models.place(root, "lp_blast_shutter",
+		Vector3(0, 1.60, 1.70), 1.0, 180.0)
+	if curtain == null:
+		for s in range(5):
+			var slat_y: float = 2.38 - 0.175 * float(s)
+			var tint: Color = HAZARD if s % 2 == 1 else Color(0.130, 0.135, 0.140)
+			_radial_box(root, "Blast Shutter Slat %d" % s, south, 1.70, slat_y,
+				Vector3(0.14, 0.16, 1.34), tint, 0.0, 0.40, true)
+	else:
+		curtain.name = "Blast Shutter Curtain"
+
+
+## The service pass. The column had a silhouette and nothing that said the
+## machine is plumbed in: no fasteners, no pipework, no heat rejection and
+## nothing at all above the collar. Every part below is either surface detail
+## on a drum or sits under the window band, so the four cardinal sightlines
+## into the core are exactly as open as they were, and none of it takes a
+## collider -- the drums and the rib cage already seal the column.
+static func _build_core_service(root: Node3D) -> void:
+	# Flange bolts, sixteen a flange at r 0.84. The cheapest detail there is: a
+	# smooth steel disc becomes a disc somebody bolted down.
+	for i in range(16):
+		var a: float = TAU * float(i) / 16.0
+		_radial_box(root, "Core Flange Bolt Lower %d" % i, a, 0.84, 0.96,
+			Vector3(0.07, 0.07, 0.07), STEEL_DARK, 0.0, 0.55)
+		_radial_box(root, "Core Flange Bolt Upper %d" % i, a, 0.84, 1.92,
+			Vector3(0.07, 0.07, 0.07), STEEL_DARK, 0.0, 0.55)
+	# Heat rejection fins round the upper drum. They stop under the status ring
+	# at 2.22 so they never cut into a status cell, which has to stay countable.
+	for i in range(24):
+		var a: float = TAU * float(i) / 24.0
+		_radial_box(root, "Core Heat Fin %d" % i, a, 0.72, 2.05,
+			Vector3(0.12, 0.26, 0.035), STEEL_DARK, 0.0, 0.45)
+	# Coolant loop. y 0.86 is the load-bearing number: the window band starts at
+	# 1.02 and a standing eyeline is 1.70, so the loop passes under the view from
+	# every doorway. r 0.92 clears the lower flange at 0.82 and the gantry legs
+	# do not start until 1.92, so it fouls nothing.
+	var loop := _ring(root, "Core Coolant Loop", Vector3(0, 0.86, 0),
+		0.92, 1.04, STEEL_DARK, 24)
+	loop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The coolant plant: two skids in the gantry-free quarter.
+##
+## This is what the rejected primitive service rig was reaching for. Same parts
+## -- pump, motor, handwheel, tank, riser, junction box -- but lp_core_plant is
+## one object standing on one skid, instead of thirty loose cylinders floating
+## at radii that touched nothing.
+##
+## 279 AND 351 ARE NOT THE OLD 292.5 AND 337.5, AND THEY ARE NOT 285 AND 345
+## EITHER. A skid is 0.90 m wide AND 0.52 m deep at radius 1.20, so its inner
+## corners subtend 51 deg, not the 41 deg the width alone suggests. CAM 03 sits
+## at (13.6, 3.0, -12.6), i.e. on the 317.2 deg ray, and the sector that has to
+## stay open is 305..325. At 285 and 345 the skids ate into that sector from
+## both sides and left an 8.8 deg slot with 2.2 deg of margin on the camera
+## ray; 279 and 351 clear it completely. They are also the OUTERMOST angles
+## available, because going further walks the skid into the 225 deg gantry --
+## there is 21 mm between them as it stands. Do not tidy these to round
+## numbers, and do not widen them.
+##
+## tools/lowpoly/check_core_layout.py solves both bounds and asserts them.
+##
+## The thin primitive risers in the fallback keep their original 292.5 / 337.5,
+## and that part is safe: at r 0.98 a 0.055 pipe subtends 3.2 deg, so they sit
+## at 289.3..295.7 and 334.3..340.7 and never reach the window.
+##
+## The REST of the fallback is not clear, and this comment used to imply it was.
+## The valve wheel (315 deg, r 0.98, outer 0.16) covers 305.6..324.4, and the
+## three cable coils (315 deg, r 1.62, outer 0.32) cover 303.6..326.4 -- they
+## straddle the whole window and sit right on the 317.2 ray. They are low: the
+## coils live at y 0.29..0.38 and the wheel tops out at 1.22, so from CAM 03 at
+## y 3.0 they clip the plinth rather than the core body, and none of it draws
+## unless the .glb failed to load. Tolerated, not correct.
+##
+## check_core_layout.py models the MODEL layout only. It will not catch a
+## regression in here.
+static func _build_core_plant(root: Node3D) -> void:
+	var placed := 0
+	for deg: float in [279.0, 351.0]:
+		var a: float = deg_to_rad(deg)
+		var skid := Models.place(root, "lp_core_plant",
+			Vector3(cos(a) * 1.20, 0.24, sin(a) * 1.20), 1.0, 90.0 - deg)
+		if skid == null:
+			break
+		skid.name = "Core Coolant Skid %d" % int(deg)
+		placed += 1
+	if placed > 0:
+		return
+
+	# Fallback: the primitive plant, unchanged.
+	for deg: float in [292.5, 337.5]:
+		var a: float = deg_to_rad(deg)
+		var foot := Vector3(cos(a) * 0.98, 0.86, sin(a) * 0.98)
+		var head := Vector3(foot.x, 1.95, foot.z)
+		_beam(root, "Core Coolant Riser %d" % int(deg), foot, head, 0.055,
+			STEEL_DARK, 8)
+		_beam(root, "Core Coolant Elbow %d" % int(deg), head,
+			Vector3(cos(a) * 0.80, 1.95, sin(a) * 0.80), 0.055, STEEL_DARK, 8)
+	var wheel_a: float = deg_to_rad(315.0)
+	var stem := Vector3(cos(wheel_a) * 0.98, 1.02, sin(wheel_a) * 0.98)
+	_beam(root, "Core Valve Stem", Vector3(stem.x, 0.86, stem.z), stem, 0.035,
+		IRON, 6)
+	var wheel := _ring(root, "Core Valve Wheel", Vector3(stem.x, 1.06, stem.z),
+		0.11, 0.16, IRON, 12)
+	wheel.basis = Basis(Vector3.UP, -wheel_a) * Basis(Vector3.RIGHT, PI * 0.5)
+	for i in range(3):
+		var coil := _ring(root, "Core Cable Coil %d" % i,
+			Vector3(cos(wheel_a) * 1.62, 0.29 + 0.045 * float(i),
+				sin(wheel_a) * 1.62), 0.22, 0.32, CABLE, 14)
+		coil.scale.y = 0.45
+		coil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## Rotating beacon on a bracket off the head cap: the only thing on the core
+## above the collar, so it is what breaks the silhouette against the skylight
+## from the far end of the room. Always procedural -- the lamp is emissive and
+## nothing in the lp_ pipeline emits.
+static func _build_core_beacon(root: Node3D) -> void:
+	_box(root, "Core Beacon Bracket", Vector3(0.52, 2.80, 0.0),
+		Vector3(0.34, 0.05, 0.09), STEEL_DARK, 0.0, 0.50)
+	_cyl(root, "Core Beacon Base", Vector3(0.66, 2.86, 0.0), 0.075, 0.07,
+		IRON, 8, 0.40)
+	_cyl(root, "Core Beacon Lamp", Vector3(0.66, 2.96, 0.0), 0.085, 0.14,
+		HAZARD_BRIGHT, 8, 0.0, 1.50)
+	_cyl(root, "Core Beacon Cap", Vector3(0.66, 3.05, 0.0), 0.090, 0.04,
+		STEEL_DARK, 8, 0.50)
 
 
 ## Lectern plaque on the south edge of the slab, angled up at the reader.
@@ -312,13 +550,20 @@ static func _build_core_shutters(root: Node3D) -> void:
 static func _build_core_plaque(root: Node3D) -> void:
 	_box(root, "Core Plaque Post", Vector3(0, 0.36, 2.40),
 		Vector3(0.12, 0.72, 0.12), STEEL_DARK, 0.0, 0.5, true)
+	# Plate widened 0.86 -> 1.00. At 0.86 the label's wrap box was 0.80 m, which
+	# is 228 px at pixel_size 0.0035, and the second line of the Russian string
+	# ("СДЕРЖИВАНИЯ", 11 glyphs at font_size 40) needs about 264 px -- so it was
+	# rendering clipped, as "ЦЕНТР / СДЕРЖИВА", in every frame of the atrium
+	# focus pass. Label3D crops rather than shrinks, so the plate has to grow.
 	var plate := _box(root, "Core Plaque Plate", Vector3(0, 0.86, 2.40),
-		Vector3(0.86, 0.46, 0.05), PANEL)
+		Vector3(1.00, 0.46, 0.05), PANEL)
 	# -32 deg pitch tips the plate's +z face up towards a reader standing south
 	# of it; the label rides the same basis, so it needs no rotation of its own.
 	plate.rotation_degrees = Vector3(-32, 0, 0)
+	# 36 px inside a 0.94 m wrap box = 268 px of room for a ~238 px line, with
+	# both lines together 0.29 m tall inside a 0.46 m plate.
 	_label(plate, _tr("EXHIBIT_CONTAINMENT_CORE"), Vector3(0, 0.02, 0.032),
-		SIGN_TEXT, 40, 0.0035, 0.80)
+		SIGN_TEXT, 36, 0.0035, 0.94)
 
 
 ## The force-field window over the core. Cylindrical rather than the old cube so
@@ -431,12 +676,33 @@ static func build_rope_barrier(parent: Node3D, origin: Vector3,
 	for i in range(count):
 		var a: float = TAU * float(i) / float(count) + PI / float(count)
 		var p := Vector3(cos(a) * radius, 0.0, sin(a) * radius)
-		_cyl(root, "Barrier Base %d" % i, p + Vector3(0, 0.025, 0), 0.17, 0.05,
-			CONCRETE_DARK, 8)
-		_cyl(root, "Barrier Post %d" % i, p + Vector3(0, 0.50, 0), 0.033, 0.95,
-			IRON, 6)
-		_sphere(root, "Barrier Cap %d" % i, p + Vector3(0, 1.00, 0), 0.052, BRASS)
-		tops.append(p + Vector3(0, 0.96, 0))
+		# lp_stanchion carries the cast base, the tapered post, the collar and the
+		# brass finial as one 106-tri mesh, so the three primitives below are the
+		# fallback rather than something placed alongside it.
+		#
+		# The yaw turns the model's rope eyes (local +-Z) along the run instead of
+		# at the core. Godot maps local +Z to (sin y, 0, cos y); the tangent to the
+		# ring at angle a is (-sin a, 0, cos a); equating the two gives y = -a.
+		var stanchion := Models.place(root, "lp_stanchion", p, 1.0,
+			-rad_to_deg(a))
+		# Where the rope lands depends on which stanchion you got. The fallback's
+		# brass cap is a sphere centred at 1.00, so 0.96 hooks the rope over the top
+		# of it. The model is a different object: it tops out at 0.947 and carries
+		# real rope eyes at 0.868, and those eyes are the entire reason for the yaw
+		# computed above. Leaving the rope at 0.96 floated it 1.3 cm clear of the
+		# finial and 9 cm above the eyes it was supposed to thread, so the ring was
+		# aimed correctly at nothing.
+		var rope_y := 0.96
+		if stanchion == null:
+			_cyl(root, "Barrier Base %d" % i, p + Vector3(0, 0.025, 0), 0.17, 0.05,
+				CONCRETE_DARK, 8)
+			_cyl(root, "Barrier Post %d" % i, p + Vector3(0, 0.50, 0), 0.033, 0.95,
+				IRON, 6)
+			_sphere(root, "Barrier Cap %d" % i, p + Vector3(0, 1.00, 0), 0.052, BRASS)
+		else:
+			stanchion.name = "Barrier Stanchion %d" % i
+			rope_y = 0.868
+		tops.append(p + Vector3(0, rope_y, 0))
 
 	# Span 0 is the missing one; its rope is on the floor just inside the ring.
 	for i in range(1, count):
@@ -496,45 +762,327 @@ static func build_floor_signage(parent: Node3D, origin: Vector3,
 
 
 # =============================================================================
+#  Rotunda benches
+# =============================================================================
+
+## The four-seater that stands on each rotunda diagonal: two cast-iron end
+## frames, a slatted timber seat, a slatted back, timber arms and brass foot
+## plates.
+##
+## IT REPLACES лавочки.glb. That model is authored as a BACK-TO-BACK pair, so
+## every placement of it put one bench facing the core and a second one facing
+## the wall behind it. The map worked around that by finding the child node
+## "BenchB_m_benchB_0" after each placement and setting visible = false, which
+## left half a model, carrying its own imported materials, in a room where every
+## other prop is built from the palette at the top of this file. The parts below
+## are the same bench in the same iron, timber and brass as the rope barrier and
+## the reception desk, so the four of them read as one set of museum furniture.
+##
+## Local axes: +x is the length, +z is the BACK. With the origin on a radius and
+## facing_deg = -(angle + 90) the back goes to the wall and the seat looks at
+## the containment core -- the one thing in this room worth sitting to look at.
+##
+## Bounding box 3.34 x 1.03 x 0.78 m; seat top y 0.45, back rail top y 1.03.
+## ONE collider, a 3.40 x 0.47 x 0.70 box round the seat volume: the slats, the
+## arms and the back are decoration, and a body each would only litter the bake.
+static func build_rotunda_bench(parent: Node3D, origin: Vector3,
+		facing_deg := 0.0, tag := "") -> Node3D:
+	var node_name := "Rotunda Bench"
+	if not tag.is_empty():
+		node_name = "Rotunda Bench %s" % tag
+	var root := _root(parent, node_name, origin)
+	root.rotation_degrees.y = facing_deg
+
+	# Seat: five boards on a 0.13 pitch, 2.5 cm of daylight between them. Slats
+	# rather than a slab because a slab at this size reads as a kerb.
+	for i in range(5):
+		var seat_z: float = -0.26 + 0.13 * float(i)
+		_box(root, "Bench Seat Slat %d" % i, Vector3(0, 0.455, seat_z),
+			Vector3(3.28, 0.05, 0.105), WOOD)
+	# Back: three boards stepping outward as they rise, each on a 5.5 deg lean.
+	for i in range(3):
+		var back_y: float = 0.63 + 0.16 * float(i)
+		var slat := _box(root, "Bench Back Slat %d" % i,
+			Vector3(0, back_y, 0.270 + 0.015 * float(i)),
+			Vector3(3.28, 0.13, 0.045), WOOD)
+		slat.rotation_degrees.x = -5.5
+
+	for side: float in [-1.0, 1.0]:
+		var end_tag: String = "West" if side < 0.0 else "East"
+		var x: float = side * 1.48
+		# End frame: two legs, the rail they carry the seat on, the back post.
+		_box(root, "Bench Leg Front %s" % end_tag, Vector3(x, 0.215, -0.20),
+			Vector3(0.09, 0.43, 0.10), IRON)
+		_box(root, "Bench Leg Rear %s" % end_tag, Vector3(x, 0.215, 0.22),
+			Vector3(0.09, 0.43, 0.10), IRON)
+		_box(root, "Bench Frame Rail %s" % end_tag, Vector3(x, 0.415, 0.01),
+			Vector3(0.08, 0.07, 0.64), IRON)
+		_box(root, "Bench Back Post %s" % end_tag, Vector3(x, 0.73, 0.315),
+			Vector3(0.08, 0.60, 0.07), IRON)
+		# Armrest on one front bracket, timber to match the seat.
+		_box(root, "Bench Arm %s" % end_tag, Vector3(side * 1.46, 0.70, -0.01),
+			Vector3(0.07, 0.06, 0.60), WOOD)
+		_box(root, "Bench Arm Bracket %s" % end_tag,
+			Vector3(side * 1.46, 0.57, -0.25), Vector3(0.06, 0.30, 0.06), IRON)
+		# Brass foot plate: the museum bolts its benches to the floor.
+		_box(root, "Bench Foot Plate %s" % end_tag, Vector3(x, 0.012, 0.0),
+			Vector3(0.17, 0.024, 0.68), BRASS, 0.0, 0.4)
+
+	_box(root, "Bench Stretcher", Vector3(0, 0.155, 0.01),
+		Vector3(2.86, 0.06, 0.06), IRON)
+	_box(root, "Bench Back Rail", Vector3(0, 1.00, 0.315),
+		Vector3(3.04, 0.06, 0.075), IRON)
+	_collider(root, "Bench Body", Vector3(0, 0.235, 0.0),
+		Vector3(3.40, 0.47, 0.70))
+	return root
+
+
+# =============================================================================
+#  Atrium floor
+# =============================================================================
+
+# Floor tints. They are down here rather than in the palette block at the top
+# because nothing but the floor uses them, and because _pack_for() must never
+# match them: these are tints applied to a named MaterialLib pack, not prop
+# colours looking for a pack.
+const FLOOR_FIELD := Color(0.745, 0.735, 0.705)
+const FLOOR_WARM := Color(0.790, 0.760, 0.690)
+const FLOOR_DARK := Color(0.300, 0.305, 0.300)
+const FLOOR_BORDER := Color(0.345, 0.340, 0.330)
+const FLOOR_JOINT := Color(0.255, 0.255, 0.245)
+const FLOOR_TRIM := Color(0.520, 0.440, 0.240)
+
+## How far the rotunda kerb ring (r 5.8) sits BELOW the mosaic plate (r 4.9)
+## that stands on it. The two used to top out at the same 0.16, which put
+## 77.36 m2 of kerb top face in exactly the plane of the plate above it --
+## the largest z-fight on the map and the shimmer seen when panning across
+## the atrium. FirstMuseumMap now builds the kerb 0.15 tall to match, so the
+## plate edge reads as a 1 cm reveal instead of fighting for the same depth.
+## Anything placed on the kerb annulus must measure from dais_y - KERB_DROP.
+const KERB_DROP := 0.010
+
+## The stone floor of the atrium: a medallion on the rotunda plate and a slab
+## layout across the field around it.
+##
+## EVERYTHING HERE IS INLAY. The floor itself already exists -- the map builds
+## Кольцо ротонды (r 5.8, top y 0.15) and Пол ротонды (r 4.9, top y 0.16)
+## on a 30 x 30 m field at y 0 -- so this function only lays bands,
+## wedges and joints on top of it, between 0.4 and 2.4 cm proud, with no
+## collision anywhere. Navigation, the 1.8 m doorway channels and the bake are
+## untouched by construction, not by luck.
+##
+## Two rules kept the pattern out of trouble:
+##   * The plate already carries paint. build_floor_signage() owns the hazard
+##     hatching at r 2.45 (dashes reach 2.66), the chevrons at 3.45 and 3.98
+##     (which reach 3.28 and 4.20) and the perimeter band at 4.70 (4.66..4.74),
+##     so the inlay only uses the rings those leave free: 2.70-3.26 for the
+##     sunburst and 4.31-4.64 for the border.
+##   * No two pieces share a height. Two coplanar faces at the same y is the
+##     definition of z-fighting, and a floor is the easiest place to see it.
+##
+## Tone comes from MaterialLib packs rather than from the palette: travertine
+## for the light field, quartzite for the dark bands, mosaic for the medallion
+## tiles, painted_metal for the brass trim.
+## models/modern_grey_stone_tile_texture.glb is deliberately NOT used here --
+## see the note at the end of _add_model_archive(): it is a 920 m texture swatch
+## buried 7 m under the museum, a material sample and not a floor.
+static func build_atrium_floor(parent: Node3D, origin: Vector3,
+		dais_y := 0.16) -> Node3D:
+	var root := _root(parent, "Atrium Floor", origin)
+	_build_floor_field(root)
+	_build_floor_medallion(root, dais_y)
+	return root
+
+
+## The field outside the rotunda: slab joints, a border band round the walls,
+## a runner out to each doorway and a plinth square under each column.
+##
+## Tones, not photo packs. The slab under all of this is already wearing a
+## stone map; a second map on top of it at a different scale is what read as a
+## texture inside a texture up close, and at a grazing angle its high-frequency
+## detail is what crawled. _floor_plate defaults to a flat tint now.
+##
+## Every visible top face has its own height, and no two that can overlap share
+## one. The crossing pairs are what matter: the two joint directions cross at
+## sixteen points and the two brass trims at four, so each pair is 2 mm apart.
+static func _build_floor_field(root: Node3D) -> void:
+	# Slab joints on a 3 m grid, stopping 2.5 cm short of the border band. They
+	# pass UNDER the rotunda kerb, which is a solid 0.15 m disc, so the middle of
+	# each line is inside it and never seen.
+	for i in range(4):
+		var d: float = 3.0 + 3.0 * float(i)
+		for side: float in [-1.0, 1.0]:
+			var at: float = side * d
+			_floor_plate(root, "Floor Joint NS %s" % at,
+				Vector3(at, 0.016, 0.0), Vector3(0.05, 0.0, 27.4),
+				FLOOR_JOINT)
+			_floor_plate(root, "Floor Joint WE %s" % at,
+				Vector3(0.0, 0.014, at), Vector3(27.4, 0.0, 0.05),
+				FLOOR_JOINT)
+	# A dark band round all four walls, the way a gallery frames a floor. The two
+	# pairs stop short of each other instead of overlapping at the corners.
+	for side: float in [-1.0, 1.0]:
+		_floor_plate(root, "Floor Border NS %s" % side,
+			Vector3(0.0, 0.008, side * 14.15), Vector3(29.3, 0.0, 0.85),
+			FLOOR_BORDER)
+		_floor_plate(root, "Floor Border WE %s" % side,
+			Vector3(side * 14.15, 0.008, 0.0), Vector3(0.85, 0.0, 27.4),
+			FLOOR_BORDER)
+		# Brass trim 8 cm inside the band.
+		_floor_plate(root, "Floor Border Trim NS %s" % side,
+			Vector3(0.0, 0.020, side * 13.62), Vector3(27.3, 0.0, 0.05),
+			FLOOR_TRIM)
+		_floor_plate(root, "Floor Border Trim WE %s" % side,
+			Vector3(side * 13.62, 0.018, 0.0), Vector3(0.05, 0.0, 27.3),
+			FLOOR_TRIM)
+	# A runner from the kerb out to each of the four doorways: 2.6 m of warmer
+	# stone against a 1.8 m door gap, so it reads as the route. The map's brass
+	# axis strips sit at y 0.015, so the runner tops out at 6 mm and passes under
+	# them instead of arguing with them.
+	for i in range(4):
+		var a: float = TAU * float(i) / 4.0
+		_floor_radial(root, "Floor Runner %d" % i, a, 10.25, 0.006,
+			Vector3(8.70, 0.0, 2.60), FLOOR_WARM)
+	# The four columns stand in open floor; a plinth square each gives them a
+	# reason to be where they are.
+	for p: Vector3 in [Vector3(-11.5, 0, -11.5), Vector3(11.5, 0, -11.5),
+			Vector3(-11.5, 0, 11.5), Vector3(11.5, 0, 11.5)]:
+		_floor_plate(root, "Floor Column Plinth %s" % p,
+			Vector3(p.x, 0.008, p.z), Vector3(1.90, 0.0, 1.90),
+			FLOOR_BORDER)
+		_floor_plate(root, "Floor Column Inlay %s" % p,
+			Vector3(p.x, 0.013, p.z), Vector3(1.42, 0.0, 1.42),
+			FLOOR_WARM)
+
+
+## The rotunda plate is already carrying build_floor_signage's twenty hazard
+## dashes, eight chevrons and the containment perimeter band. The first pass
+## answered "the floor is not finished" by adding a 24-wedge sunburst, 32
+## border tiles and eight kerb setts in the gaps between them: sixty-odd small
+## light rectangles, each carrying its own photo texture on top of the plate's
+## own, which from the entrance read as confetti rather than as a floor.
+##
+## So this pass is subtraction. Four brass fillets, one in each radial gap the
+## signage leaves free, and nothing else:
+##
+##   hatching out to 2.66 | RING 2.86..2.94 | chevrons 3.28..4.20
+##   | RING 4.36..4.44 | perimeter band 4.66..4.74 | plate edge 4.90
+##   | kerb annulus: RING 5.02..5.08 and RING 5.66..5.72 | kerb edge 5.80
+static func _build_floor_medallion(root: Node3D, dais_y: float) -> void:
+	var kerb_y: float = dais_y - KERB_DROP
+	_floor_ring(root, "Floor Medallion Fillet", dais_y + 0.012, 2.86, 2.94)
+	_floor_ring(root, "Floor Medallion Edge", dais_y + 0.012, 4.36, 4.44)
+	# The kerb annulus (plate r 4.9 out to kerb r 5.8, one KERB_DROP below the
+	# plate) is bare walkable stone; two thin fillets give it the same
+	# family of detail without narrowing the step up.
+	_floor_ring(root, "Floor Kerb Fillet Inner", kerb_y + 0.009, 5.02, 5.08)
+	_floor_ring(root, "Floor Kerb Fillet Outer", kerb_y + 0.009, 5.66, 5.72)
+
+
+# =============================================================================
 #  Reception desk
 # =============================================================================
 
-## Atrium reception: an L-shaped counter with a dead monitor pair, an abandoned
-## visitor log and a keycard left on the ledge, under a sign hung from the
-## ceiling on two rods. Front face is local +z; `facing_deg` yaws the whole
-## thing, so 0 faces the entrance doorway at z = +15.
+## Atrium reception: the lp_reception_counter model with a procedural return
+## wing beside it, a dead monitor pair, an abandoned visitor log and a keycard
+## left on the ledge, under a sign hung from the ceiling on two rods. Front face
+## is local +z; `facing_deg` yaws the whole thing, so 0 faces the entrance
+## doorway at z = +15.
 ##
-## Bounding box 4.17 x 1.60 x 2.44 m for the furniture, growing to
-## 4.17 x (ceiling_y - origin.y) x 2.44 once the hanging sign and its rods are
-## counted -- 4.17 x 3.39 x 2.44 at the defaults.
+## The counter is the model and measures 3.920 x 1.100 x 1.240. That 1.100 is
+## load-bearing: the log book, the keycard, both monitors and the task lamp are
+## all placed against it, so changing the model's height silently floats every
+## one of them. The return wing carries the envelope out to x = -2.21 and
+## z = -1.69, and the hanging sign takes the height to ceiling_y.
+##
+## Do not quote a furniture AABB from this comment. The batch 3 model replaced
+## the three boxes that used to stand here and changed the depth; the old
+## 4.17 x 1.60 x 2.44 figure is dead. Measure it if you need it.
 static func build_reception_desk(parent: Node3D, origin: Vector3,
 		facing_deg := 0.0, ceiling_y := 3.39) -> Node3D:
 	var root := _root(parent, "Atrium Reception", origin)
 	root.rotation_degrees.y = facing_deg
 
-	_box(root, "Reception Counter Body", Vector3(0, 0.50, 0),
-		Vector3(3.60, 1.00, 0.86), WOOD, 0.0, 0.0, true)
-	_box(root, "Reception Counter Fascia", Vector3(0, 0.62, 0.445),
-		Vector3(3.30, 0.60, 0.04), Color(0.175, 0.145, 0.110))
-	_box(root, "Reception Counter Top", Vector3(0, 1.05, 0),
-		Vector3(3.92, 0.10, 1.10), STONE, 0.0, 0.25, true)
-	_box(root, "Reception Transaction Shelf", Vector3(0, 0.78, 0.60),
-		Vector3(3.40, 0.07, 0.30), Color(0.120, 0.125, 0.130), 0.0, 0.2, true)
+	# One mesh for carcass + fascia + stone top. The model's public face is its
+	# local -Z and this root's is local +Z, hence the 180 deg yaw. Its worktop is
+	# at y = 1.10, the same height the old Counter Top presented, so the log
+	# book, keycard, monitors and lamp below need no adjustment.
+	var counter := Models.place(root, "lp_reception_counter", Vector3.ZERO,
+		1.0, 180.0)
+	if counter == null:
+		_box(root, "Reception Counter Body", Vector3(0, 0.50, 0),
+			Vector3(3.60, 1.00, 0.86), WOOD, 0.0, 0.0, true)
+		_box(root, "Reception Counter Fascia", Vector3(0, 0.62, 0.445),
+			Vector3(3.30, 0.60, 0.04), Color(0.175, 0.145, 0.110))
+		_box(root, "Reception Counter Top", Vector3(0, 1.05, 0),
+			Vector3(3.92, 0.10, 1.10), COUNTER_STONE, 0.0, 0.10, true)
+	else:
+		counter.name = "Reception Counter"
+	# Pulled in twice now: 0.60 -> 0.55 -> 0.47. At 0.55 the shelf's REAR edge
+	# did meet the carcass front at z 0.40, but its FRONT edge ran out to z 0.70,
+	# 80 mm proud of the worktop lip at 0.62 -- and metallic 0.2 made that
+	# overhang pick up the cold atrium fill as a pale bar straight across the
+	# desk. From the entrance it read as a lit stripe painted on a black box.
+	# At 0.47 the shelf spans 0.32..0.62: buried 80 mm in the carcass, flush
+	# with the lip, no overhang to catch light. Matte dark timber, not steel.
+	_box(root, "Reception Transaction Shelf", Vector3(0, 0.78, 0.47),
+		Vector3(3.40, 0.07, 0.30), Color(0.088, 0.070, 0.048), 0.0, 0.0, true)
 
 	_box(root, "Reception Return Body", Vector3(-1.72, 0.50, -1.03),
 		Vector3(0.86, 1.00, 1.20), WOOD, 0.0, 0.0, true)
-	_box(root, "Reception Return Top", Vector3(-1.72, 1.05, -1.03),
-		Vector3(0.98, 0.10, 1.32), STONE, 0.0, 0.25, true)
+	# Крышка крыла на 2 мм ниже столешницы стойки (1.098 против 1.100).
+	# Ровно на 1.100 они давали 0.18 м2 общей плоскости в месте стыка —
+	# две каменные плиты на одной глубине прямо перед входом. Два миллиметра
+	# убирают спор: в месте перекрытия верх крыла уходит внутрь столешницы
+	# и не рисуется вообще, а ступенька в 2 мм с роста человека не читается.
+	_box(root, "Reception Return Top", Vector3(-1.72, 1.048, -1.03),
+		Vector3(0.98, 0.10, 1.32), COUNTER_STONE, 0.0, 0.10, true)
 
 	for i in range(2):
 		var side: float = -1.0 + 2.0 * float(i)
-		_box(root, "Reception Monitor Stand %d" % i,
-			Vector3(side * 0.90, 1.17, -0.14),
-			Vector3(0.10, 0.15, 0.14), STEEL_DARK, 0.0, 0.5)
-		var screen := _box(root, "Reception Monitor %d" % i,
-			Vector3(side * 0.90, 1.32, -0.14), Vector3(0.50, 0.34, 0.05),
-			Color(0.028, 0.032, 0.036), 0.0, 0.30)
-		screen.rotation_degrees = Vector3(-14, 0, 0)
+		# The same lp_desk_monitor the Watcher Office desk set uses, so reception
+		# and the office are visibly the same product. It ships its own moulded
+		# foot and stalk, which is why the stand box is inside the fallback and
+		# not placed next to the model. It stands ON the worktop at y = 1.10, its
+		# screen already faces local -Z (the clerk, not the public), and its head
+		# is tipped back 7 deg in the mesh -- so no rotation is applied here.
+		var monitor := Models.place(root, "lp_desk_monitor",
+			Vector3(side * 0.90, 1.10, -0.14))
+		if monitor == null:
+			_box(root, "Reception Monitor Stand %d" % i,
+				Vector3(side * 0.90, 1.17, -0.14),
+				Vector3(0.10, 0.15, 0.14), STEEL_DARK, 0.0, 0.5)
+			var screen := _box(root, "Reception Monitor %d" % i,
+				Vector3(side * 0.90, 1.32, -0.14), Vector3(0.50, 0.34, 0.05),
+				Color(0.028, 0.032, 0.036), 0.0, 0.30)
+			screen.rotation_degrees = Vector3(-14, 0, 0)
+		else:
+			monitor.name = "Reception Monitor %d" % i
+		# Two screens and nothing to type on: the c2 desk-top frame showed a pair
+		# of monitors standing on bare stone. lp_keyboard is authored the same way
+		# as the monitor -- origin on its standing surface, facing -Z -- so it
+		# keeps the same zero yaw and sits 0.36 m clerk-side of its screen, the
+		# spacing the office workstation already uses (monitor z -2.06, keyboard
+		# z -1.70). At z -0.50 the 0.15 m deep model clears the monitor foot and
+		# still lands inside the counter's rear edge at z -0.62.
+		var keyboard := Models.place(root, "lp_keyboard",
+			Vector3(side * 0.90 - 0.04, 1.10, -0.50))
+		if keyboard == null:
+			_box(root, "Reception Keyboard %d" % i,
+				Vector3(side * 0.90 - 0.04, 1.11, -0.50),
+				Vector3(0.44, 0.022, 0.15), Color(0.055, 0.058, 0.062))
+		else:
+			keyboard.name = "Reception Keyboard %d" % i
+	# The system unit belongs on the floor, not on the worktop. The clerk's nook
+	# runs from the counter's rear face (z -0.62) back past the return wing,
+	# which ends at x -1.29, so x 1.30 / z -0.95 stands clear of both and of the
+	# task lamp above it. Same yaw rule as the rest of the set: front to -Z.
+	var tower := Models.place(root, "lp_pc_tower", Vector3(1.30, 0.00, -0.95))
+	if tower == null:
+		_box(root, "Reception Tower", Vector3(1.30, 0.22, -0.95),
+			Vector3(0.20, 0.44, 0.45), Color(0.10, 0.105, 0.11))
+	else:
+		tower.name = "Reception Tower"
 	_box(root, "Reception Log Book", Vector3(0.42, 1.12, 0.06),
 		Vector3(0.34, 0.035, 0.26), Color(0.62, 0.60, 0.52))
 	_box(root, "Reception Keycard", Vector3(-0.30, 1.11, 0.20),
@@ -635,12 +1183,56 @@ static func build_atrium(parent: Node3D, origin: Vector3, dais_y := 0.16,
 	var root := _root(parent, "Atrium Props", origin)
 	var dais := Vector3(0, dais_y, 0)
 	build_containment_core(root, dais, ceiling_y)
+	_build_core_spots(root, ceiling_y)
+	# The floor goes down before the paint on it: the inlay lives between the
+	# rings build_floor_signage() owns, and both are within 2.5 cm of the same
+	# plate, so whoever edits either one needs to read the other.
+	build_atrium_floor(root, Vector3.ZERO, dais_y)
 	build_floor_signage(root, dais)
 	build_rope_barrier(root, dais)
 	build_cable_runs(root, Vector3.ZERO, [], ceiling_y)
 	build_reception_desk(root, Vector3(-4.4, 0, 10.6), 24.0, ceiling_y)
 	build_directory_board(root, Vector3(3.4, 0, 9.4), -22.0)
+	# Four benches at r 8.4 on the DIAGONALS, not the cardinals: on the axes a
+	# bench sits squarely on the circulation line between an opposing pair of
+	# doorways (Entrance-Time Wing and Office-Gravity Wing both run through
+	# one). The diagonals put them between the routes, where a bench belongs.
+	# Yaw -(angle + 90) turns the long axis onto the tangent so the back faces
+	# out and the seat faces the core. They used to be placed by
+	# FirstMuseumMap._add_atrium_landmarks() from лавочки.glb.
+	for angle: float in [45.0, 135.0, 225.0, 315.0]:
+		var a: float = deg_to_rad(angle)
+		build_rotunda_bench(root, Vector3(cos(a) * 8.4, 0.0, sin(a) * 8.4),
+			-(angle + 90.0), "%d" % int(angle))
 	return root
+
+
+## Two ceiling rigs that rake the containment column from east and west.
+##
+## The skylight beam hangs at (0, 3.28, 0), dead over the core, and the head cap
+## is a 0.66 m cone at 2.74 -- so the column stands in the umbra of its own head
+## and reads as a shapeless smear instead of a cylinder. A brighter skylight
+## cannot fix that; only side light can. These rigs cross-light the drum so its
+## silhouette comes back. They are deliberately weak: the core is still meant to
+## read as a hole punched in the near-white marble, so the job is to recover an
+## edge, not to flood the thing.
+##
+## Mounted on the +-X axis at radius 2.80 -- the one band of ceiling that is
+## clear of the 3.4 m skylight glass (+-1.70), of the cable trays (which run the
+## diagonals outward from radius 1.55), and of the gantry rails, whose highest
+## point is 2.24 against this rig's lowest at ceiling_y - 0.51 = 2.88.
+##
+## Single-headed and shadowless on purpose: a second shadow caster over the core
+## would only fight the skylight. The lamps are named by LightProps and are not
+## in BLACKOUT_EXEMPT_LIGHTS, so _collect_serialized_lights() files them under
+## the mains and they die with everything else at the blackout.
+static func _build_core_spots(root: Node3D, ceiling_y := 3.39) -> void:
+	for i in range(2):
+		var side: float = -1.0 + 2.0 * float(i)
+		var tag: String = "West" if side < 0.0 else "East"
+		Lights.spot_rig(root, Vector3(side * 2.80, ceiling_y, 0.0),
+			Vector3(0, 1.55, 0), 1, Lights.TINT_HALOGEN, 1.3, 0,
+			"Core Wash Rig %s" % tag)
 
 
 # =============================================================================
@@ -861,6 +1453,116 @@ static func _add_body(inst: MeshInstance3D, node_name: String,
 	collision.name = "%s CollisionShape" % node_name
 	collision.shape = shape
 	body.add_child(collision)
+
+
+## One walk-blocking volume with no mesh of its own -- the pattern ArchiveProps,
+## FacadeProps and OfficeProps already use. A slatted bench is thirty-odd
+## boards, rails and brackets; one box round the seat is the whole of its
+## physics, and the nav bake thanks you for it.
+static func _collider(parent: Node3D, node_name: String, body_position: Vector3,
+		size: Vector3) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = node_name
+	body.position = body_position
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var collision := CollisionShape3D.new()
+	collision.name = "%s Shape" % node_name
+	collision.shape = shape
+	body.add_child(collision)
+	parent.add_child(body)
+	return body
+
+
+## How deep a floor inlay is buried. Only the top face is ever seen; the rest
+## is inside the slab, which is the point.
+const INLAY_DEPTH := 0.12
+
+
+## Floor inlay: a flat box with no collision that never enters the shadow map.
+##
+## plate_position.y IS THE TOP FACE, not the centre, and size.y is ignored. The
+## box is INLAY_DEPTH deep and everything under the visible top is buried in
+## the slab. The first pass laid 12 mm plates with their undersides exactly on
+## the floor plane and separated the layers by 1-2 mm; wherever two of them
+## overlapped that is a shared plane fighting for the same depth value, which
+## is what the whole floor shimmered along. Burying the underside deletes the
+## plane instead of trying to out-bias it.
+##
+## An empty `pack` -- the default now -- means a flat tinted material with no
+## photo maps, which is what an inlay wants: the slab it sits on already wears
+## a stone map, so a 5 cm joint carrying a second map at 3 m scale reads as a
+## texture inside a texture up close and as speckle from across the room.
+## Photo packs belong on surfaces measured in metres. `metres` is how many
+## metres one texture square covers, for the cases that still take one.
+static func _floor_plate(parent: Node3D, node_name: String,
+		plate_position: Vector3, size: Vector3, tint: Color,
+		pack := "", metres := 0.0, yaw := 0.0) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(size.x, INLAY_DEPTH, size.z)
+	var inst := MeshInstance3D.new()
+	inst.name = node_name
+	inst.position = Vector3(plate_position.x,
+		plate_position.y - INLAY_DEPTH * 0.5, plate_position.z)
+	inst.rotation.y = yaw
+	inst.mesh = mesh
+	if pack.is_empty():
+		inst.material_override = _flat_material(tint)
+	else:
+		inst.material_override = MatLib.get_material(pack, tint, metres)
+	inst.visibility_range_end = VISIBILITY_RANGE
+	# Deliberately no VISIBILITY_RANGE_FADE_SELF here. Fading dithers the mesh
+	# through the margin, and a dithered 5 cm plate lying on a floor is one more
+	# thing that can crawl in a slow pan.
+	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(inst)
+	return inst
+
+
+## _floor_plate in polar coordinates, same convention as _radial_box: size.x
+## runs radially outward, size.z along the tangent, yaw follows the angle.
+static func _floor_radial(parent: Node3D, node_name: String, angle: float,
+		radius: float, y: float, size: Vector3, tint: Color,
+		pack := "", metres := 0.0) -> MeshInstance3D:
+	var place := Vector3(cos(angle) * radius, y, sin(angle) * radius)
+	return _floor_plate(parent, node_name, place, size, tint, pack, metres,
+		-angle)
+
+
+## A brass strip set into the floor: TorusMesh squashed to 30% so the tube
+## reads as a 2 cm fillet instead of a trip hazard, positioned by its TOP so
+## the underside of the tube ends up inside the slab. A torus laid on a floor
+## touches it tangentially along its entire length, which is the worst case
+## there is for depth fighting -- these four rings were the brightest part of
+## the shimmer.
+static func _floor_ring(parent: Node3D, node_name: String, top_y: float,
+		inner_r: float, outer_r: float, segments := 48) -> MeshInstance3D:
+	var half: float = (outer_r - inner_r) * 0.5 * 0.30
+	var ring := _ring(parent, node_name, Vector3(0.0, top_y - half, 0.0),
+		inner_r, outer_r, BRASS, segments)
+	ring.scale.y = 0.30
+	ring.material_override = _flat_material(BRASS, 0.35)
+	ring.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return ring
+
+
+## Flat tinted material with no photo maps, cached beside the palette ones.
+## _material() matches a palette constant to a MaterialLib pack, which is right
+## for props and wrong for floor inlays; this is how to ask for the tint alone.
+static func _flat_material(color: Color,
+		metallic := 0.0) -> StandardMaterial3D:
+	var key := "flat|%s|%.2f" % [color.to_html(true), metallic]
+	if _materials.has(key):
+		return _materials[key]
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.metallic = metallic
+	mat.metallic_specular = 0.6
+	mat.roughness = clampf(0.62 - metallic * 0.35, 0.14, 1.0)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	_materials[key] = mat
+	return mat
 
 
 ## Палитра атриума -> набор карт.

@@ -1,0 +1,16 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_office",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "office_overview", "pos": [-25.0, 1.70, 1.20], "look_at": [-25.0, 1.45, -2.40], "fov": 62},
+    {"name": "office_bank", "pos": [-25.0, 1.55, -0.30], "look_at": [-25.0, 1.55, -2.40], "fov": 58},
+    {"name": "office_seated", "pos": [-25.0, 1.25, -0.60], "look_at": [-25.2, 0.95, -2.10], "fov": 55},
+    {"name": "office_desk_close", "pos": [-25.3, 1.15, -0.95], "look_at": [-25.4, 0.92, -1.95], "fov": 42},
+    {"name": "office_desk_rake_east", "pos": [-23.2, 1.30, -1.10], "look_at": [-25.6, 0.92, -1.95], "fov": 46},
+    {"name": "office_desk_rake_west", "pos": [-27.4, 1.30, -1.05], "look_at": [-25.4, 0.92, -1.95], "fov": 46},
+    {"name": "office_desk_top", "pos": [-25.2, 2.35, -0.70], "look_at": [-25.3, 0.80, -1.95], "fov": 52}
+  ]
+}

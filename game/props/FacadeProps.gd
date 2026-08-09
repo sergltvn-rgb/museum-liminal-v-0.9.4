@@ -406,8 +406,17 @@ static func _facade_plinth(root: Node3D, half: float) -> void:
 		var inner := 1.7
 		var run := half - inner
 		var cx := side * (inner + run * 0.5)
+		# The dark core reaches 2 cm further in than the blocks, under the
+		# door surround. It used to stop dead on x = 1.7, the same plane the
+		# R1 bond block and the R2 closer start on, and those ends flickered
+		# against each other (0.022 m2 a pair, four pairs). The core is a
+		# shadow gap nobody reads, so widening it costs nothing.
+		var core_inner := inner - 0.02
+		var core_run := half - core_inner
+		var core_cx := side * (core_inner + core_run * 0.5)
 		_box(root, "Plinth Core %s" % side_name,
-			Vector3(cx, 0.46, 0.11), Vector3(run, 0.92, 0.26), COL_RECESS)
+			Vector3(core_cx, 0.46, 0.11), Vector3(core_run, 0.92, 0.26),
+			COL_RECESS)
 		_collider(root, "Plinth %s" % side_name,
 			Vector3(cx, 0.46, 0.12), Vector3(run, 0.92, 0.28))
 		# Three courses of blocks, odd rows shifted half a block (running
@@ -443,15 +452,21 @@ static func _facade_plinth(root: Node3D, half: float) -> void:
 ## mask interior wall trims that leak through to the street face (the accent
 ## stripe at y 1.25 and the wall cornice at y 3.26 both protrude ~2 cm).
 static func _facade_string_courses(root: Node3D, width: float) -> void:
+	# Both bands stop 2 cm short of the building corner. Run them out to
+	# x = 11 and they end on the very plane where the Entrance Zone's wall
+	# segments and its ceiling slab end: five pairs of end faces shared it
+	# (0.005 m2 twice, 0.003 twice, 0.001 once). A stopped moulding is
+	# ordinary detailing, and the corner itself is dressed by BuildingShell.
+	var stop := 0.02
 	for side: float in [-1.0, 1.0]:
 		var side_name := "West" if side < 0.0 else "East"
-		var run := width * 0.5 - 1.7
+		var run := width * 0.5 - 1.7 - stop
 		var cx := side * (1.7 + run * 0.5)
 		_box(root, "Sill Course %s" % side_name,
 			Vector3(cx, 1.21, 0.05), Vector3(run, 0.16, 0.14), COL_MOLDING)
 	# Full-width course at the wall top; also the visual floor of the attic.
 	_box(root, "String Course", Vector3(0.0, 3.31, 0.30),
-		Vector3(width, 0.30, 0.64), COL_MOLDING)
+		Vector3(width - stop * 2.0, 0.30, 0.64), COL_MOLDING)
 
 
 ## Attic storey: a full-width band standing ON TOP of the 3.4 m interior
@@ -783,8 +798,12 @@ static func _door_portal(root: Node3D) -> void:
 		Vector3(3.60, 0.34, 0.48), COL_MOLDING)
 	_box(root, "Portal Cornice", Vector3(0.0, 3.42, 0.28),
 		Vector3(3.80, 0.12, 0.56), COL_MOLDING)
-	_prism(root, "Portal Pediment", Vector3(0.0, 3.78, 0.25),
-		Vector3(3.40, 0.60, 0.50), COL_MOLDING)
+	# The pediment starts 1 cm proud of the wall plane instead of sitting on
+	# it: the Attic Band behind it has its own back face at z 0, and above
+	# the 3.4 m wall there is no wall left to bury the pair -- 2.04 m2 of two
+	# backs flickering. The front face stays at z 0.50, where the tympanum is.
+	_prism(root, "Portal Pediment", Vector3(0.0, 3.78, 0.255),
+		Vector3(3.40, 0.60, 0.49), COL_MOLDING)
 	_prism(root, "Portal Tympanum", Vector3(0.0, 3.70, 0.505),
 		Vector3(2.80, 0.36, 0.05), COL_STONE)
 	# Wall sconces either side of the doorway, above head height.

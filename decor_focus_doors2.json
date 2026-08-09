@@ -1,0 +1,17 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_doors2",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "door_d1_street_inside", "pos": [0.0, 1.65, 31.4], "look_at": [0.0, 1.50, 35.0], "fov": 55},
+    {"name": "door_d2_street_quarter", "pos": [2.2, 1.60, 32.2], "look_at": [-0.3, 1.35, 34.9], "fov": 50},
+    {"name": "door_d3_street_outside", "pos": [0.0, 1.65, 38.6], "look_at": [0.0, 1.45, 35.0], "fov": 55},
+    {"name": "door_d4_street_handle", "pos": [1.9, 1.25, 33.3], "look_at": [1.05, 1.10, 34.2], "fov": 42},
+    {"name": "door_e1_planetarium_front", "pos": [0.0, 1.65, -29.4], "look_at": [0.0, 1.45, -33.0], "fov": 55},
+    {"name": "door_e2_planetarium_quarter", "pos": [2.2, 1.60, -30.3], "look_at": [-0.3, 1.35, -33.1], "fov": 50},
+    {"name": "door_e3_planetarium_back", "pos": [0.0, 1.65, -36.6], "look_at": [0.0, 1.45, -33.0], "fov": 55},
+    {"name": "door_e4_planetarium_head", "pos": [0.0, 2.05, -31.0], "look_at": [0.0, 2.55, -33.0], "fov": 52}
+  ]
+}

@@ -119,12 +119,18 @@ Preserve the filenames and every attribution and rights note above in redistribu
 
 `models/` holds far more than earlier revisions of this file claimed. As of 2026-07-27:
 
-- **22 GLB files.** Of these, **15 are actually placed in the game**, all of them from
-  `_add_model_archive()` (`game/FirstMuseumMap.gd:1638`): `basic_pc_monitors`,
+- **21 GLB files in `models/`.** Of these, **13 are actually placed in the game**, all of
+  them from `_add_model_archive()` (`game/FirstMuseumMap.gd:1638`): `basic_pc_monitors`,
   `tactical_flashlight`, `wooden_bookcases_with_books`, `тумбочка`, `vents`,
-  `fancy_marble_coffee_table`, `elderly_woman_bust_on_pedestal`, `лавочки`, `арка дверь`,
+  `fancy_marble_coffee_table`, `elderly_woman_bust_on_pedestal`,
   `часы`, `gallery_bare_concrete_wall`, `наблюдатель`, `уличная лампа`, `отсановка`,
-  `dumpsters_glb`.
+  `dumpsters_glb`. `арка дверь` stopped being placed in 0.9.4 at the owner's request: the
+  archway stood in the Atrium → Time Wing B doorway and read as a leftover prop. The file
+  is still in `models/`; nothing loads it.
+  `лавочки.glb` was **deleted** in 0.9.4: it was a back-to-back pair
+  whose far half had to be hidden by node name at every one of its five placements,
+  and the atrium benches are now built procedurally by
+  `AtriumProps.build_rotunda_bench()`.
 - **5 GLB files are named by an exhibit slot but deliberately refused.**
   `falling_cube`, `broken_clock`, `frozen_drop`, `portal_arch` and `superheavy_sphere` are
   listed in `MapModels.PLACEHOLDER_MODELS` (`game/MapModels.gd:75`), so `place()` returns
@@ -144,6 +150,12 @@ Preserve the filenames and every attribution and rights note above in redistribu
   Godot does not import these; they sit in the repository as raw source and ship with the
   working tree, not with the game.
 - **97 loose PNG/JPG textures** extracted alongside the GLB imports.
+- **16 GLB files in `models/lowpoly/`** — authored for this game by the Blender scripts in
+  `tools/lowpoly/` (`blender_build.py`, `blender_cameras.py`, `blender_core.py`, `glb.py`).
+  No external source and no third-party licence: one flat material and one generated
+  128×128 palette atlas each, no normal maps, no emission. Added in 0.9.4 —
+  `lp_security_camera`, `lp_camera_plate` and the four containment-core parts
+  `lp_core_base`, `lp_core_column`, `lp_core_gantry`, `lp_core_plant`.
 
 **`office_chair.glb` is referenced by nothing.** `models/README.md:26` still lists it as a
 live slot and is wrong. `MODELS_GUIDE.md:92` has since been corrected and flags it as a
@@ -161,8 +173,12 @@ and are still missing. Two specifics make this urgent rather than tidy-up work:
   `MetalCorrodedHeavy001`, `TilesTravertine001`, `TilesMosaicYubi003`, `DirtWindowStains005`,
   `GroundDirtRocky020`). Their terms have not been verified here.
 - The GLB set mixes sources with no common origin, including files named in Russian
-  (`наблюдатель.glb`, `часы.glb`, `тумбочка.glb`, `уличная лампа.glb`, `лавочки.glb`,
-  `отсановка.glb`, `арка дверь.glb`).
+  (`наблюдатель.glb`, `часы.glb`, `тумбочка.glb`, `уличная лампа.glb`,
+  `отсановка.glb`, `арка дверь.glb`). One more of them, `лавочки.glb`, is gone: it
+  was deleted in 0.9.4 and replaced by procedural geometry, so its unverified
+  provenance is no longer a release risk. `арка дверь.glb` is no longer placed either, so
+  it has left the release surface too — but the file is still in the tree and has to be
+  deleted or cleared before shipping.
 
 **Before any public or commercial release: record the source URL, author and license for
 every model, texture and archive in this file, or replace any asset whose provenance cannot

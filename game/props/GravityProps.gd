@@ -652,11 +652,18 @@ static func build_floor_stencil(parent: Node3D, origin: Vector3,
 		var sx: float = 1.0 if i < 2 else -1.0
 		var sz: float = 1.0 if i % 2 == 0 else -1.0
 		var corner := Vector3(sx * inset, 0.013, sz * inset)
+		# Плечи выходили из одной точки и накладывались в углу, а их
+		# верхние грани лежали в одной плоскости y = 0.020 (0.001 м²
+		# мерцания на угол). Плечо Z теперь начинается в 3 мм за краем
+		# плеча X (полширины 0.0375 + зазор): общих плоскостей нет, сам
+		# угол закрыт плечом X. Зазор именно 3 мм: щуп проёмов считает
+		# копланарным всё, что ближе 2 мм.
+		var corner_z := corner - Vector3(0.0, 0.0, sz * 0.0405)
 		_span(root, "Zone Bracket %d X" % i, corner,
 			corner - Vector3(sx * 0.28, 0.0, 0.0), Vector2(0.014, 0.075),
 			PAINT_HAZARD)
-		_span(root, "Zone Bracket %d Z" % i, corner,
-			corner - Vector3(0.0, 0.0, sz * 0.28), Vector2(0.014, 0.075),
+		_span(root, "Zone Bracket %d Z" % i, corner_z,
+			corner_z - Vector3(0.0, 0.0, sz * 0.28), Vector2(0.014, 0.075),
 			PAINT_HAZARD)
 
 	for i in range(maxi(0, chevrons)):
@@ -700,9 +707,21 @@ static func _deck_square_at(parent: Node3D, node_name: String, half: float,
 		Vector3(-half, y, -half), Vector3(half, y, -half),
 		Vector3(half, y, half), Vector3(-half, y, half),
 	]
+	# Стороны идут через углы и накладывались друг на друга квадратом в
+	# полширины линии, а верхние грани лежали в одной плоскости --
+	# по 0.001 м² мерцания на угол. Нечётные стороны укорочены с обоих
+	# концов на полширины плюс 3 мм (щуп проёмов считает копланарным
+	# всё, что ближе 2 мм). Углы закрывают чётные стороны, так что линия
+	# остаётся замкнутой на вид.
 	for i in range(4):
-		_span(parent, "%s Side %d" % [node_name, i], corners[i] as Vector3,
-			corners[(i + 1) % 4] as Vector3, Vector2(0.014, 0.05), color)
+		var p0: Vector3 = corners[i]
+		var p1: Vector3 = corners[(i + 1) % 4]
+		if i % 2 == 1:
+			var trim: Vector3 = (p1 - p0).normalized() * 0.028
+			p0 += trim
+			p1 -= trim
+		_span(parent, "%s Side %d" % [node_name, i], p0, p1,
+			Vector2(0.014, 0.05), color)
 
 
 ## Single chevron painted on the deck, tip pointing toward the exhibit centre

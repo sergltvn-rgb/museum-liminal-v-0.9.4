@@ -1,0 +1,18 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/core_model",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "cm1_core_front", "pos": [0.0, 1.65, 7.4], "look_at": [0.0, 1.55, 0.0], "fov": 55},
+    {"name": "cm2_core_full", "pos": [0.0, 2.10, 9.8], "look_at": [0.0, 1.55, 0.0], "fov": 50},
+    {"name": "cm3_free_quarter", "pos": [5.2, 1.60, -4.8], "look_at": [0.0, 1.45, 0.0], "fov": 50},
+    {"name": "cm4_gantry", "pos": [3.4, 1.55, 3.4], "look_at": [1.0, 0.90, 1.0], "fov": 45},
+    {"name": "cm5_plant_skid", "pos": [4.0, 1.35, -1.1], "look_at": [1.16, 0.75, -0.31], "fov": 42},
+    {"name": "cm6_base_grazing", "pos": [3.6, 0.62, 0.0], "look_at": [1.0, 0.30, 0.0], "fov": 45},
+    {"name": "cm7_head_ring", "pos": [2.8, 2.55, -2.8], "look_at": [0.4, 2.55, -0.4], "fov": 45},
+    {"name": "cm8_from_time_wing", "pos": [0.0, 1.65, -8.0], "look_at": [0.0, 1.55, 0.0], "fov": 55},
+    {"name": "cm9_time_doorway", "pos": [0.0, 1.70, -11.5], "look_at": [0.0, 1.30, -16.5], "fov": 60}
+  ]
+}

@@ -1237,10 +1237,14 @@ static func build_watcher_office(parent: Node3D, origin: Vector3,
 ##   3. клавиатура перед ним, а не где-то сбоку;
 ##   4. мышь на коврике справа.
 ##
-## Экран светится слабо и ровно. Он НЕ изображает содержимое рабочего стола:
-## повторять окна в 3D значило бы держать ещё один Viewport ради картинки, на которую
-## смотрят с двух метров и три секунды в ночь. Группа "workstation_screen"
-## оставлена на случай, если живой фид всё же понадобится.
+## Монитор, клавиатура и системный блок здесь БОЛЬШЕ НЕ строятся: это .glb из
+## models/lowpoly (lp_desk_monitor, lp_keyboard, lp_pc_tower), которые ставит
+## FirstMuseumMap._add_model_archive. Здесь остались мышь, коврик и провод.
+## Экран той модели — мёртвое стекло, а свечение даёт эмиссивная пластина,
+## которую вешает та же функция; она же несёт группу "workstation_screen".
+## Экран НЕ изображает содержимое рабочего стола: повторять окна в 3D значило
+## бы держать ещё один Viewport ради картинки, на которую смотрят с двух
+## метров и три секунды в ночь.
 ##
 ## Координаты локальные от центра стола; +Z — в сторону кресла, поэтому экран
 ## сидит на передней грани корпуса, а не на задней.
@@ -1248,66 +1252,23 @@ static func build_workstation_computer(parent: Node3D, origin: Vector3,
 		yaw_deg := 0.0) -> Node3D:
 	var root := _root(parent, "Workstation Computer", origin, yaw_deg)
 
-	# --- Системный блок под столом, справа от ног -----------------------
+	# --- Место под GLB-комплект ---------------------------------------------
+	# Башня, монитор и клавиатура были здесь коробками. Теперь это три .glb из
+	# models/lowpoly, которые ставит FirstMuseumMap._add_model_archive в мировых
+	# координатах: lp_pc_tower на полу в (-24.14, 0, -1.80), lp_desk_monitor и
+	# lp_keyboard на столешнице y 0.74. Причина простая: на столе стояли ДВА
+	# монитора сразу — этот процедурный и импортный basic_pc_monitors, и оба
+	# выпадали из стиля соседних шкафов. Ставить их отсюда нельзя: этот файл
+	# намеренно ничего не знает о других скриптах проекта (см. шапку файла).
+	#
+	# Координаты башни остаются здесь только ради провода: он идёт от
+	# столешницы вниз, к тому месту, где стоит lp_pc_tower.
 	var tower_x := 0.86
 	var tower_z := 0.10
-	_box(root, "Tower", Vector3(tower_x, 0.23, tower_z),
-		Vector3(0.19, 0.46, 0.45), COL_SHELL)
-	# Лицевая панель светлее корпуса: без неё башня читается как ящик.
-	_box(root, "Tower Face", Vector3(tower_x, 0.23, tower_z + 0.228),
-		Vector3(0.185, 0.44, 0.012), COL_STEEL)
-	# Отсек дисковода и две прорези вентиляции.
-	_box(root, "Tower Drive", Vector3(tower_x, 0.40, tower_z + 0.236),
-		Vector3(0.145, 0.030, 0.008), COL_DARK)
-	for index in 3:
-		_box(root, "Tower Vent %d" % index,
-			Vector3(tower_x, 0.09 + 0.035 * float(index), tower_z + 0.236),
-			Vector3(0.130, 0.012, 0.006), COL_DARK)
-	# Кнопка питания и диод. Янтарный, а не красный: красный в этой игре
-	# закреплён за тревогу, а включённый компьютер — это норма, а не тревога.
-	_cylinder(root, "Tower Power Button",
-		Vector3(tower_x - 0.05, 0.33, tower_z + 0.238), 0.014, 0.008,
-		COL_PLASTIC)
-	Lamp.build(root, "Tower Power Led",
-		Vector3(tower_x + 0.04, 0.33, tower_z + 0.236),
-		Lamp.COL_WARN, Lamp.ENERGY_ON, Vector3(0, 0, 1), 0.80)
-	_collider(root, "Tower", Vector3(tower_x, 0.23, tower_z),
-		Vector3(0.19, 0.46, 0.45))
 
-	# --- Монитор оператора -------------------------------------------------
-	var screen_z := -0.16
-	# Подставка и шея. Монитор без ножки выглядит приклеенным к столу.
-	_cylinder(root, "Monitor Base", Vector3(0.0, DESK_TOP_Y + 0.012, screen_z),
-		0.115, 0.024, COL_SHELL)
-	_box(root, "Monitor Neck", Vector3(0.0, DESK_TOP_Y + 0.075, screen_z),
-		Vector3(0.085, 0.105, 0.085), COL_SHELL)
-	# Корпус глубокий: в 1999 году монитор занимал полстола, и это одна из
-	# немногих деталей, которую глаз узнаёт без подписи.
-	var case_y := DESK_TOP_Y + 0.315
-	_box(root, "Monitor Case", Vector3(0.0, case_y, screen_z),
-		Vector3(0.46, 0.38, 0.36), COL_SHELL)
-	# Рамка и само стекло. Свечение слабое: это единственный источник света
-	# на столе, и яркий экран съел бы темноту всего кабинета.
-	var face_z := screen_z + 0.181
-	_box(root, "Monitor Bezel", Vector3(0.0, case_y, face_z),
-		Vector3(0.44, 0.36, 0.010), COL_STEEL)
-	var screen := _box(root, "Monitor Screen", Vector3(0.0, case_y, face_z + 0.007),
-		Vector3(0.385, 0.300, 0.006), COL_SCREEN, 0.85)
-	screen.add_to_group("workstation_screen")
-	Lamp.build(root, "Monitor Power Led",
-		Vector3(0.185, case_y - 0.192, face_z + 0.002),
-		Lamp.COL_OK, Lamp.ENERGY_ON, Vector3(0, 0, 1), 0.80)
-
-	# --- Клавиатура и мышь ---------------------------------------------------
-	var keys_y := DESK_TOP_Y + 0.014
-	_box(root, "Keyboard", Vector3(-0.04, keys_y, 0.20),
-		Vector3(0.46, 0.028, 0.16), COL_PLASTIC)
-	# Три ряда клавиш одним бруском каждый: с двух метров читается точно так
-	# же, как сто отдельных кубиков, и стоит три узла вместо ста.
-	for row in 3:
-		_box(root, "Keyboard Row %d" % row,
-			Vector3(-0.04, keys_y + 0.016, 0.16 + 0.042 * float(row)),
-			Vector3(0.42, 0.006, 0.032), COL_DARK)
+	# --- Мышь и коврик -------------------------------------------------------
+	# Мелочёвка остаётся процедурной: отдельный .glb ради тридцати
+	# треугольников — это лишний импорт, а с двух метров мышь и так коробка.
 	_box(root, "Mouse Pad", Vector3(0.34, DESK_TOP_Y + 0.003, 0.22),
 		Vector3(0.24, 0.006, 0.20), COL_LAMINATE)
 	_box(root, "Mouse", Vector3(0.34, DESK_TOP_Y + 0.021, 0.21),

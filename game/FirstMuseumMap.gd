@@ -20,6 +20,14 @@ const WALL_THICKNESS := 0.35
 # player capsule (diameter 0.7) to pass comfortably, tight enough to feel
 # like a liminal threshold rather than an open corridor.
 const DOOR_GAP := 1.8
+## Торцы стеновых сегментов отводятся на этот зазор и прячутся внутри тела
+## косяка, а низ хедера опускается на столько же ниже низа перемычки.
+## Без этого в каждом проёме остаются две грани в одной плоскости (0.945 м2
+## на щёку и 0.630 м2 под перемычкой) — то самое мерцание при вращении
+## камеры. Ширина прохода не уменьшается: DOOR_GAP остаётся 1.8, а светлый
+## проём в стене становится шире на 2 x DOOR_REVEAL. Проверяется
+## game/tools/check_doorways.gd.
+const DOOR_REVEAL := 0.01
 
 var _materials: Dictionary = {}
 var _noise_texture: NoiseTexture2D = null
@@ -77,14 +85,14 @@ func _box(parent: Node, node_name: String, box_position: Vector3, size: Vector3,
 func _cylinder(parent: Node, node_name: String, cylinder_position: Vector3,
 		radius: float, height: float, color: Color,
 		horizontal := false, emission_energy := 0.0,
-		with_collision := true) -> MeshInstance3D:
+		with_collision := true, pack := "") -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.height = height
 	mesh.bottom_radius = radius
 	mesh.top_radius = radius
 	var size := Vector3(radius * 2.0, height, radius * 2.0)
 	var inst := _primitive(parent, node_name, cylinder_position, mesh, size,
-		color, false, emission_energy, 0.0, with_collision)
+		color, false, emission_energy, 0.0, with_collision, pack)
 	if horizontal:
 		# Lay the cylinder on its side (default points up along Y).
 		inst.rotate_z(deg_to_rad(90))
@@ -341,6 +349,10 @@ func _glass_material() -> StandardMaterial3D:
 
 # ===== MapStructure.gd =====
 const MuseumModels := preload("res://game/MapModels.gd")
+## Driver for the double doors in _door_leaves(). Preloaded by path instead of
+## registered with class_name: the audit scripts in game/tools run under a bare
+## --script, and that mode does not populate the global class list.
+const DoorSwing := preload("res://game/props/DoorSwing.gd")
 # Structural layer: rooms, walls with door gaps, door frames and leaves,
 # locked wing doors, security cameras and the player spawn.
 # Inheritance chain:
@@ -423,15 +435,18 @@ func _horizontal_wall_with_gap(parent: Node, wall_name: String, z: float,
 		_wall_segment(parent, "%s Wall" % wall_name, Vector3(0, y, z),
 			Vector3(width, WALL_HEIGHT, WALL_THICKNESS), color, accent)
 		return
-	var segment_width: float = max(0.4, (width - gap) * 0.5)
-	var left_x: float = -(gap * 0.5 + segment_width * 0.5)
-	var right_x: float = gap * 0.5 + segment_width * 0.5
+	# Торец сегмента уходит на DOOR_REVEAL внутрь косяка, а перемычка ровно
+	# на столько же шире, иначе на её месте останется сквозная щель.
+	var segment_width: float = max(0.4, (width - gap - DOOR_REVEAL * 2.0) * 0.5)
+	var left_x: float = -(gap * 0.5 + DOOR_REVEAL + segment_width * 0.5)
+	var right_x: float = gap * 0.5 + DOOR_REVEAL + segment_width * 0.5
 	_wall_segment(parent, "%s Left Segment" % wall_name, Vector3(left_x, y, z),
 		Vector3(segment_width, WALL_HEIGHT, WALL_THICKNESS), color, accent)
 	_wall_segment(parent, "%s Right Segment" % wall_name, Vector3(right_x, y, z),
 		Vector3(segment_width, WALL_HEIGHT, WALL_THICKNESS), color, accent)
 	_box(parent, "%s Door Lintel" % wall_name, Vector3(0, WALL_HEIGHT - 0.35, z),
-		Vector3(gap, 0.7, WALL_THICKNESS), color.darkened(0.08), 0.0, 0.0, true,
+		Vector3(gap + DOOR_REVEAL * 2.0, 0.7, WALL_THICKNESS),
+		color.darkened(0.08), 0.0, 0.0, true,
 		"concrete")
 
 
@@ -443,16 +458,22 @@ func _vertical_wall_with_gap(parent: Node, wall_name: String, x: float,
 		_wall_segment(parent, "%s Wall" % wall_name, Vector3(x, y, 0),
 			Vector3(WALL_THICKNESS, WALL_HEIGHT, depth), color, accent)
 		return
-	var segment_depth: float = max(0.4, (depth - gap) * 0.5)
-	var near_z: float = -(gap * 0.5 + segment_depth * 0.5)
-	var far_z: float = gap * 0.5 + segment_depth * 0.5
+	# См. _horizontal_wall_with_gap: тот же отвод торца внутрь косяка.
+	var segment_depth: float = max(0.4, (depth - gap - DOOR_REVEAL * 2.0) * 0.5)
+	var near_z: float = -(gap * 0.5 + DOOR_REVEAL + segment_depth * 0.5)
+	var far_z: float = gap * 0.5 + DOOR_REVEAL + segment_depth * 0.5
 	_wall_segment(parent, "%s Near Segment" % wall_name, Vector3(x, y, near_z),
 		Vector3(WALL_THICKNESS, WALL_HEIGHT, segment_depth), color, accent)
 	_wall_segment(parent, "%s Far Segment" % wall_name, Vector3(x, y, far_z),
 		Vector3(WALL_THICKNESS, WALL_HEIGHT, segment_depth), color, accent)
 	_box(parent, "%s Door Lintel" % wall_name, Vector3(x, WALL_HEIGHT - 0.35, 0),
-		Vector3(WALL_THICKNESS, 0.7, gap), color.darkened(0.08), 0.0, 0.0, true,
+		Vector3(WALL_THICKNESS, 0.7, gap + DOOR_REVEAL * 2.0),
+		color.darkened(0.08), 0.0, 0.0, true,
 		"concrete")
+
+
+## Насколько торец отделки утоплен внутрь сегмента стены.
+const TRIM_INSET := 0.01
 
 
 # One wall slab dressed with a baseboard, an accent stripe and a cornice so
@@ -463,9 +484,16 @@ func _wall_segment(parent: Node, seg_name: String, center: Vector3,
 	_box(parent, seg_name, center, size, color, 0.0, 0.0, true, "concrete")
 	var trim_color := Color(0.05, 0.05, 0.048)
 	var along_x: bool = size.x > size.z
-	var base_size := Vector3(size.x, 0.22, size.z + 0.06) if along_x else Vector3(size.x + 0.06, 0.22, size.z)
-	var stripe_size := Vector3(size.x, 0.14, size.z + 0.04) if along_x else Vector3(size.x + 0.04, 0.14, size.z)
-	var crown_size := Vector3(size.x, 0.16, size.z + 0.06) if along_x else Vector3(size.x + 0.06, 0.16, size.z)
+	# Торцы отделки уходят на TRIM_INSET внутрь сегмента. Раньше плинтус,
+	# полоса и карниз кончались ровно в плоскости торца стены, и в каждом
+	# проёме три грани стояли на одной глубине: щуп дверей ловил по 0.049 и
+	# 0.056 м2 на каждый косяк — это и есть мерцание в дверях. На углах комнат
+	# торец отделки и так утоплен в перпендикулярную стену, сантиметр там не виден.
+	var run_x: float = (size.x - TRIM_INSET * 2.0) if along_x else size.x
+	var run_z: float = size.z if along_x else (size.z - TRIM_INSET * 2.0)
+	var base_size := Vector3(run_x, 0.22, run_z + 0.06) if along_x else Vector3(run_x + 0.06, 0.22, run_z)
+	var stripe_size := Vector3(run_x, 0.14, run_z + 0.04) if along_x else Vector3(run_x + 0.04, 0.14, run_z)
+	var crown_size := Vector3(run_x, 0.16, run_z + 0.06) if along_x else Vector3(run_x + 0.06, 0.16, run_z)
 	# Плинтус и карниз — тёмный дуб: это единственные полосы дерева, которые
 	# идут по всему периметру каждой комнаты, и именно они связывают столярку
 	# вестибюля с голыми стенами крыльев.
@@ -484,8 +512,11 @@ func _wall_segment(parent: Node, seg_name: String, center: Vector3,
 # East-West wall (door faces N/S) or "z" for a North-South wall.
 # NOTE: the old version had the two axis branches swapped, which planted the
 # frame slabs sideways across every doorway -- the "crooked doors".
+#
+# `leaves` hangs a working pair of doors in the opening; `open_towards` picks
+# which side of the wall they swing out into -- see _door_leaves().
 func _add_door_frame(parent: Node, center: Vector3, axis: String,
-		leaves := false) -> void:
+		leaves := false, open_towards := 1.0) -> void:
 	var frame_color := Color(0.06, 0.06, 0.058)
 	# Frames span both back-to-back walls (2 x WALL_THICKNESS) plus a lip.
 	var frame_depth := WALL_THICKNESS * 2.0 + 0.14
@@ -502,8 +533,11 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 			Vector3(jamb_thick, jamb_height, frame_depth), frame_color)
 		_box(parent, "Door Frame Jamb +X %s" % [center], center + Vector3(jamb_offset, jamb_y, 0),
 			Vector3(jamb_thick, jamb_height, frame_depth), frame_color)
-		_box(parent, "Door Frame Header %s" % [center], center + Vector3(0, header_y, 0),
-			Vector3(span, 0.3, frame_depth), frame_color)
+		# Низ хедера опущен на DOOR_REVEAL: низ бетонной перемычки стены
+		# оказывается внутри его тела, а не в одной с ним плоскости.
+		_box(parent, "Door Frame Header %s" % [center],
+			center + Vector3(0, header_y - DOOR_REVEAL * 0.5, 0),
+			Vector3(span, 0.3 + DOOR_REVEAL, frame_depth), frame_color)
 		# Visual only: a colliding threshold acts as a tiny wall that
 		# CharacterBody3D cannot step over and blocks the doorway.
 		_box(parent, "Door Frame Threshold %s" % [center], center + Vector3(0, 0.02, 0),
@@ -520,8 +554,10 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 			Vector3(frame_depth, jamb_height, jamb_thick), frame_color)
 		_box(parent, "Door Frame Jamb +Z %s" % [center], center + Vector3(0, jamb_y, jamb_offset),
 			Vector3(frame_depth, jamb_height, jamb_thick), frame_color)
-		_box(parent, "Door Frame Header %s" % [center], center + Vector3(0, header_y, 0),
-			Vector3(frame_depth, 0.3, span), frame_color)
+		# См. ветку по оси X: тот же опущенный низ хедера.
+		_box(parent, "Door Frame Header %s" % [center],
+			center + Vector3(0, header_y - DOOR_REVEAL * 0.5, 0),
+			Vector3(frame_depth, 0.3 + DOOR_REVEAL, span), frame_color)
 		# Visual only (see note above): no collision on the threshold.
 		_box(parent, "Door Frame Threshold %s" % [center], center + Vector3(0, 0.02, 0),
 			Vector3(frame_depth, 0.04, span), frame_color.darkened(0.1),
@@ -532,36 +568,98 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 				center + Vector3(s * (frame_depth * 0.5 + 0.03), header_y, 0),
 				Vector3(0.05, 0.22, 0.85), sign_color, 0.9, 0.0, false)
 	if leaves:
-		_door_leaves(parent, center, axis)
+		_door_leaves(parent, center, axis, open_towards)
 
 
-# Museum double doors frozen ajar on their hinges. Opened well past 80
-# degrees so the panels hug the jambs and never block the walkable gap.
-func _door_leaves(parent: Node, center: Vector3, axis: String) -> void:
+# Museum double doors that actually open. Each leaf is lp_door_leaf.glb hung
+# on its own pivot, and DoorSwing turns the pivots: open when somebody walks
+# into the doorway, shut again a couple of seconds after they have gone.
+#
+# The leaves are BUILT OPEN, at the angles the frozen-ajar primitives stood
+# at, because build_map() bakes navigation the moment it finishes and every
+# doorway audit measures the map in the state it was built in. The header of
+# game/props/DoorSwing.gd explains why the pivots are frozen kinematic
+# RigidBody3D and not the StaticBody3D a piece of scenery would normally get.
+#
+# Model axes: the leaf hangs from x = 0 -- the pivot line -- runs 0.86 m out
+# to +X and faces along +-Z. A shut leaf therefore points along the wall,
+# back towards the middle of the opening: 0 and 180 degrees on an east-west
+# wall, -90 and +90 on a north-south one. The swing is added on top of that.
+#
+# `open_towards` is +1 or -1: which side of the wall the pair swings out into.
+# +1 is +Z on an east-west wall and -X on a north-south one; -1 mirrors both.
+# The two leaves always agree -- a pair that opened opposite ways would pinch
+# the middle of its own opening instead of clearing it. Choose the side by
+# what stands in front of the door: the street entrance swings inward because
+# the porch outside carries the moulded portal and its sconces, while the
+# lobby side is guaranteed clear (LobbyProps keeps every collider out of
+# |x| < 2.6, the spine from the street door to the atrium door).
+func _door_leaves(parent: Node, center: Vector3, axis: String,
+		open_towards := 1.0) -> void:
 	var leaf_h := WALL_HEIGHT - 0.98
 	var leaf_w := DOOR_GAP * 0.5 - 0.04
 	var leaf_color := Color(0.15, 0.11, 0.075)
-	# Past 100 degrees the leaves lie flat against the room wall and their
-	# collision boxes stay fully outside the walkable gap.
+	# Past 100 degrees the leaves stand clear of the walkable gap, which is how
+	# a doorway keeps its 0.9 m of navmesh with both doors thrown wide.
 	var swings := [104.0, 100.0]
+	var shut := [0.0, 180.0] if axis == "x" else [-90.0, 90.0]
+	var swing := Node3D.new()
+	swing.name = "Door Swing %s" % [center]
+	swing.position = center
+	swing.set_script(DoorSwing)
+	parent.add_child(swing)
+	var hinges: Array[Node3D] = []
+	var open_yaw: Array[float] = []
+	var shut_yaw: Array[float] = []
 	for i in range(2):
 		var s: float = -1.0 if i == 0 else 1.0
-		var hinge := Node3D.new()
+		var hinge := RigidBody3D.new()
 		hinge.name = "Door Hinge %s %d" % [center, i]
+		# Frozen kinematic: the leaf blocks and shoves like a wall while it
+		# swings, but it is not a StaticBody3D, so Recast never bakes a shut
+		# door into the mesh the Curator paths on.
+		hinge.freeze = true
+		hinge.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		hinge.gravity_scale = 0.0
+		hinge.can_sleep = false
 		if axis == "x":
-			hinge.position = center + Vector3(s * DOOR_GAP * 0.5, 0, 0)
-			hinge.rotation_degrees = Vector3(0, s * swings[i], 0)
-			parent.add_child(hinge)
-			_box(hinge, "Door Leaf %d" % i, Vector3(-s * leaf_w * 0.5, leaf_h * 0.5 + 0.05, 0),
-				Vector3(leaf_w, leaf_h, 0.06), leaf_color)
-			_box(hinge, "Door Handle %d" % i, Vector3(-s * (leaf_w - 0.12), leaf_h * 0.45, 0.06),
-				Vector3(0.16, 0.04, 0.05), Color(0.35, 0.3, 0.2), 0.0, 0.6, false)
+			hinge.position = Vector3(s * DOOR_GAP * 0.5, 0, 0)
 		else:
-			hinge.position = center + Vector3(0, 0, s * DOOR_GAP * 0.5)
-			hinge.rotation_degrees = Vector3(0, s * swings[i], 0)
-			parent.add_child(hinge)
-			_box(hinge, "Door Leaf %d" % i, Vector3(0, leaf_h * 0.5 + 0.05, -s * leaf_w * 0.5),
-				Vector3(0.06, leaf_h, leaf_w), leaf_color)
+			hinge.position = Vector3(0, 0, s * DOOR_GAP * 0.5)
+		var shut_deg: float = shut[i]
+		var open_deg: float = shut_deg + s * float(swings[i]) * open_towards
+		hinge.rotation_degrees = Vector3(0, open_deg, 0)
+		swing.add_child(hinge)
+		if MuseumModels.place(hinge, "lp_door_leaf", Vector3.ZERO) == null:
+			# Fallback for a missing import: the flat panel this replaced, in
+			# the same place. Carries no collision of its own -- the pivot body
+			# holds the only collider either way.
+			_box(hinge, "Door Leaf %d" % i,
+				Vector3(leaf_w * 0.5, leaf_h * 0.5 + 0.05, 0),
+				Vector3(leaf_w, leaf_h, 0.06), leaf_color, 0.0, 0.0, false)
+			_box(hinge, "Door Handle %d" % i,
+				Vector3(leaf_w - 0.12, leaf_h * 0.45, 0.06),
+				Vector3(0.16, 0.04, 0.05), Color(0.35, 0.3, 0.2), 0.0, 0.6, false)
+		_door_leaf_collider(hinge, i, leaf_w, leaf_h)
+		hinges.append(hinge)
+		open_yaw.append(open_deg)
+		shut_yaw.append(shut_deg)
+	swing.call("setup", hinges, open_yaw, shut_yaw)
+
+
+## The one collider a leaf gets, sitting on the pivot body itself. Sized off
+## the model -- 0.86 x 2.42 m of panel, 55 mm thick, hanging 50 mm clear of
+## the threshold -- and squared up to 60 mm so the lever handles, which stand
+## 45 mm proud of each face, get no geometry of their own to snag on.
+func _door_leaf_collider(hinge: RigidBody3D, index: int, leaf_w: float,
+		leaf_h: float) -> void:
+	var shape := CollisionShape3D.new()
+	shape.name = "Door Leaf Collider %d" % index
+	var box := BoxShape3D.new()
+	box.size = Vector3(leaf_w, leaf_h, 0.06)
+	shape.shape = box
+	shape.position = Vector3(leaf_w * 0.5, leaf_h * 0.5 + 0.05, 0)
+	hinge.add_child(shape)
 
 
 # Every CCTV mount joins this group. Counting cameras must never depend on the
@@ -639,8 +737,16 @@ func _add_cameras(parent: Node) -> void:
 ## import gave it, with nothing holding it up at y ~ 2.9. It won every time
 ## because the procedural branch that used to live here was unreachable:
 ## MuseumModels.place() returns null only when ResourceLoader.exists() fails,
-## and for a file that is present that never happens. Six primitives per post
-## replace it -- lighter, supported, and aimed where the feed is aimed.
+## and for a file that is present that never happens. What stands here now is
+## two Blender-authored low-poly models -- lp_camera_plate and
+## lp_security_camera, built by tools/lowpoly/blender_cameras.py in the same
+## 26-colour palette and single draw call as the rest of the lp_ family --
+## plus the three parts that cannot be baked into a shared mesh: the drop
+## stem, whose length is derived per post from the soffit; the ball joint the
+## head pivots about; and the record LED, which is the one emissive piece on
+## the post and the low-poly pipeline bakes no emission at all. Both models
+## keep their procedural fallback, so a missing .glb degrades to the old box
+## instead of leaving a post with no housing.
 func _camera(parent: Node, camera_name: String, camera_position: Vector3,
 		target: Vector3) -> void:
 	# Same derivation SecurityCameraTablet's `cam.look_at(target)` performs, so
@@ -662,8 +768,15 @@ func _camera(parent: Node, camera_name: String, camera_position: Vector3,
 
 	var bracket_color := Color(0.05, 0.05, 0.052)
 	var drop: float = maxf(0.2, CEILING_SOFFIT_Y - camera_position.y)
-	_box(mount, "%s Ceiling Plate" % camera_name, Vector3(0, drop - 0.02, 0),
-		Vector3(0.26, 0.04, 0.26), bracket_color, 0.0, 0.35, false)
+	# The plate's origin is its ceiling face, so it hangs from the soffit
+	# exactly where the old slab's top sat, and its collar swallows the stem.
+	var plate := MuseumModels.place(mount, "lp_camera_plate",
+		Vector3(0, drop, 0), 1.0, 0.0)
+	if plate == null:
+		_box(mount, "%s Ceiling Plate" % camera_name, Vector3(0, drop - 0.02, 0),
+			Vector3(0.26, 0.04, 0.26), bracket_color, 0.0, 0.35, false)
+	else:
+		plate.name = "%s Ceiling Plate" % camera_name
 	# Runs from inside the housing up into the plate, so no gap opens at either
 	# end whatever pitch the head is set to.
 	_cylinder(mount, "%s Drop Stem" % camera_name,
@@ -681,13 +794,25 @@ func _camera(parent: Node, camera_name: String, camera_position: Vector3,
 	# Nothing on a CCTV post carries collision: MapModels lists "security_camera"
 	# in NON_BLOCKING for exactly this reason, and a static body up at y~3 would
 	# only give Recast an overhead obstacle to filter back out again.
-	_box(head, "%s Body" % camera_name, Vector3.ZERO,
-		Vector3(0.5, 0.28, 0.34), Color(0.03, 0.035, 0.035), 0.0, 0.0, false)
-	var lens := _cylinder(head, "%s Lens" % camera_name, Vector3(0, 0, -0.24),
-		0.09, 0.14, Color(0.01, 0.08, 0.07), false, 0.0, false)
-	lens.rotation_degrees = Vector3(90, 0, 0)
-	_box(head, "%s LED" % camera_name, Vector3(0.17, 0.08, -0.18),
-		Vector3(0.04, 0.04, 0.04), Color(0.9, 0.1, 0.08), 1.8, 0.0, false)
+	# Housing, sun shade, recessed lens barrel and the bracket cheeks that
+	# clamp the ball joint, all in one 196-triangle mesh. Its origin is the
+	# housing centre, which is where the old 0.50 x 0.28 x 0.34 box sat, so it
+	# drops straight in at the head's own origin and pitches with it.
+	var housing := MuseumModels.place(head, "lp_security_camera",
+		Vector3.ZERO, 1.0, 0.0)
+	if housing == null:
+		_box(head, "%s Body" % camera_name, Vector3.ZERO,
+			Vector3(0.5, 0.28, 0.34), Color(0.03, 0.035, 0.035), 0.0, 0.0, false)
+		var lens := _cylinder(head, "%s Lens" % camera_name, Vector3(0, 0, -0.24),
+			0.09, 0.14, Color(0.01, 0.08, 0.07), false, 0.0, false)
+		lens.rotation_degrees = Vector3(90, 0, 0)
+	else:
+		housing.name = "%s Body" % camera_name
+	# Record LED. Sits half-buried in the housing's front face, under the sun
+	# shade's overhang so it reads as a glow in a recess rather than a floating
+	# red cube; the model is 0.26 wide, not 0.50, hence the tighter offsets.
+	_box(head, "%s LED" % camera_name, Vector3(0.088, 0.062, -0.203),
+		Vector3(0.028, 0.028, 0.028), Color(0.9, 0.1, 0.08), 1.8, 0.0, false)
 
 	# Mount tag: legible to a player standing under the post, culled by the feeds.
 	_add_label(parent, camera_name, camera_position + Vector3(0, 0.3, 0),
@@ -1526,44 +1651,21 @@ func _trigger_blackout() -> void:
 
 func _add_atrium_landmarks(parent: Node) -> void:
 	# Новая ротонда: свободные оси к четырём крыльям, без мебели в проходах.
-	_cylinder(parent,"Кольцо ротонды",Vector3(0,.08,0),5.8,.16,Color(.16,.17,.18))
-	_cylinder(parent,"Пол ротонды",Vector3(0,.11,0),4.9,.10,Color(.72,.72,.69))
+	_cylinder(parent,"Кольцо ротонды",Vector3(0,.075,0),5.8,.15,Color(.16,.17,.18))
+	_cylinder(parent,"Пол ротонды",Vector3(0,.11,0),4.9,.10,Color(.72,.72,.69),false,0.0,true,"mosaic")
 	for p:Vector3 in [Vector3(-11.5,0,-11.5),Vector3(11.5,0,-11.5),Vector3(-11.5,0,11.5),Vector3(11.5,0,11.5)]:
 		_cylinder(parent,"Колонна ротонды %s" % [p],p+Vector3(0,WALL_HEIGHT*.5,0),.42,WALL_HEIGHT,Color(.16,.16,.155))
-	# 45, 135, 225, 315 rather than the cardinals. On the axes these four benches
-	# sat squarely on the circulation line between every opposing pair of
-	# doorways -- Entrance to Time Wing and Office to Gravity Wing both ran
-	# straight through one. The room is 30 m wide so they never blocked the bake,
-	# but they were furniture parked in the middle of the main routes, and the
-	# diagonals put them between the axes where a bench belongs.
-	# Each of these was one 2.5 x 0.55 x 0.68 slab with rotation_degrees.y set to
-	# -angle. That yaw puts the LONG axis on the radius, so all four pointed at
-	# the core end-on: from anywhere in the room they read as blocks of stone
-	# aimed at nothing, and they seated two. Yaw -(angle + 90) turns the long
-	# axis onto the tangent, and the back goes on the outward side, so the seat
-	# faces the core -- which is the one thing in this room worth sitting to look
-	# at. Same 3.4 x 0.72 four-seater as the forecourt benches, built from the
-	# same parts, with the angle in every node name: two nodes sharing a name
-	# under one parent get the second one renamed to @MeshInstance3D@NNN by
-	# Godot, and this loop used to produce four "Скамья ротонды" in a row.
-	for angle:float in [45.0,135.0,225.0,315.0]:
-		var r:=deg_to_rad(angle)
-		var radial:=Vector3(cos(r),0,sin(r))
-		var tangent:=Vector3(-sin(r),0,cos(r))
-		var base:=radial*8.4
-		var yaw:=-(angle+90.0)
-		var tag:="%d" % int(angle)
-		var seat:=_box(parent,"Скамья ротонды %s" % tag,base+Vector3(0,.45,0),Vector3(3.4,.14,.72),Color(.19,.16,.13))
-		seat.rotation_degrees.y=yaw
-		var back:=_box(parent,"Спинка скамьи ротонды %s" % tag,base+radial*.30+Vector3(0,.84,0),Vector3(3.4,.58,.09),Color(.19,.16,.13))
-		back.rotation_degrees.y=yaw
-		for side:float in [-1.0,1.0]:
-			var end_tag:String = "%s%s" % [tag, "A" if side<0.0 else "B"]
-			var e:=base+tangent*(side*1.55)
-			var leg:=_box(parent,"Ножка скамьи ротонды %s" % end_tag,e+Vector3(0,.19,0),Vector3(.12,.38,.66),Color(.16,.14,.12))
-			leg.rotation_degrees.y=yaw
-			var post:=_box(parent,"Стойка скамьи ротонды %s" % end_tag,e+radial*.30+Vector3(0,.82,0),Vector3(.10,.62,.09),Color(.16,.14,.12))
-			post.rotation_degrees.y=yaw
+	# The four rotunda benches are NOT built here any more. They were
+	# placements of лавочки.glb -- a back-to-back pair, so each one had its far
+	# half found by node name ("BenchB_m_benchB_0") and hidden -- with a
+	# procedural fallback under them that built a DIFFERENT, simpler bench if
+	# the model failed to load. Two designs, one of them half an import, in the
+	# one room whose props all come out of AtriumProps.
+	#
+	# AtriumProps.build_rotunda_bench() now builds all four from the atrium
+	# palette, on the same diagonals at r 8.4 with the same yaw -(angle + 90),
+	# so the back faces out and the seat faces the core; see the loop at the
+	# end of AtriumProps.build_atrium(). The model file is deleted.
 	_add_label(parent,tr("EXHIBIT_CONTAINMENT_CORE"),Vector3(0,3.0,4.8),Color(.34,.72,.62))
 
 
@@ -2164,12 +2266,48 @@ func _add_model_archive(parent: Node) -> void:
 	# the top spanning z -2.26..-1.54. Both desktop props below stand on that
 	# surface instead of on the 1.09 m bar-height slab that used to be there.
 	#
-	# basic_pc_monitors at 0.75 measured 1.52 x 0.37 x 0.18 with its base ON its
-	# own origin, so at y 1.25 over a 1.09 m desk it floated by exactly the
-	# 0.16 m the audit reported. At 0.50 it is 1.01 x 0.25 x 0.12, which fits
-	# between the desk edges (x -26.2..-23.8) instead of overhanging them.
-	MuseumModels.place(parent, "basic_pc_monitors",
-		Vector3(-25.6, 0.74, -1.95), 0.5, 180.0)
+	# basic_pc_monitors is gone. It was a photo-textured slab of two screens,
+	# and at any scale it lost the argument the moment the low-poly set arrived:
+	# two competing monitors stood on one desk -- this import AND the procedural
+	# CRT OfficeProps used to build -- which is exactly what the desk-close
+	# audit shot showed. The desktop is now the authored low-poly GLB set from
+	# models/lowpoly, sharing the 128 px palette atlas with the lockers and the
+	# key cabinet.
+	#
+	# Each model is authored origin-on-its-standing-surface and facing -Z, so on
+	# this desk -- operator seated at +Z -- they all take yaw 180. The desk
+	# surface is world y 0.74; the tower stands on the floor. OfficeProps'
+	# workstation root is world (-25, 0, -1.90), which is what the tower's
+	# 0.86 m x-offset and the cable in build_workstation_computer refer to.
+	var lp_monitor := MuseumModels.place(parent, "lp_desk_monitor",
+		Vector3(-25.00, 0.74, -2.06), 1.0, 180.0)
+	MuseumModels.place(parent, "lp_keyboard",
+		Vector3(-25.04, 0.74, -1.70), 1.0, 180.0)
+	var lp_tower := MuseumModels.place(parent, "lp_pc_tower",
+		Vector3(-24.14, 0.00, -1.80), 1.0, 180.0)
+	# The GLB screen is dead glass -- the glow has to come from somewhere, and a
+	# 4 mm emissive plate is cheaper than a Viewport nobody reads. The head is
+	# pitched 7 degrees back around model (0, 0.198, 0), which lands the inset
+	# face at model (0, 0.3705, -0.0100) with normal (0, +0.122, -0.993); yaw
+	# 180 turns that into world (-25.00, 1.1105, -2.0500). The plate carries the
+	# "workstation_screen" group the procedural monitor used to own.
+	if lp_monitor != null:
+		var lp_screen := _box(parent, "Workstation Screen",
+			Vector3(-25.00, 1.1105, -2.0500), Vector3(0.40, 0.23, 0.004),
+			Color(0.070, 0.105, 0.090), 0.85, 0.0, false)
+		lp_screen.rotation_degrees = Vector3(-7.0, 0.0, 0.0)
+		lp_screen.add_to_group("workstation_screen")
+		# Power diode on the bezel tag, 3 mm proud of the same tilted face.
+		var lp_led := _box(parent, "Workstation Monitor Led",
+			Vector3(-25.190, 0.9655, -2.0246), Vector3(0.014, 0.008, 0.004),
+			Color(0.506, 0.659, 0.541), 1.4, 0.0, false)
+		lp_led.rotation_degrees = Vector3(-7.0, 0.0, 0.0)
+	if lp_tower != null:
+		# Amber, not red: red is reserved for alarms, and a running PC is not an
+		# alarm. Sits beside the tower's authored power button.
+		_box(parent, "Workstation Tower Led",
+			Vector3(-24.092, 0.296, -1.5775), Vector3(0.016, 0.010, 0.004),
+			Color(0.835, 0.604, 0.259), 1.4, 0.0, false)
 	# tactical_flashlight is CENTRED on its origin (measured y -0.03..+0.03 at
 	# scale 0.25), so it rests on the desk at 0.74 + 0.027. At the old 0.55 it
 	# was a 0.49 m torch; 0.25 makes it 0.22 m, which is a torch.
@@ -2203,6 +2341,68 @@ func _add_model_archive(parent: Node) -> void:
 	# Office is 20 x 14 at (-25, 0, 0), so its east face is -25 + 10 - 0.35 =
 	# -15.35 and not the -15.175 its wall slab is centred on.
 	MuseumModels.place(parent, "vents", Vector3(-15.10, 2.55, -5.5), 0.65, 0.0)
+
+	# --- Archive: the card index finally gets its filing wall ----------------
+	# ADDITIVE ONLY. Nothing here replaces an existing prop: the rolling stacks,
+	# the card catalogue, the reading desk and the box files are all still
+	# ArchiveProps'. These are the pack-1 lockers earning their place instead of
+	# sitting unused in models/lowpoly.
+	#
+	# ArchiveProps.build_archive lays the room out in its OWN local frame around
+	# (-25, 0, -12), so world = local + that origin. Measured occupancy, in
+	# world metres, against a north face of z -16.65 (the room is 20 x 10, so
+	# -12 - 5 + WALL_THICKNESS by the rule spelled out above):
+	#   rolling stacks A   x -33.47..-27.13, z -16.25..-13.25
+	#   card catalogue     x -23.65 centre,  z -15.95
+	#   rolling stacks B   x -21.20..-17.00, z -16.25..-13.25
+	#   west box files     x -33.70 centre,  z  -9.60
+	# That leaves a genuine 3.5 m of bare north wall between stacks A and the
+	# catalogue, and a clear corner east of stacks B.
+	#
+	# lp_filing_cabinet is 0.48 x 1.32 x 0.69 (w x h x d), authored
+	# origin-on-floor facing -Z like the desk set, so a unit standing against
+	# the NORTH wall faces the room at yaw 180 and its centre sits half a depth
+	# off the face: -16.65 + 0.345 = -16.305. Three of them at a 0.52 pitch span
+	# x -26.84..-25.32, which stops 0.29 m short of stacks A and stays 1.67 m
+	# clear of the catalogue, so the aisle the stacks wind open is untouched.
+	for cabinet_x in [-26.60, -26.08, -25.56]:
+		MuseumModels.place(parent, "lp_filing_cabinet",
+			Vector3(cabinet_x, 0.0, -16.31), 1.0, 180.0)
+	# East corner of the same wall. lp_shelf_unit is 1.00 x 1.90 x 0.42, so at
+	# x -16.20 it spans -16.70..-15.70: 0.35 m clear of the east face (-15.35)
+	# and 0.30 m clear of stacks B (-17.00).
+	MuseumModels.place(parent, "lp_shelf_unit",
+		Vector3(-16.20, 0.0, -16.44), 1.0, 180.0)
+	# West wall, in the 3.65 m of blank plaster between the stacks (z -13.25)
+	# and the west box-file stack (z -9.60). lp_metal_locker is 0.96 x 2.00 x
+	# 0.60; against a north-south wall its WIDTH runs along z, so it spans
+	# z -12.48..-11.52 and its 0.60 depth sets the centre 0.30 off the face at
+	# x -34.65. Yaw -90 turns the door to +X, into the room.
+	MuseumModels.place(parent, "lp_metal_locker",
+		Vector3(-34.35, 0.0, -12.00), 1.0, -90.0)
+
+	# --- Equipment Storage: the north wall was bare plaster ------------------
+	# ADDITIVE ONLY, again. StorageProps owns this room and keeps everything on
+	# three walls: shelving bays east and west at z 12.1, and the hazard
+	# cabinet (x -34.0), hide locker (x -26.6) and tool board (x -20.5) all on
+	# the south face at z 7.35. The north face at z 16.65 carries nothing at
+	# all, which is why a storeroom read as half-finished.
+	#
+	# The N doorway is centred x -25 with a 1.8 m gap. The locker bank stops at
+	# x -29.52 and the shelves start at x -21.50, so both stay at least 1.85 m
+	# outside the opening -- far past the 0.75 m visual clearance the map suite
+	# checks, and clear of the bay signs at x -29.5 and -20.5 (those hang at
+	# z 11.0 and 8.6, six metres away).
+	for locker_x in [-32.00, -31.00, -30.00]:
+		MuseumModels.place(parent, "lp_metal_locker",
+			Vector3(locker_x, 0.0, 16.35), 1.0, 0.0)
+	for shelf_x in [-21.00, -19.90]:
+		MuseumModels.place(parent, "lp_shelf_unit",
+			Vector3(shelf_x, 0.0, 16.44), 1.0, 0.0)
+	# One cabinet on the south face east of the tool board, where the room's
+	# paperwork would actually live. 2.9 m clear of the east face.
+	MuseumModels.place(parent, "lp_filing_cabinet",
+		Vector3(-18.50, 0.0, 7.695), 1.0, 180.0)
 
 	# --- Entrance Zone ------------------------------------------------------
 	# fancy_marble_coffee_table is measured y -0.91..+0.06 at 0.75: its origin is
@@ -2248,13 +2448,16 @@ func _add_model_archive(parent: Node) -> void:
 		Vector3(-10.2, 1.334, 18.0), 0.35, 90.0, 90.0)
 
 	# --- Central Atrium / Time Wing B ---------------------------------------
-	# Measured 0.51 x 0.65 x 2.32 standing on its own origin: a real 2.3 m bench.
-	# Correct as authored, left alone.
-	MuseumModels.place(parent, "лавочки", Vector3(8.0, 0.0, -8.0), 0.75, 90.0)
-	# The arch that frames the Atrium -> Time Wing B doorway. Deliberately
-	# untouched: MapModels.NON_BLOCKING documents the exact collision trade this
-	# placement represents, and rescaling it would narrow the opening it frames.
-	MuseumModels.place(parent, "арка дверь", Vector3(0.0, 0.0, -15.5), 0.85, 0.0)
+	# The лавочки.glb bench that stood at (8, 0, -8) is gone with the model.
+	# Nothing replaces it on this spot: the atrium seating is now four
+	# AtriumProps.build_rotunda_bench() four-seaters on the rotunda diagonals,
+	# and the 315 deg one sits at (5.94, -5.94) -- 2.9 m from here. A second
+	# bench in that quarter would be furniture answering furniture.
+	# The "арка дверь" arch that framed the Atrium -> Time Wing B doorway is gone on
+	# request. It was the last off-palette import left standing in the atrium:
+	# a photo-textured stone portal glued onto a plaster wall, at a scale that
+	# never matched the 1.8 m DOOR_GAP it straddled. The reveal in the wall
+	# frames the opening on its own; nothing replaces the model.
 	# The clock was 12 cm across, floating at chest height in open floor, and --
 	# not being in NON_BLOCKING -- carried a convex collider the player walked
 	# into. 2.4 makes it a 0.48 x 0.79 station dial; yaw 90 turns its thin axis
@@ -2614,8 +2817,12 @@ func _add_planetarium_details(parent: Node) -> void:
 	# the benches at radius 5.2 ran into the seating bank at z -48.1..-42.3, and
 	# the console at (6.5, -34.6) was inside the booth's 3.73 x 5.43 m footprint.
 	PlanetariumProps.build_all(parent as Node3D, c)
-	_add_label(parent, tr("EXHIBIT_PLANETARIUM_SIGN"), c + Vector3(0, 2.9, 6.0),
-		Color(0.55, 0.62, 0.95))
+	# Табличка экспоната — на западной стене, на высоте глаз. Сначала она
+	# висела в воздухе посреди зала (0, 2.9, 6.0), а перенос её к проёму
+	# наложил её на вывеску комнаты, которую _add_room уже ставит над дверью:
+	# два текста читались друг сквозь друга.
+	_add_label(parent, tr("EXHIBIT_PLANETARIUM_SIGN"),
+		c + Vector3(-9.78, 1.95, 1.60), Color(0.55, 0.62, 0.95))
 
 
 func _add_lab_details(parent: Node) -> void:
@@ -2829,8 +3036,12 @@ func _add_outdoor(parent: Node) -> void:
 	# symmetrical seating replace the previous scattered dirt-lot composition.
 	_box(parent, "Forecourt Ground", Vector3(0, -0.10, 45), Vector3(64, 0.2, 20),
 		Color(0.34, 0.37, 0.31))
-	_box(parent, "Museum Walkway", Vector3(0, -0.015, 45), Vector3(6.4, 0.10, 20),
-		Color(0.78, 0.77, 0.73))
+	# Дорожка на 2 см короче газона с дальнего края: оба кончались ровно на
+	# z 55, и торцы 6.4 x 0.065 м лежали в одной плоскости -- 0.416 м²
+	# мерцания. У ворот дорожку всё равно перекрывает мощение форкорта
+	# (COURT_SLAB_TOP 0.055 против 0.035 у самой дорожки).
+	_box(parent, "Museum Walkway", Vector3(0, -0.015, 44.99),
+		Vector3(6.4, 0.10, 19.98), Color(0.78, 0.77, 0.73))
 	_box(parent, "Entrance Plaza", Vector3(0, -0.005, 38.2), Vector3(17, 0.10, 5.6),
 		Color(0.70, 0.70, 0.68))
 	# These plates used to be a hump, not a stair (tops 0.100/0.160/0.220 over a
@@ -3764,7 +3975,7 @@ func _prologue_shots() -> Array:
 			"look": Vector3(0, 1.4, 0), "text": "STORY_PROLOGUE_05",
 			"time": 8.0, "card": false},
 		# Lateral truck past the core at eye height, outside the 2.6 m stanchion
-		# ring and above the 0.16 m rotunda kerb.
+		# ring and above the 0.15 m rotunda kerb.
 		{"from": Vector3(4.6, 1.9, 4.6), "to": Vector3(-4.6, 1.9, 4.6),
 			"look": Vector3(0, 1.35, 0), "text": "STORY_PROLOGUE_06",
 			"time": 8.0, "card": false},
@@ -4045,16 +4256,18 @@ func build_map() -> void:
 
 	# Door frames dress the seam on the shared wall between two rooms with
 	# jambs, threshold and lintel. axis "x" = east-west wall (door faces N/S),
-	# axis "z" = north-south wall (door faces E/W).
+	# axis "z" = north-south wall (door faces E/W). `true` hangs working leaves
+	# in the opening; the atrium's four ceremonial arches stay empty, because a
+	# museum's galleries open into one another without doors in the way.
 	_add_door_frame(map_root, Vector3(0, 0, 15), "x")     # Atrium <-> Entrance
 	_add_door_frame(map_root, Vector3(-15, 0, 0), "z")    # Atrium <-> Watcher Office
 	_add_door_frame(map_root, Vector3(15, 0, 0), "z")     # Atrium <-> Gravity Wing
 	_add_door_frame(map_root, Vector3(0, 0, -15), "x")    # Atrium <-> Time Wing
 	_add_door_frame(map_root, Vector3(-25, 0, 7), "x", true)    # Office <-> Storage
 	_add_door_frame(map_root, Vector3(-25, 0, -7), "x", true)   # Office <-> Archive
-	_add_door_frame(map_root, Vector3(0, 0, -33), "x")          # Time Wing <-> Planetarium
+	_add_door_frame(map_root, Vector3(0, 0, -33), "x", true)    # Time Wing <-> Planetarium
 	_add_door_frame(map_root, Vector3(-25, 0, 17), "x", true)   # Storage <-> Restoration Lab
-	_add_door_frame(map_root, Vector3(0, 0, 35), "x")           # Entrance <-> Street
+	_add_door_frame(map_root, Vector3(0, 0, 35), "x", true, -1.0)  # Entrance <-> Street, opens inward
 	_add_door_frame(map_root, Vector3(13, 0, -24), "z")         # Time Wing <-> Space Wing C
 	_add_door_frame(map_root, Vector3(41, 0, 0), "z")           # Gravity Wing <-> Mass Wing D
 

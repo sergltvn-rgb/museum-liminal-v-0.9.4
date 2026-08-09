@@ -1,0 +1,29 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_atrium",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "atr_a1_from_door", "pos": [0.0, 1.70, 13.2], "look_at": [0.0, 1.55, 0.0], "fov": 62},
+    {"name": "atr_a2_core_front", "pos": [0.0, 1.65, 6.6], "look_at": [0.0, 1.60, 0.0], "fov": 55},
+    {"name": "atr_a3_core_close", "pos": [0.0, 1.55, 3.9], "look_at": [0.0, 1.70, 0.15], "fov": 50},
+    {"name": "atr_a4_dead_quarter", "pos": [3.6, 1.70, -3.6], "look_at": [0.0, 1.55, 0.0], "fov": 52},
+    {"name": "atr_b1_gantry", "pos": [4.1, 1.60, 4.1], "look_at": [1.0, 1.25, 1.0], "fov": 48},
+    {"name": "atr_b2_barrier_fallen", "pos": [5.6, 1.15, 5.6], "look_at": [2.2, 0.20, 2.2], "fov": 50},
+    {"name": "atr_c1_reception", "pos": [-3.02, 1.62, 13.71], "look_at": [-4.4, 1.10, 10.6], "fov": 55},
+    {"name": "atr_c2_reception_top", "pos": [-3.60, 2.30, 12.20], "look_at": [-4.4, 1.05, 10.6], "fov": 50},
+    {"name": "atr_c3_directory", "pos": [2.35, 1.62, 12.00], "look_at": [3.4, 1.70, 9.4], "fov": 46},
+    {"name": "atr_c4_cable_ceiling", "pos": [2.0, 1.70, 4.5], "look_at": [8.5, 3.25, 9.0], "fov": 60},
+    {"name": "atr_c5_reception_clerk", "pos": [-5.17, 1.70, 8.86], "look_at": [-4.25, 1.05, 10.20], "fov": 54},
+
+    {"name": "atr_d1_bench_front", "pos": [2.26, 1.60, 2.26], "look_at": [5.94, 0.55, 5.94], "fov": 50},
+    {"name": "atr_d2_bench_side", "pos": [8.55, 1.35, 3.20], "look_at": [5.94, 0.62, 5.94], "fov": 46},
+    {"name": "atr_d3_bench_seat", "pos": [5.10, 1.15, 4.60], "look_at": [6.20, 0.70, 6.20], "fov": 40},
+    {"name": "atr_d4_bench_quarter", "pos": [3.6, 1.70, -3.6], "look_at": [-5.94, 0.70, 5.94], "fov": 62},
+    {"name": "atr_d5_floor_medallion", "pos": [0.0, 2.70, -7.6], "look_at": [0.0, 0.10, -2.0], "fov": 60},
+    {"name": "atr_d6_floor_field", "pos": [-9.5, 2.40, -9.5], "look_at": [-3.2, 0.05, -3.2], "fov": 62},
+    {"name": "atr_d7_floor_border", "pos": [-10.6, 1.75, 10.6], "look_at": [-13.9, 0.02, 13.9], "fov": 55},
+    {"name": "atr_d8_floor_runner", "pos": [0.0, 1.70, 13.6], "look_at": [0.0, 0.05, 5.2], "fov": 58}
+  ]
+}

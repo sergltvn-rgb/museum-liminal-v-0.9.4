@@ -63,6 +63,12 @@ facade_captures/
 # Scratch scripts written by agents mid-session (tmp_cut.py, tmp_probe.py,
 # tmp_length.gd and friends). Real tooling goes in tools/ without the prefix.
 tools/tmp_*
+# Same class, two spellings that pattern kept missing: root-level scratch with a
+# leading underscore (_tmp_patch_doors.py and friends, nine of them by the time
+# anyone noticed), and tools/ scratch that puts the marker at the END of the
+# name (make_lab_focus_mosaics_tmp.py).
+/_tmp_*
+tools/*_tmp.py
 
 # Qoder IDE workspace metadata, same class as .claude/.
 .qoder/

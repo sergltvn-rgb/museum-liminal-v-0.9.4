@@ -114,6 +114,11 @@
 геометрию на `create_trimesh_collision()`.
 **Проверка:** пройти из Атриума в Крыло B.
 
+**Статус 2026-08-06:** закрыто иначе, чем предлагалось. Модель «арка дверь» убрана с карты
+по требованию владельца: вызов `place()` удалён из `FirstMuseumMap.gd`, слот вычеркнут из
+`MapModels.NON_BLOCKING`, ракурс `import_arch_door` удалён из `decor_shots.json`. Проём
+Атриум → Крыло времени B пуст, `Blocker regressions: 0 failure(s)`.
+
 ### 0.3. CI красный с первого коммита — релиз ни разу не собирался — **S**
 
 [test_map_verification.gd:117](game/test_map_verification.gd:117) считает узлы с

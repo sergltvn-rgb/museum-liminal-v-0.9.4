@@ -1,0 +1,10 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focus_lp_pack1",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "arch_shelf_corner", "pos": [-16.30, 1.55, -12.60], "look_at": [-16.25, 1.00, -16.30], "fov": 45}
+  ]
+}

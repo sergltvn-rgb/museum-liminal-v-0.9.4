@@ -1,51 +1,206 @@
 # Промпт для следующего чата
 
-Скопировать целиком в новый чат:
+Скопировать целиком в новый чат.
 
 ---
 
-Ты продолжаешь работу над Godot-проектом museum-liminal. Корень: `C:\Users\litvi\OneDrive\Документы\museum-liminal-v-0.9.4`, Godot 4.7 (`C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe`). Работай через MCP-сервер opencode (command_run, file_read_text, file_read_media, file_write, file_edit, tests_run, tests_run_single). Общий поиск не использовать.
+Ты продолжаешь работу над Godot-проектом **museum-liminal 0.9.4**.
 
-Первым делом прочитай: `DECOR_AUDIT_SUMMARY.md`, `AGENT_PLAN.md`, `decor_shots.json`, `game/test_decor_capture.gd`.
+- Корень: `C:\Users\litvi\OneDrive\Документы\museum-liminal-v-0.9.4`
+- Godot 4.7: `C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe`
+- Blender 5.2: `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` — **в PATH его нет**
+- Ветка `wip/audit-2026-07-26`. В `main` не коммитить; вообще никаких коммитов без явного разрешения пользователя.
+- Работать только через MCP-сервер opencode (`command_run`, `file_read_text`, `file_read_media`, `file_write`, `file_edit`, `file_search`, `tests_run`). Общий поиск не использовать.
+- Пользователь пишет по-русски — отвечать по-русски, отчитываться по этапам со скриншотами.
 
-## ГЛАВНОЕ ПРАВИЛО — ЖЁСТКОСТЬ ПРОВЕРКИ
+Сначала прочитай: `AGENT_PLAN.md` (раздел «Модели и декор — статус на 2026-08-06»),
+`MODELS_GUIDE.md`, `DECOR_AUDIT_SUMMARY.md`, `decor_shots.json`, `game/test_decor_capture.gd`.
 
-Предыдущая проверка была СЛИШКОМ МЯГКОЙ. Будь максимально придирчивым:
+## Правило номер один — все модели делаются в Blender в .glb
 
-- Любой объект не на своём месте = СРАЗУ переделка (source fix → recapture → визуальная проверка). Пример от пользователя: модель монитора стоит не там, где должна, — это переделка, а не заметка. Никаких «необычно, но валидно».
-- Дефекты, требующие правки: криво стоит, висит в воздухе, уходит в стену/пол/потолок, не тот размер/масштаб, развёрнут не той стороной, плавает над поверхностью, пересекается с соседями, z-fighting, дырки, backface/inverted normals, не читается назначение объекта.
-- Сверяй положение каждого пропа со смыслом сцены: монитор на столе экраном к рабочему месту, часы ровно на стене, вывеска по центру проёма, скамья ногами на полу, автомобиль на разметке, инструмент на подносе и т.д.
-- Структурный тест PASS НЕ считается доказательством. Доказательство — только реально открытое изображение. MCP file_read_media часто обрезает output: тогда декодируй полный JSON из `/data/tool-results/...json` в локальный файл и открой его.
-- Обзорный contact sheet — только первый фильтр. Решения по геометрии и положению принимай по native-кадрам (640×268) и tile mosaics без ресайза.
+Если пользователь говорит «сделай модель» — это Blender: скрипт в `tools/lowpoly/`,
+экспорт в `models/lowpoly/<имя>.glb`. Коробки из примитивов в GDScript моделью не
+считаются и остаются только как fallback.
 
-## ЗАДАЧИ (по приоритету)
+Идиом дома (`tools/lowpoly/blender_build.py`, свежий пример `blender_cameras.py`):
+1 юнит = 1 метр, начало координат на полу и по центру XZ (потолочные детали —
+задокументированное исключение), forward -Z, плоское затенение, один материал,
+один палитровый атлас 128x128 из `glb.SWATCHES` (27 сватчей, порядок менять нельзя —
+дописывать можно), metallic 0, roughness 0.92, без нормалок и эмиссии, фаски и inset
+вместо шейдерных трюков. Бюджет: мелочь < 60 трис, мебель < 400, крупный агрегат < 1200.
+Ни одна грань не должна лежать в одной плоскости с соседней — утапливать на 5–10 мм,
+иначе получится ровно то же мерцание, что и на полу атриума.
 
-1. Завершить прерванный native-detail аудит: реально открыть 8 листов `shots/decor_audit/after/final_detail_review/final_detail_review_1..8.jpg` и 3 lab mosaics (`lab_exhibit_sheet_tiles.jpg`, `lab_covered_west_tiles.jpg`, `lab_covered_east_tiles.jpg`). По lab проверить: continuity shell, normals/backface, дырки, z-fighting, волнистый подол, складки, отсутствие отдельной «головы»/шара, bottle/mannequin silhouette, коробочных панелей.
-2. Пройти заново ВСЕ 132 ракурса из `decor_shots.json` строго на ПРАВИЛЬНОСТЬ ПОЛОЖЕНИЯ объектов (не только геометрию). Особое внимание: office (мониторы и вся техника!), imports, service_lights, exterior, lab. Всё, что стоит не на месте, — переделка.
-3. Каждый подтверждённый дефект: правка в `game/props/*.gd` или `game/FirstMuseumMap.gd` → focused capture (override `DECOR_CONFIG`) → реальное открытие кадра → только потом отметка «исправлено».
-4. Создать `shots/decor_audit/audit.tsv`: ровно 132 строки, колонки `name`, `status`, `issue`, `game_or_capture`, `planned_fix`, `after_status`. Включая валидные и camera-only случаи.
-5. При необходимости расширить `game/test_decor_layout.gd`: banners NE/EN/ES, symmetric Exit/Emergency checks, doorway/jamb clearance.
-6. Прогнать: `run_tests.cmd` (в нём новые `test_decor_quality.gd` и `test_decor_layout.gd`), `check_materials.gd`, `check_localization.py`, `git diff --check`.
-7. Обновить `AGENT_PLAN.md`: итоги аудита, актуальный mesh count, актуальные значения ночной яркости, статус decor-тестов и экспорта.
-8. Сделать НОВЫЙ Windows export и smoke-test именно нового `build/windows/MuseumLiminal.exe` (текущий устарел).
-9. Не коммитить без явного разрешения пользователя.
+Запуск:
+`"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b -P tools\lowpoly\<script>.py`
 
-## Как снимать
+**Сразу после экспорта обязателен** `--import`. Без него `ResourceLoader.exists()`
+вернёт false, `MapModels.place()` отдаст `null`, нарисуется старый примитивный
+fallback — и тест при этом будет зелёным.
+
+**Как читать счётчик `MeshInstance3D` — здесь легко соврать самому себе.** Счётчик
+сдвигается только когда модель ВПЕРВЫЕ заменяет примитивы: уходят N боксов, приходит
+один узел. Если модель уже стояла и вы поменяли только геометрию внутри `.glb` или
+углы размещения, счётчик обязан остаться прежним — и это успех, а не «ничего не
+применилось». Признак сорванного импорта прямо противоположный: счётчик РЕЗКО ВЫРОС,
+то есть `place()` вернул `null` и развернулся примитивный fallback (у ядра это
+восемьдесят с лишним боксов). Правило: при первой замене ждём падения, при правке
+уже стоящей модели — неизменного значения, и в обоих случаях скачок вверх
+означает, что `.glb` не резолвится.
+
+## Жёсткость приёмки
+
+- Зелёный тест — НЕ приёмка. Приёмка — реально открытый кадр плюс подтверждение пользователя в игре.
+- Любой объект не на своём месте = сразу переделка: правка исходника → точечная пересъёмка → реально открыть кадр → только потом «исправлено».
+- Дефекты: висит в воздухе, уходит в стену/пол/потолок, не тот масштаб, развёрнут не той стороной, пересекается с соседом, z-fighting, дырки, вывернутые нормали, не читается назначение объекта.
+- Судить по нативным кадрам 640×268 (`view/*.jpg`) и tile-мозаикам, а не по обзорным контактным листам.
+
+## Что сделано в прошлом чате
+
+1. **Лавочки.** `лавочки.glb` удалён (парная модель, каждый вызов прятал вторую половину); четыре скамьи строит `AtriumProps.build_rotunda_bench()`.
+2. **Камеры.** `tools/lowpoly/blender_cameras.py` → `lp_security_camera.glb` (196 трис) и `lp_camera_plate.glb` (102 триса), встроены в `FirstMuseumMap._camera()`; мешей 10126 → 10115.
+3. **Пол атриума.** Удалено «конфетти» медальона (24 клина, обод, 32 плитки, 8 брусчаток), вставки сняты с фотопаков MaterialLib и переведены на плоские тона, введён `INLAY_DEPTH = 0.12`.
+4. **Ядро.** Добавлена сервисная обвязка примитивами — **пользователь результат не принял**.
+
+Гейты: материалы 59 карт / 14 наборов / 0 ошибок; `test_map_verification` — `ALL CHECKS PASSED`, 11 камер.
+
+## Что сделано в этом чате — ядро сдерживания собрано моделями
+
+Пять моделей строит `tools/lowpoly/blender_core.py`: `lp_core_base` (316 трис),
+`lp_core_column` (844), `lp_core_gantry` (218), `lp_core_plant` (282) плюс
+`lp_blast_shutter`. Размещает `AtriumProps.build_containment_core()`. Примитивный
+fallback оставлен на месте и намеренно не тронут.
+
+При разборе уже стоявшей сборки найдено и исправлено:
+
+1. **Гантри был развёрнут поперёк.** Модель авторили настилом вдоль локального X, а
+   `Models.place(..., yaw = 90 - A)` выводит наружу локальный **+Z**. Мостик вставал
+   тангенциальным балконом на r 0.93…1.79: не доставал 190 мм до клетки рёбер, 260 мм
+   до края слаба, резал рельсы южного ставня на 105 мм и штору на 45 мм.
+   `build_core_gantry` переписан вдоль Z: пролёт r 0.64…2.08, врезка в клетку +0.100,
+   свес за слаб +0.030, габарит 0.950 x 1.995 x 1.455.
+2. **Углы скидов.** Скид субтендирует 51°, а не 41° — прежняя оценка считала ширину
+   0.90 и забыла глубину 0.52. На 285/345 скиды въезжали в сектор 305…325 и оставляли
+   лучу CAM 03 запас 2.2°. Стало **279 / 351**: это крайние доступные значения, дальше
+   скид упирается в гантри 225°, там 21 мм.
+3. **Копланарная пара внутри самой модели.** Стойки ограждения стояли низом ровно на
+   верх деки — ровно тот шов, из-за которого мерцает пол атриума. Утоплены на 10 мм.
+4. **Док врал про `NON_BLOCKING`.** Ни одна из четырёх моделей ядра туда не входит и
+   не должна: хулл базы — навмеш-остров, дека гантри по пояс блокирует намеренно, скид
+   1.6 м это препятствие, заклинивший ставень держит южный проём.
+
+Появился `tools/lowpoly/check_core_layout.py` — плановый контролёр на чистом Python,
+без Blender и без Godot, идёт меньше секунды. Считает вылет по радиусу, 190 попарных
+пересечений, перекрытие защищаемого сектора и решает границы углов скидов. Знает
+таблицу `DELIBERATE` — намеренные стыки (дека в клетку, штора в хедер и в рельсы) с
+потолком глубины, поэтому не кричит на корректные швы; без неё он давал девять ложных
+срабатываний и его бы просто выключили. Печатает `LAYOUT_OK` либо список нарушений.
+Сценарии BEFORE/AFTER внутри файла работают как регрессия на найденные дефекты.
+
+Прогоны: `LAYOUT_OK`; Blender `BUILD_OK 4 models`; `test_map_verification` —
+`ALL CHECKS PASSED`, `MeshInstance3D: 9986` (не изменился, и так и должно быть —
+см. правило выше); `test_decor_layout` и `test_decor_quality` — `RESULT: PASS`.
+
+**Визуальной приёмки нет.** Кадры в `shots/decor_audit/core_model/tiles` весят 8–12 КБ
+и слишком тёмные, чтобы по ним судить; нужна пересъёмка с поднятой экспозицией в
+`decor_core_cams.json` и **без** `--headless`. Хоботы, маяк и табличка всё ещё
+примитивы.
+
+## Задачи по приоритету
+
+1. **Мерцание пола осталось** — видно при вращении камеры в поле. Искать инструментом, а не глазами: обойти все `MeshInstance3D` атриума и напечатать пары с зазором по Y меньше ~2 мм при пересекающихся XZ. Подозреваемые: плита r 4.9 (y 0.06–0.16) против бетонного пола, осевые полосы y 0.015/0.016, кайма, керб, разметка `build_floor_signage` (y 0.012 и 0.022).
+2. **Мерцание в проёмах всех дверей** — то же самое, наличник в плоскости стены. Пройти все проёмы карты.
+3. **Центр сдерживания** — основное сделано моделями (см. раздел выше). Осталось:
+   хоботы, маяк и табличка всё ещё примитивы, их надо добрать в `blender_core.py`;
+   визуальная приёмка не пройдена.
+4. **Убрать сине-жёлтые висящие плакаты в атриуме** (Wing Banners, `FirstMuseumMap.gd` ~2710–2719).
+5. **Единые модели ламп** — несколько потолочных и несколько нижних, один комплект на весь музей.
+6. **Единая модель сирены.**
+7. **Единые модели шкафов персонала.**
+8. **Офис:** нормальный компьютерный стол и стена за ним.
+9. **Зона входа:** улучшить моделями и перестановкой всех объектов.
+10. **Планетарий:** обставить моделями.
+11. **Оптимизация.**
+
+Потом хвост прежнего плана: 132 ракурса `decor_shots.json`, `shots/decor_audit/audit.tsv`,
+ассерты в `game/test_decor_layout.gd`, `run_tests.cmd`, `check_localization.py`,
+`git diff --check`, `CREDITS.md` (GLB 21 → 23, размещённых 14 → 16), Windows export и smoke-тест.
+
+## Команды
 
 ```
-"C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe" --path . --script res://game/test_decor_capture.gd
+:: гейт материалов
+"C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe" --path . --headless --script res://game/tools/check_materials.gd
+
+:: импорт после экспорта из Blender (ОБЯЗАТЕЛЕН)
+"C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe" --path . --headless --import
+
+:: проверка карты + счётчик мешей
+"C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe" --path . --headless --script res://game/test_map_verification.gd 2>&1 | findstr /C:"MeshInstance3D" /C:"Security cameras" /C:"ALL CHECKS" /C:"FAIL"
+
+:: съёмка кадров — БЕЗ --headless
+set "DECOR_CONFIG=res://decor_focus_cams.json" && "C:\Users\litvi\OneDrive\Desktop\godot\Godot_v4.7-stable_win64_console.exe" --path . --script res://game/test_decor_capture.gd
+
+:: Blender
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b -P tools\lowpoly\blender_cameras.py
+
+:: Blender — ядро; --factory-startup, чтобы аддоны пользователя не лезли в экспорт
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --factory-startup --python tools\lowpoly\blender_core.py
+
+:: плановый контролёр ядра — ни Blender, ни Godot не нужны
+python tools\lowpoly\check_core_layout.py
 ```
-Без `--headless`. Config: `decor_shots.json` (132 canonical ракурсов, out `res://shots/decor_audit/after`, tiles=2, settle=40, frames=6). Формат кадра: `<dir>/<name>.png`, `view/<name>.jpg` (640×268), `tiles/<name>_rNcN.jpg`.
 
 ## Ключевые файлы
 
-- `game/props/ArchiveProps.gd` — `_fabric_shell`, `build_rolling_stacks`, `build_shrouded_exhibit`, `build_shrouded_lump`.
-- `game/FirstMuseumMap.gd:2710–2719` — Wing Banners (актуальные позиции ±1.7).
-- `game/test_decor_quality.gd`, `game/test_decor_layout.gd` — decor-тесты (в runner и CI уже добавлены).
-- `DECOR_AUDIT_SUMMARY.md` — полный статус предыдущего этапа и известные отложенные проблемы (leaks, карниз ~850 зубцов, Palette, TreeLib).
+- `scenes/FirstMuseumMap.tscn` **пустая** — вся карта строится в рантайме в `FirstMuseumMap.build_map()`.
+- `game/FirstMuseumMap.gd` (~4205 строк): `_add_cameras()` ~:590, `_camera()` ~:652, `AtriumProps.build_atrium()` ~:4098.
+- `game/props/AtriumProps.gd` (~1481 строка): пол, ядро, скамьи, разметка. Ключевое — `_floor_plate` с `INLAY_DEPTH`, `_flat_material`, `_floor_ring`, `_build_core_service`.
+- `game/MapModels.gd` (310 строк): `place(parent, name, pos, scale, yaw, pitch)` → узел или `null`; `NON_BLOCKING`; `_resolve_path` ищет `res://models/<name>.glb`, затем `res://models/lowpoly/<name>.glb`.
+- `tools/lowpoly/`: `blender_build.py` (идиом дома — `Part.box/taper/prism/panel/bevel/inset`), `blender_cameras.py`, `blender_core.py` (ядро), `glb.py`, `inspect_glb.py`, `build_props.py`, `check_core_layout.py` (плановый контролёр ядра).
+- `models/lowpoly/` — 17 моделей `lp_*`, у каждой `.glb`, `.glb.import`, `_palette_atlas.png`, `.png.import`.
+- `decor_shots.json` — 132 канонических ракурса; `decor_focus_cams.json` — 16 точечных по полу/ядру/камерам.
 
-## Временные файлы (кандидаты на удаление после завершения — спросить пользователя)
+## Инварианты, которые нельзя трогать
 
-`game/test_wall_probe.gd`, `run_decor_probes.cmd`, `run_decor_probes.ps1`, `run_decor_focus_round2.ps1`, `run_decor_focus_round3.ps1`, `run_decor_focus_round4.ps1`, `run_decor_final.ps1`, `decor_camera_probes.json`, `decor_focus_round2.json`, `decor_focus_round3.json`, `decor_focus_round4.json`, `tools/make_decor_probe_sheets.py`, `tools/make_focus_round2_sheets.py`, `tools/make_focus_round3_sheets.py`, `tools/make_focus_round3_detail_sheets.py`, `tools/make_focus_round4_detail_sheets.py`, `tools/make_remaining_after_detail_sheets.py`, `tools/make_final_contact_review.py`, `tools/make_final_decor_detail_review.py`.
+- Имена узлов `Anomalous Core` и `Containment Dome` — на них смотрит `GameManager.gd:540`.
+- Рёбра и люки ядра сидят на `TAU*i/8 + PI/8`, чтобы четыре кардинальных луча взгляда оставались открытыми.
+- **Сектор 305…325° держать пустым.** CAM 03 стоит в `(13.6, 3.0, -12.6)`, её луч на
+  ядро идёт по **317.2°**. Отсюда следует всё остальное: гантри только на 45/135/225,
+  четвёртого нет и не должно быть; скиды строго на **279 / 351** — ни 285/345, ни
+  исходные 292.5/337.5 не годятся, обе прежние пары сектор закрывали. Округлять эти
+  углы до красивых чисел нельзя, разводить шире тоже нельзя: на 279/351 до гантри 225°
+  остаётся 21 мм. Проверяется `python tools\lowpoly\check_core_layout.py`.
+  Оговорка: инвариант держит МОДЕЛЬНЫЙ путь. Примитивный фолбэк
+  `_build_core_plant` его нарушает: вентиль и три бухты кабеля стоят на 315° и
+  перекрывают 305.6…324.4 и 303.6…326.4 — весь сектор вместе с лучом. Сами риски
+  фолбэка (292.5/337.5) чисты — они тонкие, 3.2°. Поскольку всё это низкое
+  (y 0.29…0.38, вентиль до 1.22) и рисуется только когда `.glb` не загрузился, это
+  терпится, а не считается правильным. Контролёр фолбэк не моделирует.
+- Навигация: `agent_radius` 0.45 и `cell_size` 0.15 не менять, дверные проёмы (DOOR_GAP 1.8) не сужать.
+- `game/test_map_verification.gd:1305` падает, если число узлов в группе `security_camera` не равно размеру `SecurityCameraTablet.CAMS`.
+
+## Ловушки, на которых уже теряли время
+
+- Capture-тесты запускать **без** `--headless` (иначе пустые кадры); verification и материалы — можно с `--headless`.
+- `command_run` — это cmd, не PowerShell. Переменная: `set "X=v" && cmd2`. Длинные цепочки ловят `MCP error -32001: Request timed out` — запускать раздельно.
+- **Кириллицу не передавать в аргументах `command_run`** — только через файлы (`file_write` UTF-8) или `\uXXXX`. Для кириллицы в stdout скрипта: `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`.
+- `file_read_media` принимает только `{path}` и файлы примерно до 30 КБ. PNG захвата весят 1.3–3.5 МБ — открывать `view/<name>.jpg` (9–15 КБ) и `tiles/<name>_rNcN.jpg`.
+- `file_search` требует `path`: `{path: ".", pattern: "**/check_materials*"}`.
+- **В проекте ДВЕ несовместимые конвенции радиального размещения — на этом уже
+  потеряли один развёрнутый поперёк гантри.** `Models.place(..., yaw = 90 - A)`
+  выводит наружу локальный **+Z**, по касательной идёт +X. А
+  `AtriumProps._radial_box(..., A)` (`:1309`, yaw `-angle`) выводит наружу локальный
+  **+X**, по касательной +Z, и его `size` читается как (радиальный, y, тангенциальный).
+  То есть модель и её примитивный fallback описывают одну деталь ПЕРЕСТАВЛЕННЫМИ
+  размерами, и это не опечатка. Прежде чем авторить модель, посмотрите, каким из двух
+  способов её ставят.
+- `findstr` принимает несколько `/C:"…"` в одном вызове, но **никогда пустой литерал** — `/C:""` даёт `Argument missing after /C`.
+- Исходники в проекте — **LF**. `\r\n` в выводе `command_run` — это консоль, а не файл. В патч-скриптах: `nl = "\r\n" if "\r\n" in src else "\n"`.
+- Правки — питоновским патч-скриптом с `assert text.count(old) == 1`, и **обязательно прочитать diff** перед тем, как рассказывать пользователю, что сделано.
+- `file_write` не создаёт каталоги.
+- `class_name` не регистрируется в голом `--script`-прогоне — только `preload`.
+- Успех теста печатается не словом `PASSED`: `test_project_integration` пишет `0 failure(s)`, `test_shell_intrusion` — `[OK] ...`. Смотреть хвост вывода, а не один узкий фильтр.
+- `--import` ругается на dll terrabrush — это норма, аддон в `project.godot` не включён.
 
 ---

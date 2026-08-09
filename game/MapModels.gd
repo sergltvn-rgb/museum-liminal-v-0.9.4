@@ -17,31 +17,58 @@ const MODEL_PATHS := {
 	"security_camera": "res://models/camera.fbx",
 }
 # Dressing that must never collide: wall-mounted CCTV, ceiling vents, the loose
-# flashlight, the huge tiling-texture plane, and the "арка дверь" arch that frames
-# the Atrium -> Time Wing B doorway.
+# flashlight and the huge tiling-texture plane.
 #
-# The arch entry is a deliberate trade, not a free win. Gained: the doorway keeps
-# the whole 1.8 m DOOR_GAP that _add_door_frame's wall segments, jambs and header
-# define, so the bake still carries 0.9 m of navmesh through it and the Curator can
-# follow the player into Time Wing B. Given up: the arch's own posts overhang that
-# opening and nothing stops the player or the Curator walking through stone.
-# Measured on the placed instance (scale 0.85 at z = -15.5), the post inner faces
-# stand at x = +-0.699 across the standing band and flare to +-0.649 at the base
-# plinth, against a 0.90 m half-gap -- roughly 0.20 m of visible intrusion per side,
-# 0.25 m at ankle height.
+# The "арка дверь" arch was listed here until the atrium pass of 2026-08-06.
+# Nothing places it any more (see the Central Atrium / Time Wing B block in
+# FirstMuseumMap.gd), so the exemption went with it: an entry for a model that
+# is never instantiated reads as if the arch were still standing, and that is
+# worse than no note at all. The .glb itself stays in models/, which is the
+# owner's folder and is never pruned from here.
 #
-# An exact trimesh collider was tried and rejected: it shrinks the opening to its
-# true 1.30 m and lays a 0.19-0.22 m threshold slab across it. Navmesh erosion is
-# ceil(agent_radius 0.45 / cell_size 0.15) = 3 cells = 0.45 m per side, so 1.30 m
-# bakes to ~0.40 m of walkable width instead of 0.90 m; and since agent_max_climb is
-# 0.4 m, Recast paths straight over the slab, which CuratorMonster's plain
-# move_and_slide() -- no step-up, default 45-degree floor limit -- cannot mount. The
-# Curator would grind against a 0.19 m lip and be stranded on one side. A convex
-# hull is worse again: 2.18 m across a 1.80 m gap seals the doorway outright, which
-# is the regression test_blocker_regressions.gd now guards. Clipping a post is
-# cosmetic on one doorway; a Curator that cannot leave the Atrium breaks the chase.
+# The measurements the entry carried are kept, because they are the record of
+# what collision costs at a doorway and the next imported arch will need them:
+# a convex hull of that mesh is 2.18 m across a 1.80 m gap and seals the
+# doorway outright, which is the regression test_blocker_regressions.gd
+# guards. An exact trimesh collider was tried and rejected too -- it shrinks
+# the opening to its true 1.30 m, which erodes to ~0.40 m of walkable width
+# (ceil(agent_radius 0.45 / cell_size 0.15) = 3 cells = 0.45 m per side)
+# instead of 0.90 m, and it lays a 0.19-0.22 m threshold slab that Recast
+# paths straight over and CuratorMonster's plain move_and_slide() -- no
+# step-up, default 45-degree floor limit -- cannot mount.
 const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashlight",
-	"modern_grey_stone_tile_texture", "арка дверь"]
+	"modern_grey_stone_tile_texture",
+	# Wall-mounted at head height with open floor underneath, so a hull here
+	# can only ever catch a player brushing along the wall -- it can never stop
+	# one walking into something solid. Same reasoning as the CCTV entries.
+	"lp_key_cabinet",
+	# The eight atrium rope-barrier stanchions. The primitives they replace
+	# carried no collision at all and that was deliberate: they stand on a
+	# 3.40 m ring inside the rotunda, and eight fresh convex hulls out there
+	# would be the first blockers that far from the axis -- the current furthest
+	# collider in AtriumProps is the core plaque post at 2.46 m. Recast erodes
+	# by ceil(0.45 / 0.15) = 3 cells = 0.45 m per side, so hulling a 0.34 m base
+	# costs ~1.24 m of walkable ring at each of eight points on the exact loop
+	# the Curator chases the player around. A rope barrier is a visual
+	# instruction, not a wall; keeping it non-blocking preserves the navmesh the
+	# chase was tuned against.
+	"lp_stanchion",
+	# The Blender-authored CCTV head and the ceiling plate it hangs from
+	# (tools/lowpoly/blender_cameras.py). Same reasoning as the
+	# "security_camera" entry at the top of this list: both sit ~3 m up with
+	# open floor beneath them, so a hull could never stop a player walking
+	# into something solid -- it could only catch one brushing a wall -- and a
+	# static body at that height is one more overhead obstacle Recast has to
+	# filter back out. Eleven posts, twenty-two hulls, nothing gained.
+	"lp_security_camera", "lp_camera_plate",
+	# The leaves of the three back-of-house double doors, and the only prop in
+	# the museum that MOVES. DoorSwing hangs each leaf on a frozen kinematic
+	# RigidBody3D and turns it, and the body that stops the player is a single
+	# box built next to the model in FirstMuseumMap._door_leaves. A hull
+	# generated here would be a second collider -- a StaticBody3D, bolted to a
+	# body that swings -- and a StaticBody3D across a doorway is precisely what
+	# the navigation bake must never see.
+	"lp_door_leaf"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space
@@ -103,6 +130,34 @@ const PLACEHOLDER_MODELS := [
 ]
 
 
+## Where a name's file actually lives, or "" when there is none.
+##
+## Two directories are searched, in this order:
+##   res://models/<name>.glb           assets the owner bought or downloaded
+##   res://models/lowpoly/<name>.glb   assets generated by tools/lowpoly/
+##
+## Keeping them in separate folders is deliberate. models/ belongs to the owner
+## and nothing in it may be removed; models/lowpoly/ is BUILD OUTPUT, rewritten
+## wholesale every time `python tools/lowpoly/build_props.py` runs, so anything
+## hand-edited in there is lost on the next build and no purchased asset may
+## ever be stored in it.
+##
+## The owner's folder is checked first, so replacing a generated stand-in with
+## a real model is just a matter of dropping the file into models/ under the
+## same name -- no code change, and the generator keeps working untouched.
+static func _resolve_path(model_name: String) -> String:
+	if MODEL_PATHS.has(model_name):
+		var mapped := str(MODEL_PATHS[model_name])
+		return mapped if ResourceLoader.exists(mapped) else ""
+	var owned := "res://models/%s.glb" % model_name
+	if ResourceLoader.exists(owned):
+		return owned
+	var generated := "res://models/lowpoly/%s.glb" % model_name
+	if ResourceLoader.exists(generated):
+		return generated
+	return ""
+
+
 ## Instantiate `model_name` under `parent` at `world_position`.
 ##
 ## `rotation_y_deg` is the yaw (compass heading); `pitch_x_deg` is the tilt of
@@ -128,8 +183,8 @@ static func place(parent: Node, model_name: String, world_position: Vector3,
 	# geometry remains the fallback whenever import or instantiation fails.
 	if model_name in PLACEHOLDER_MODELS:
 		return null
-	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
-	if not ResourceLoader.exists(path):
+	var path := _resolve_path(model_name)
+	if path.is_empty():
 		return null
 
 	var packed: PackedScene = null
@@ -256,5 +311,4 @@ static func _ensure_collisions(root: Node3D, use_trimesh := false) -> void:
 static func has_model(model_name: String) -> bool:
 	if model_name in PLACEHOLDER_MODELS:
 		return false
-	var path := str(MODEL_PATHS.get(model_name, "res://models/%s.glb" % model_name))
-	return ResourceLoader.exists(path)
+	return not _resolve_path(model_name).is_empty()

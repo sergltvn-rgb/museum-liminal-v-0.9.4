@@ -46,5 +46,49 @@ replace that object:
 ## Notes
 
 - Godot imports `.glb` automatically on editor open — no manual import step.
-- The folder is intentionally empty for now; the procedural fallbacks are the
-  default visual until real assets are added.
+- `MapModels._resolve_path()` looks in three places, in order: the explicit
+  `MODEL_PATHS` table, then `res://models/<name>.glb`, then
+  `res://models/lowpoly/<name>.glb`. A purchased or hand-made model dropped in
+  this folder therefore overrides a generated one with the same filename.
+
+## models/lowpoly/ — generated assets
+
+Build output of `tools/lowpoly/build_props.py`. Do not hand-edit the `.glb`
+files; edit the builder and rebuild:
+
+```
+python tools/lowpoly/build_props.py
+"<godot>" --headless --path . --import
+```
+
+The writer (`tools/lowpoly/glb.py`) is pure stdlib — no Blender, no PIL, no
+glTF library. It emits real glTF 2.0 binary, so these files open in Blender,
+Blockbench or any DCC if you ever want to hand-edit one; export back over the
+same filename and the resolver picks it up with no code change.
+
+| model | size w×h×d (m) | tris | mount |
+| --- | --- | --- | --- |
+| `lp_metal_locker` | 0.96 × 2.00 × 0.60 | 140 | floor |
+| `lp_filing_cabinet` | 0.48 × 1.32 × 0.69 | 124 | floor |
+| `lp_shelf_unit` | 1.00 × 1.90 × 0.42 | 178 | floor |
+| `lp_key_cabinet` | 0.44 × 0.56 × 0.16 | 60 | wall |
+
+House style, enforced by the builder:
+
+- Flat shading only, no vertex sharing. One material, one 128×128 palette
+  atlas, one draw call per model. Colours come from `game/props/Palette.gd`.
+- No normal maps, no metal, no emission. `metallic 0 / roughness 0.92` to match
+  `MaterialLib.apply_flat_style()`.
+- Budget: small dressing < 60 tris, furniture < 400, large fixture < 1200. For
+  scale, one smooth `CylinderMesh` is already 128 tris.
+- `doubleSided: false` on purpose — an inverted face shows as a hole in review
+  instead of being silently hidden.
+- Wall-mounted models are the one exception to the floor-origin rule: their
+  origin is the centre of the BACK face and the body extends towards -Z, so
+  `place()` receives a point on the wall surface.
+
+Preview them in a neutral studio with:
+
+```
+"<godot>" --path . --script res://game/test_lowpoly_preview.gd
+```

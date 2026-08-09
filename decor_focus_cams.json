@@ -1,0 +1,27 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/fix_round2",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name": "fix_f1_medallion", "pos": [0.0, 2.70, -7.6], "look_at": [0.0, 0.10, -2.0], "fov": 60},
+    {"name": "fix_f2_field", "pos": [-9.5, 2.40, -9.5], "look_at": [-3.2, 0.05, -3.2], "fov": 62},
+    {"name": "fix_f3_grazing", "pos": [0.0, 0.35, 11.5], "look_at": [0.0, 0.06, -2.0], "fov": 55},
+    {"name": "fix_f4_runner", "pos": [0.0, 1.70, 13.6], "look_at": [0.0, 0.05, 5.2], "fov": 58},
+    {"name": "fix_f5_border", "pos": [-10.6, 1.75, 10.6], "look_at": [-13.9, 0.02, 13.9], "fov": 55},
+    {"name": "fix_f6_dais_edge", "pos": [4.2, 1.20, 4.2], "look_at": [1.2, 0.18, 1.2], "fov": 45},
+
+    {"name": "fix_c1_core_front", "pos": [0.0, 1.65, 6.6], "look_at": [0.0, 1.60, 0.0], "fov": 55},
+    {"name": "fix_c2_service_quarter", "pos": [4.6, 1.45, -4.6], "look_at": [1.1, 1.10, -1.1], "fov": 48},
+    {"name": "fix_c3_service_close", "pos": [2.9, 1.05, -2.9], "look_at": [0.9, 0.85, -0.9], "fov": 42},
+    {"name": "fix_c4_beacon", "pos": [2.6, 2.30, -2.6], "look_at": [0.62, 2.86, -0.62], "fov": 40},
+    {"name": "fix_c5_core_base", "pos": [3.3, 0.80, 0.0], "look_at": [0.9, 0.42, 0.0], "fov": 45},
+
+    {"name": "fix_k1_cam02_head", "pos": [-11.2, 2.35, 10.4], "look_at": [-13.6, 2.95, 12.6], "fov": 40},
+    {"name": "fix_k2_cam03_head", "pos": [11.3, 2.30, -10.5], "look_at": [13.6, 2.95, -12.6], "fov": 40},
+    {"name": "fix_k3_cam08_lens", "pos": [10.9, 1.95, 13.6], "look_at": [8.9, 2.85, 11.9], "fov": 38},
+    {"name": "fix_k4_cam_from_floor", "pos": [-9.5, 1.70, 9.0], "look_at": [-13.6, 2.95, 12.6], "fov": 55},
+    {"name": "fix_k5_cam01_entrance", "pos": [-7.6, 2.20, 31.8], "look_at": [-9.6, 2.95, 33.6], "fov": 42}
+  ]
+}

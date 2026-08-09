@@ -1,5 +1,26 @@
 # Model slots
 
+## ПРАВИЛО: новые модели делаются в Blender и кладутся как .glb
+
+Требование пользователя от 2026-08-06. **Если пользователь говорит «сделай модель» —
+она собирается скриптом в Blender и экспортируется в `models/lowpoly/<имя>.glb`.**
+Коробки из примитивов в GDScript моделью не считаются: они остаются только как
+fallback на случай отсутствия файла.
+
+- Сборщик кладётся в `tools/lowpoly/` тем же идиомом, что `blender_build.py`
+  (`bb.Part`, один материал, один палитровый атлас 128x128, плоское затенение,
+  metallic 0, roughness 0.92, forward -Z, фаски и inset вместо шейдерных трюков).
+  Свежий пример — `tools/lowpoly/blender_cameras.py`.
+- Запуск (Blender не прописан в PATH):
+  `"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b -P tools\lowpoly\<script>.py`
+- **Сразу после экспорта обязателен** `Godot --path . --headless --import`. Без него
+  `ResourceLoader.exists()` вернёт false, `place()` отдаст `null`, нарисуется старый
+  примитивный fallback — а тест останется зелёным. Доказательство, что модель
+  реально встала, — изменившийся счётчик `MeshInstance3D` в
+  `game/test_map_verification.gd`.
+- Ни одна грань новой модели не должна лежать в одной плоскости с соседней:
+  утапливать на 5-10 мм, иначе получится z-fighting, как на полу атриума.
+
 `game/MapModels.gd` resolves a model name to `res://models/<name>.glb`, unless the name is
 listed in `MODEL_PATHS` (`game/MapModels.gd:13`), which currently redirects `camera` and
 `security_camera` to `res://models/camera.fbx`.
@@ -18,10 +39,16 @@ case-sensitive and may contain spaces and Cyrillic — several shipped models do
 `place()` calls `_ensure_collisions()` unless the name is in one of two lists:
 
 - `NON_BLOCKING` — `camera`, `security_camera`, `vents`, `tactical_flashlight`,
-  `modern_grey_stone_tile_texture`, `арка дверь`. These get no collider at all. Read the
-  comment block at `game/MapModels.gd:17` before adding anything here: the `арка дверь`
-  entry is a deliberate trade that keeps the Atrium → Time Wing B doorway navigable for the
-  Curator at the price of posts the player can walk through.
+  `modern_grey_stone_tile_texture`, `lp_key_cabinet`, `lp_stanchion`, `lp_security_camera`,
+  `lp_camera_plate`. These get no collider at all. Read the comment block at
+  `game/MapModels.gd:17` before adding anything here.
+  `арка дверь` used to be on this list: its convex hull sealed the Atrium → Time Wing B
+  doorway (2.18 m of hull across a 1.80 m opening), and the no-collider entry was the trade
+  that kept the doorway navigable. In 0.9.4 the model was dropped from the map altogether,
+  so the entry went with it.
+  The four `lp_core_*` models are deliberately **not** listed. Their convex hulls stand in
+  for the procedural core colliders that were removed with them, and exempting them would
+  open a hole in the navmesh at the centre of the Atrium.
 - `TRIMESH_COLLISION` — `portal_arch` only. It gets an exact concave collider because its
   convex hull would swallow a large slice of Space Wing C.
 
@@ -62,24 +89,66 @@ five is present.
 | `bronze_apple.glb` | The First Fall, Gravity Wing A | `FirstMuseumMap.gd:1780` |
 | `sundial.glb` | Sundial, Time Wing B | `FirstMuseumMap.gd:1799` |
 
-## Archive dressing (16) — no fallback
+## Archive dressing (14) — no fallback
 
 `_add_model_archive()` (`game/FirstMuseumMap.gd:1372`) places every supplied source model so
 that nothing sits unused in the repository. These calls ignore the return value: if the file
 disappears, the object simply does not appear, and nothing else changes.
 
 `basic_pc_monitors`, `fancy_marble_coffee_table`, `wooden_bookcases_with_books`,
-`elderly_woman_bust_on_pedestal`, `vents`, `tactical_flashlight`, `лавочки`,
-`уличная лампа`, `арка дверь`, `тумбочка`, `отсановка`, `dumpsters_glb`,
+`elderly_woman_bust_on_pedestal`, `vents`, `tactical_flashlight`,
+`уличная лампа`, `тумбочка`, `отсановка`, `dumpsters_glb`,
 `gallery_bare_concrete_wall`, `modern_grey_stone_tile_texture`, `часы`, `наблюдатель`.
+
+`лавочки.glb` was deleted in 0.9.4. It was authored as a back-to-back pair, so every one
+of its placements had to find the far half by node name and hide it; the four atrium
+benches are now built by `AtriumProps.build_rotunda_bench()` from the atrium palette.
+Do not re-add the slot.
+
+`арка дверь.glb` was dropped from the map in 0.9.4 at the owner's request: the archway
+stood in the Atrium → Time Wing B doorway and read as a leftover prop. The file is still in
+`models/`, but no call site asks for it, the slot is out of `NON_BLOCKING`, and its
+`decor_shots.json` angle (`import_arch_door`) is gone — 132 shots became 131. Do not
+re-place it.
 
 ## CCTV
 
-`camera` / `security_camera` both resolve to `models/camera.fbx`. A file named
-`security_camera.glb` would be ignored, because `MODEL_PATHS` takes precedence over the
-`<name>.glb` convention. The procedural CCTV fallback lives in `FirstMuseumMap._camera()`
-(`game/FirstMuseumMap.gd:593`), which explains why it is built from primitives rather than
-from the FBX.
+The eleven CCTV posts are built by `FirstMuseumMap._camera()`, called from `_add_cameras()`
+just above it. Since 0.9.4 the plate and the housing are Blender models --
+`lp_camera_plate` and `lp_security_camera`, both from `tools/lowpoly/blender_cameras.py` --
+placed through `MuseumModels.place()`, with the old primitive boxes kept inline as the
+`null` fallback. The drop stem, the ball joint and the red LED stay procedural: the stem
+length is computed per post from the soffit height, and the palette pipeline bakes no
+emission.
+
+`camera` / `security_camera` still resolve to `models/camera.fbx` through `MODEL_PATHS`, and
+that 13.4 MB tripod is deliberately unused. A file named `security_camera.glb` would be
+ignored, because `MODEL_PATHS` takes precedence over the `<name>.glb` convention -- which is
+exactly why the new model is named `lp_security_camera`.
+
+## Containment core (4) — fallback = procedural primitives
+
+Since 0.9.4 the Atrium containment core is Blender geometry, built by
+`tools/lowpoly/blender_core.py` and placed by `AtriumProps.build_containment_core()`.
+
+| File | Tris | Placement |
+| --- | --- | --- |
+| `lp_core_base.glb` | 316 | one, at the core origin |
+| `lp_core_column.glb` | 844 | one, on the base deck (y 0.24) |
+| `lp_core_gantry.glb` | 146 | three, r 1.36, at 45° / 135° / 225° |
+| `lp_core_plant.glb` | 282 | two, r 1.20, at 285° / 345° |
+
+Yaw is `90.0 - <compass angle>`, because Godot's `Basis(Y, θ)` sends `+Z` to
+`(sin θ, 0, cos θ)` while the outward radius is `(cos a, 0, sin a)`. Every call keeps its
+primitive fallback inline, so a missing file still builds a core.
+
+The 315° quarter is kept clear on purpose — CCTV camera 03 looks down that ray. That is why
+the two coolant skids sit at 285° and 345° instead of the 292.5° / 337.5° the primitive
+risers used: a 0.90 m skid at r 1.20 subtends about 41° and would have closed the window.
+
+`Anomalous Core`, `Containment Dome`, `Core Beacon Lamp`, the four cable trunks and the
+`Label3D` plaque stay procedural. Glow, a shader, emission, a length computed from the
+ceiling height and live text are all things the flat palette pipeline cannot bake.
 
 ## Slots that no longer exist
 

@@ -1614,10 +1614,22 @@ func _verify_monitor_wall(map_root: Node, generated: Node) -> void:
 		# 1.5 m out along the bank's own facing, eyes at panel height.
 		player.global_position = screen.global_position \
 			+ bank.global_basis.z * 1.5 - Vector3(0.0, 0.9, 0.0)
-		await process_frame
-		player_camera.look_at(screen.global_position, Vector3.UP)
-		for _i in range(4):
+		# Teleporting a CharacterBody3D does not stop it: gravity and depenetration
+		# keep moving the body for several frames after the jump. Aiming before it
+		# settles bakes a pitch that is already stale when the wall is read -- the
+		# lower row starts 0.45 m above the floor, and 0.45 m of drop at 1.5 m range
+		# is 16.7 deg against a WATCH_PANEL_ANGLE_DEG gate of 9.0. That is why this
+		# answered -1 for a panel the operator was staring straight at, and why the
+		# answer moved when unrelated props changed the weight of the scene: the
+		# check was measuring settle timing, not aim. Settle FIRST, then aim, and
+		# keep re-aiming while the wall latches its gaze, so a last millimetre of
+		# settling cannot swing the result.
+		for _i in range(8):
 			await process_frame
+		for _i in range(4):
+			player_camera.look_at(screen.global_position, Vector3.UP)
+			await process_frame
+		player_camera.look_at(screen.global_position, Vector3.UP)
 		var watched := int(wall.call("watched_feed"))
 		if panel == dead_panel:
 			if watched != -1:

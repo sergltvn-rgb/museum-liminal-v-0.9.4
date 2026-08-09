@@ -72,11 +72,19 @@ func _assemble(sign_text: String) -> void:
 	# into, and a closed one must stop the ray.
 	_door_body = StaticBody3D.new()
 	_door_body.name = "Door"
-	_door_body.position = Vector3(0.0, half.y, -half.z - WALL * 0.5)
+	# Дверь накладная: её лицо выходит на 1 см перед торцами боковин.
+	# Раньше они лежали в одной плоскости z = -(half.z + WALL), и шкаф на
+	# складе мерцал на 0.120 м² (WALL 0.06 x INTERIOR.y 2.0). Наружу, а не
+	# внутрь: внутренний просвет 0.88 м по z меряет test_map_verification.
+	_door_body.position = Vector3(0.0, half.y, -half.z - WALL * 0.5 - 0.01)
 	add_child(_door_body)
 	var door_shape := CollisionShape3D.new()
 	var door_box := BoxShape3D.new()
-	door_box.size = Vector3(INTERIOR.x + WALL * 2.0, INTERIOR.y, WALL)
+	# Створка на 2 см уже корпуса: её боковые грани лежали в тех же
+	# плоскостях, что и наружные грани боковин -- 0.100 м² мерцания на
+	# шкафу в складе. На боковины створка всё равно заходит на 5 см с
+	# каждой стороны, так что закрытая дверь по-прежнему держит луч.
+	door_box.size = Vector3(INTERIOR.x + WALL * 2.0 - 0.02, INTERIOR.y, WALL)
 	door_shape.shape = door_box
 	_door_body.add_child(door_shape)
 	_door = MeshInstance3D.new()

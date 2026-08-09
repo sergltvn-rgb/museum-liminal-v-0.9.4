@@ -1,0 +1,12 @@
+{
+  "scene": "res://scenes/FirstMuseumMap.tscn",
+  "out_dir": "res://shots/decor_audit/focused_lab_shell_after",
+  "tiles": 2,
+  "settle": 40,
+  "frames": 6,
+  "shots": [
+    {"name":"lab_exhibit_sheet","node_path":"Restoration Lab Props/Exhibit 9 Under Sheet","pos":[-25,1.65,20.5],"look_at":[-25,1.30,24],"fov":42},
+    {"name":"lab_covered_west","node_path":"Restoration Lab Props/Lab Covered Object","pos":[-25.7,1.35,22.8],"look_at":[-28.6,0.55,25.4],"fov":42},
+    {"name":"lab_covered_east","node_path":"Restoration Lab Props/Lab Covered Object (7_9, 0_0, 1_0)","pos":[-20.8,1.35,20.8],"look_at":[-17.1,0.72,23.0],"fov":44}
+  ]
+}

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://ch3bmmn01sy6q"
-path="res://.godot/imported/лавочки.glb-c8d21723a8ca873e13993fd4ec14aaad.scn"
+uid="uid://dfdxxylgwwnga"
+path="res://.godot/imported/lp_blast_shutter.glb-9c48b0792bb7f2c57d678e6a49dce93d.scn"
 
 [deps]
 
-source_file="res://models/лавочки.glb"
-dest_files=["res://.godot/imported/лавочки.glb-c8d21723a8ca873e13993fd4ec14aaad.scn"]
+source_file="res://models/lowpoly/lp_blast_shutter.glb"
+dest_files=["res://.godot/imported/lp_blast_shutter.glb-9c48b0792bb7f2c57d678e6a49dce93d.scn"]
 
 [params]
 
