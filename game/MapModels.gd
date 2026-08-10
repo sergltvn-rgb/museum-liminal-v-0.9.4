@@ -68,7 +68,21 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# generated here would be a second collider -- a StaticBody3D, bolted to a
 	# body that swings -- and a StaticBody3D across a doorway is precisely what
 	# the navigation bake must never see.
-	"lp_door_leaf"]
+	"lp_door_leaf",
+	# The shell of an archive rolling-stack carriage, placed five times per
+	# block. Same shape of argument as "lp_door_leaf" above: the body that stops
+	# the player is a single box built next to the model in
+	# ArchiveProps._stack_carriage, surveyed at 0.94 x 2.20 x 3.00 and described
+	# in that code as one clean box for navigation.
+	#
+	# A hull generated here would be a SECOND collider wrapping the same volume,
+	# and a worse one: the handwheels stand 0.19 m proud of the operating end,
+	# so the mesh is 3.14 m deep against the carcass's 3.00 m and the hull would
+	# push 70 mm of static body into the working aisle at each end of every
+	# carriage -- on the exact rail run the player has to walk down. Five extra
+	# static bodies per block, a narrower aisle for Recast to erode, and the
+	# StaticBody3D count moves off 547 for nothing gained.
+	"lp_stack_carriage"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space

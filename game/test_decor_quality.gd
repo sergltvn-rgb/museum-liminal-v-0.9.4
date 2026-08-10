@@ -18,8 +18,14 @@ func _init() -> void:
 	var stacks := ArchiveProps.build_rolling_stacks(host, Vector3.ZERO, 5, 3, 0.0)
 	_require_child(stacks, "Carriage 0 Outer Frame Top")
 	_require_child(stacks, "Carriage 4 Outer Frame Top")
-	_require_child(stacks, "Carriage 0 Drive Wheel")
-	_require_child(stacks, "Carriage 4 Drive Wheel")
+	# The drive wheel, the handwheel and the rest of the shell are inside the
+	# lp_stack_carriage mesh now, and a mesh has no child nodes for find_child
+	# to reach. "Carriage N Shell" is the name that survives the swap: it is
+	# what the placed model is renamed to AND what the procedural fallback
+	# container is called, so this assertion still fails if the carriage shell
+	# stops being built by either route.
+	_require_child(stacks, "Carriage 0 Shell")
+	_require_child(stacks, "Carriage 4 Shell")
 
 	var exhibit := ArchiveProps.build_shrouded_exhibit(
 		host, Vector3(10, 0, 0), 0.0, "")

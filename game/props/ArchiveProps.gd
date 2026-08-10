@@ -84,6 +84,11 @@ const MatLib := preload("res://game/props/MaterialLib.gd")
 # Только через preload: глобальное имя класса в голом --script-прогоне не
 # регистрируется и вся цепочка падает (раздел 14 плана).
 const Pal := preload("res://game/props/Palette.gd")
+## Та же причина, что и у Pal выше: только preload, никогда глобальное имя
+## класса, иначе голый `--script`-прогон архива падает. Models.place() отдаёт
+## null, когда .glb нет, и этот null — сигнал для процедурного фолбэка ниже:
+## удали models/lowpoly/ и файл соберёт ровно тот же архив, что и до моделей.
+const Models := preload("res://game/MapModels.gd")
 
 # Затемнённые роли — `static var`: вызов `tone()` не константное выражение.
 # Прямой `Pal.STEEL` здесь был бы вдвое светлее нужного: архив не освещён.
@@ -559,43 +564,24 @@ static func build_rolling_stacks(parent: Node3D, origin: Vector3,
 
 static func _stack_carriage(root: Node3D, index: int, x: float, bays: int,
 		open_before: int) -> void:
-	_box(root, "Carriage %d Plinth" % index, Vector3(x, 0.06, 0),
-		Vector3(STACK_CARRIAGE_W, 0.12, STACK_CARRIAGE_L), _STEEL_DARK)
-	for end_z in [-1.48, 1.48]:
-		var face_z: float = end_z + signf(end_z) * 0.025
-		_box(root, "Carriage %d End Panel" % index, Vector3(x, 1.13, end_z),
-			Vector3(STACK_CARRIAGE_W, 2.02, 0.04), _STACK_FACE)
-		# Raised perimeter and two seams keep the operating ends legible even when
-		# the room is running only on spill light.
-		for edge_x in [-0.40, 0.40]:
-			_box(root, "Carriage %d End Upright %s" % [index, edge_x],
-				Vector3(x + edge_x, 1.13, face_z),
-				Vector3(0.045, 1.88, 0.025), _STACK_TRIM, 0.0, 0.35)
-		for edge_y in [0.22, 2.04]:
-			_box(root, "Carriage %d End Rail %s" % [index, edge_y],
-				Vector3(x, edge_y, face_z),
-				Vector3(0.82, 0.045, 0.025), _STACK_TRIM, 0.0, 0.35)
-		for seam_y in [0.76, 1.30]:
-			_box(root, "Carriage %d End Seam %s" % [index, seam_y],
-				Vector3(x, seam_y, face_z + signf(end_z) * 0.004),
-				Vector3(0.74, 0.018, 0.018), _STEEL_DARK)
-	_box(root, "Carriage %d Top Cap" % index, Vector3(x, 2.17, 0),
-		Vector3(STACK_CARRIAGE_W, 0.06, STACK_CARRIAGE_L), _STEEL_DARK)
-	# A wheel riding the front rail makes each carriage read as machinery rather
-	# than as a solid cabinet. It is visual only; the carriage collider stays one
-	# clean box for navigation.
-	_cylinder(root, "Carriage %d Drive Wheel" % index, Vector3(x, 0.13, 1.28),
-		0.12, 0.075, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
-	_cylinder(root, "Carriage %d Drive Axle" % index, Vector3(x, 0.13, 1.33),
-		0.035, 0.10, _STEEL_DARK, 0.0, 0.55, Vector3(90, 0, 0))
-	# Operating handwheel, on the aisle end where a hand would reach it.
-	_torus(root, "Carriage %d Handwheel" % index, Vector3(x, 1.15, 1.54),
-		0.11, 0.19, _STACK_TRIM, 0.55, Vector3(90, 0, 0))
-	_cylinder(root, "Carriage %d Hub" % index, Vector3(x, 1.15, 1.54),
-		0.032, 0.085, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
-	_cylinder(root, "Carriage %d Handwheel Grip" % index,
-		Vector3(x + 0.15, 1.15, 1.585), 0.022, 0.075, _STACK_LABEL,
-		0.0, 0.2, Vector3(90, 0, 0))
+	# Оболочка каретки — одна модель на все пять: плинтус, два торцевых щита с
+	# рёбрами и швами, крышка, ходовое колесо с осью, штурвал с втулкой и
+	# рукояткой. Операционный торец модели смотрит в её локальный -Z, а здесь
+	# он обязан смотреть в +Z — отсюда разворот на 180 градусов.
+	#
+	# Полки, наружная обшивка и карточка индекса остаются процедурными: они
+	# есть не у каждой каретки, а модель одинакова у всех пяти.
+	#
+	# Коллайдер внизу этой функции тоже остаётся. lp_stack_carriage числится в
+	# MapModels.NON_BLOCKING именно поэтому: навигацию держит одна честная
+	# коробка 0.94 x 2.20 x 3.00, а выпуклая оболочка меша захватила бы
+	# штурвалы и сузила рабочий проход на 140 мм.
+	var shell := Models.place(root, "lp_stack_carriage", Vector3(x, 0, 0),
+		1.0, 180.0)
+	if shell == null:
+		_stack_carriage_shell(root, index, x)
+	else:
+		shell.name = "Carriage %d Shell" % index
 	# The index card is missing off one carriage. Nobody wrote down what went
 	# back into it.
 	if index != 1:
@@ -637,6 +623,53 @@ static func _stack_carriage(root: Node3D, index: int, x: float, bays: int,
 
 	_collider(root, "Carriage %d Body" % index, Vector3(x, 1.1, 0),
 		Vector3(STACK_CARRIAGE_W, STACK_CARRIAGE_H, STACK_CARRIAGE_L))
+
+
+static func _stack_carriage_shell(root: Node3D, index: int,
+		x: float) -> Node3D:
+	# Процедурный фолбэк оболочки: ровно то, из чего каретка состояла до
+	# lp_stack_carriage. Собирается в собственный узел, потому что имя
+	# "Carriage %d Shell" обязано существовать в обеих ветках — и когда модель
+	# встала, и когда .glb нет.
+	var shell := _mount(root, "Carriage %d Shell" % index, Vector3.ZERO, 0.0)
+	_box(shell, "Carriage %d Plinth" % index, Vector3(x, 0.06, 0),
+		Vector3(STACK_CARRIAGE_W, 0.12, STACK_CARRIAGE_L), _STEEL_DARK)
+	for end_z in [-1.48, 1.48]:
+		var face_z: float = end_z + signf(end_z) * 0.025
+		_box(shell, "Carriage %d End Panel" % index, Vector3(x, 1.13, end_z),
+			Vector3(STACK_CARRIAGE_W, 2.02, 0.04), _STACK_FACE)
+		# Raised perimeter and two seams keep the operating ends legible even when
+		# the room is running only on spill light.
+		for edge_x in [-0.40, 0.40]:
+			_box(shell, "Carriage %d End Upright %s" % [index, edge_x],
+				Vector3(x + edge_x, 1.13, face_z),
+				Vector3(0.045, 1.88, 0.025), _STACK_TRIM, 0.0, 0.35)
+		for edge_y in [0.22, 2.04]:
+			_box(shell, "Carriage %d End Rail %s" % [index, edge_y],
+				Vector3(x, edge_y, face_z),
+				Vector3(0.82, 0.045, 0.025), _STACK_TRIM, 0.0, 0.35)
+		for seam_y in [0.76, 1.30]:
+			_box(shell, "Carriage %d End Seam %s" % [index, seam_y],
+				Vector3(x, seam_y, face_z + signf(end_z) * 0.004),
+				Vector3(0.74, 0.018, 0.018), _STEEL_DARK)
+	_box(shell, "Carriage %d Top Cap" % index, Vector3(x, 2.17, 0),
+		Vector3(STACK_CARRIAGE_W, 0.06, STACK_CARRIAGE_L), _STEEL_DARK)
+	# A wheel riding the front rail makes each carriage read as machinery rather
+	# than as a solid cabinet. It is visual only; the carriage collider stays one
+	# clean box for navigation.
+	_cylinder(shell, "Carriage %d Drive Wheel" % index, Vector3(x, 0.13, 1.28),
+		0.12, 0.075, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
+	_cylinder(shell, "Carriage %d Drive Axle" % index, Vector3(x, 0.13, 1.33),
+		0.035, 0.10, _STEEL_DARK, 0.0, 0.55, Vector3(90, 0, 0))
+	# Operating handwheel, on the aisle end where a hand would reach it.
+	_torus(shell, "Carriage %d Handwheel" % index, Vector3(x, 1.15, 1.54),
+		0.11, 0.19, _STACK_TRIM, 0.55, Vector3(90, 0, 0))
+	_cylinder(shell, "Carriage %d Hub" % index, Vector3(x, 1.15, 1.54),
+		0.032, 0.085, _STACK_TRIM, 0.0, 0.55, Vector3(90, 0, 0))
+	_cylinder(shell, "Carriage %d Handwheel Grip" % index,
+		Vector3(x + 0.15, 1.15, 1.585), 0.022, 0.075, _STACK_LABEL,
+		0.0, 0.2, Vector3(90, 0, 0))
+	return shell
 
 
 static func _stack_shelves(root: Node3D, index: int, x: float, side: float) -> void:
