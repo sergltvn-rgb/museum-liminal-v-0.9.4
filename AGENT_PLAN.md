@@ -2188,8 +2188,8 @@ headless smoke завершился с code 0 и без missing-resource/autoloa
 |---|---|---|
 | **70** | `ArchiveProps._stack_carriage` | 14 примитивов × **5 кареток** (`build_rolling_stacks(bays := 5)`, :539) |
 | **44** | `AtriumProps.build_rotunda_bench` | 11 × **4 скамьи** (цикл по 45/135/225/315°, :1203) |
-| 35 | `ExteriorProps.build_player_car` | один экземпляр |
-| 31 | `LobbyProps.build_reception_counter` | один |
+| 35 | `ExteriorProps.build_player_car` | один экземпляр — **отказ**, разбор ниже |
+| ~~31~~ **СДЕЛАНО** | `LobbyProps.build_reception_counter` | 15 примитивов столярки → `lp_lobby_counter`, −14 мешей; две плиты травертина оставлены |
 | 26 | `ArchiveProps.build_work_bench` | 13 × 2 |
 | 16 | `ArchiveProps.build_open_crate`, `GroundsProps._fountain` | по одному |
 | 15 | `GravityProps.build_inversion_cell` | один |
@@ -2204,6 +2204,32 @@ headless smoke завершился с code 0 и без missing-resource/autoloa
 
 Директива пользователя 2026-08-09: «делай пока лоу поли модели в блендер». Повторяемые
 элементы идут первыми: одна сетка окупается N расстановками.
+
+**Статус на вечер 2026-08-10.** Закрыты пункты 1–4: `lp_stack_carriage` (`841c90b`),
+`lp_rotunda_bench` (`1a97c1d`), мониторы и клавиатуры лобби (`d614982`) и столярка
+стойки лобби `lp_lobby_counter` (`0925a63`, `4.840 x 1.070 x 3.235`, 208 трисов,
+фолбэк `_reception_counter_joinery`, два явных коллайдера через новый
+`LobbyProps._collider`). Плиты `Counter Ledge` и `Counter Wing Ledge` оставлены
+процедурными сознательно: на них 2K-набор `travertine` на высоте рук, а модель несёт
+плоский цвет из атласа 128 px. Счётчики: `MeshInstance3D` 9986 → 9714,
+`StaticBody3D` 551 без изменений.
+
+**Машина игрока (35) в модель не идёт — вердикт после разведки кода.**
+`ExteriorProps.build_player_car` (`:566-680`) — это салон POV-катсцены, а не реквизит:
+
+- камера сидит внутри кабины: `const DRIVER_EYE := Vector3(-0.37, 1.08, 0.12)`
+  (`ExteriorProps.gd:94`), `FirstMuseumMap.gd:3855` берёт её для глаза водителя;
+- шесть прозрачных примитивов на `COL_GLASS_TINT := Color(0.10, 0.13, 0.16, 0.35)`
+  (`Windshield`, `Rear Glass`, `Door Glass L/R`) и четыре эмиссивных (`Headlight` и
+  `Taillight` 0.35, `Instrument Dial` 0.6, `Radio Face` 0.4). Дом-стиль — один непрозрачный
+  атлас 128 px, `metallic 0`, без эмиссии — то есть ровно то, что делает эту машину
+  машиной, в модели исчезнет;
+- геометрия наклонена под кадр: лобовое и A-стойка −28°, C-стойка +24°,
+  `Steering Column` и `Steering Wheel` 65°, спицы через `rotate_object_local`.
+
+Кандидат на будущее, если когда-нибудь понадобится: только внешняя оболочка
+(кузов, капот, бамперы, колёса) в модель, а стёкла и салон — процедурно, с
+обязательной приёмкой из кабины, а не снаружи.
 
 1. ~~**`lp_stack_carriage`**~~ **СДЕЛАНО** 2026-08-10, коммит `841c90b`, принято глазами.
    В модель ушла только оболочка (`366 трис, 0.940 x 2.201 x 3.140`), полки и папки

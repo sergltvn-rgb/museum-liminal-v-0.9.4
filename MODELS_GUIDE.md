@@ -162,7 +162,7 @@ ceiling height and live text are all things the flat palette pipeline cannot bak
 
 ## Batch of 2026-08-10 — authored, in the map
 
-Both slots below were queued as "planned" and are now built by
+All three slots below were queued as "planned" and are now built by
 `tools/lowpoly/blender_archive.py`, the third thematic Blender file after `blender_core.py`.
 No Blender slot is queued right now; the remaining queue lives in `AGENT_PLAN.md`, section
 "Текущая работа — партия low-poly моделей в Blender".
@@ -171,10 +171,12 @@ No Blender slot is queued right now; the remaining queue lives in `AGENT_PLAN.md
 | --- | --- | --- | --- | --- | --- |
 | `lp_stack_carriage` | `ArchiveProps._stack_carriage` shell, 5 carriages | 160 | 0.940 x 2.201 x 3.140 | 366 | `841c90b` |
 | `lp_rotunda_bench` | `AtriumProps.build_rotunda_bench`, 4 benches | 92 | 3.280 x 1.030 x 0.692 | 344 | `1a97c1d` |
+| `lp_lobby_counter` | `LobbyProps.build_reception_counter` joinery, 1 desk | 14 | 4.840 x 1.070 x 3.235 | 208 | `0925a63` |
 
-The "70" and "44" the plan quoted were guesses made before anyone counted the builders:
-the carriage shell is 21 primitives per carriage, not 14, and one bench is 24, not 11.
-MeshInstance3D across the whole map went 9986 -> 9826 -> 9734.
+The "70", "44" and "31" the plan quoted were guesses made before anyone counted the
+builders: the carriage shell is 21 primitives per carriage, not 14; one bench is 24, not
+11; and of the desk's 31 nodes only 15 are joinery that could go into a mesh at all.
+MeshInstance3D across the whole map went 9986 -> 9826 -> 9734 -> 9728 -> 9714.
 
 `lp_stack_carriage` covers the carriage shell only (0.94 x 2.20 x 3.00). Shelves and files
 stay procedural: only the two carriages facing the open aisle carry them, and nothing can
@@ -192,6 +194,24 @@ brass foot plates, and the stretcher touched nothing at all (moved z 0.010 -> 0.
 No Blender was needed for the third job of the batch: `LobbyProps.build_reception_counter`
 now places the existing `lp_desk_monitor` and `lp_keyboard` instead of eighteen primitives
 (commit `d614982`, MeshInstance3D 9734 -> 9728).
+
+`lp_lobby_counter` is the joinery of that same desk and nothing else: toe kick, carcass,
+staff worktop, brass nosing, panelled fascia, both end panels and the return wing. The two
+travertine slabs (`Counter Ledge`, `Counter Wing Ledge`) stay procedural ON PURPOSE and
+cost two meshes: they carry MaterialLib's 2K `travertine` pack at 1.10 m, the surface
+closest to the camera in the room, and a flat 128 px atlas swatch with no normal map would
+be a visible downgrade exactly where the player looks. Two defects of the primitive desk
+were real bugs, not shimmer risks, and are fixed in the mesh: the two fascia stiles stood
+at x -1.00 / +0.50, i.e. INSIDE the fields rather than in the gaps at +-0.75, and shared a
+front plane with them; and the fields were 15 mm PROUD where the source comment promised
+"three recessed fields" (`inset` now carves them 12 mm in). Five ordinary shared planes
+were moved as well -- all seven joints are written up above `build_lobby_counter`.
+The model is in `MapModels.NON_BLOCKING`, because one convex hull of an L fills the staff
+enclosure the wing exists to close; the two carcass volumes are built as explicit
+colliders in both branches, so `StaticBody3D` stays at 551.
+
+`ExteriorProps.build_player_car` (35 primitives) was surveyed in the same pass and
+REJECTED as a model slot -- reasoning in `AGENT_PLAN.md` and `NEXT_CHAT_PROMPT.md`.
 
 ## Slots that no longer exist
 
