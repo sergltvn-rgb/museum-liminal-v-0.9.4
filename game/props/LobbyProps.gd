@@ -52,6 +52,12 @@ static var _materials := {}
 # а там глобальные class_name могут быть ещё не зарегистрированы.
 const MatLib := preload("res://game/props/MaterialLib.gd")
 
+# Тот же MapModels, что у AtriumProps: подменяет наборы примитивов на модели
+# из models/lowpoly, а если файла нет — возвращает null и отдаёт сцену
+# процедурному фолбэку. Тоже preload, а не глобальное имя MuseumModels: тесты
+# запускаются через --script.
+const Models := preload("res://game/MapModels.gd")
+
 const VISIBILITY_RANGE := 44.0
 
 # Palette. Warm stone and dark walnut for the joinery, cold steel for the
@@ -175,24 +181,41 @@ static func build_reception_counter(parent: Node3D, origin: Vector3,
 		Vector3(0.05, 0.94, wing_len), WOOD_LIGHT)
 
 	# --- what a staffed desk has on it ----------------------------------
-	# Two monitors on the 0.75 worktop, canted 14 deg back off vertical, which
-	# is the same pitch the CCTV props in this project use.
+	# Оба комплекта «монитор + клавиатура» — это lp_desk_monitor (0.520 x 0.539
+	# x 0.190) и lp_keyboard (0.440 x 0.024 x 0.150), те же модели, которыми
+	# уже одеты стойка атриума и стол наблюдателя. Девять примитивов на комплект
+	# ушли в фолбэк ниже.
+	#
+	# ПОЧЕМУ МОНИТОР ПЕРЕЕХАЛ С 0.75 НА 1.10. Counter Ledge — плита на всю
+	# глубину стойки: y 1.02..1.10, z -0.46..0.64. Просвет над рабочей
+	# поверхностью 0.75 равен 0.27 м, а монитор высотой 0.539 не лезет в него
+	# вдвое. Старые примитивы это и делали: корпус 0.94..1.28 проходил сквозь
+	# камень на 8 см и торчал над ним на 18 — снаружи это читалось как монитор,
+	# стоящий на столешнице с утопленной ногой. Модель ставится на камень
+	# честно. Клавиатура, наоборот, остаётся под козырьком: 24 мм высоты под
+	# 0.27 м просвета, и это ровно та высота печати, для которой worktop сделан.
+	#
+	# ЭКРАН РАЗВЁРНУТ К ПЕРСОНАЛУ. Посетитель стоит на +Z (fascia z 0.475,
+	# очередь на z 3.1), персонал — на -Z, и экран модели смотрит в -Z без
+	# всякого yaw. Примитивы держали светящуюся панель на +Z стороне корпуса,
+	# то есть показывали рабочий стол кассы в зал, а клавиатуру ставили на
+	# 0.17 м ДАЛЬШЕ от персонала, чем монитор. Фолбэк выправлен по модели.
 	for i in 2:
 		var mx: float = -1.25 + float(i) * 2.5
-		_cyl(root, "Monitor Foot %d" % (i + 1), Vector3(mx, WORK_TOP + 0.02, -0.22),
-			0.10, 0.02, STEEL_DARK, 10, 0.4)
-		_box(root, "Monitor Stem %d" % (i + 1), Vector3(mx, WORK_TOP + 0.11, -0.22),
-			Vector3(0.05, 0.18, 0.05), STEEL_DARK, 0.0, 0.4)
-		var shell := _box(root, "Monitor Shell %d" % (i + 1),
-			Vector3(mx, WORK_TOP + 0.36, -0.21),
-			Vector3(0.54, 0.34, 0.03), STEEL_DARK, 0.0, 0.35)
-		shell.rotation.x = deg_to_rad(14.0)
-		var face := _box(root, "Monitor Screen %d" % (i + 1),
-			Vector3(mx, WORK_TOP + 0.36, -0.185),
-			Vector3(0.50, 0.30, 0.01), SCREEN, 0.55)
-		face.rotation.x = deg_to_rad(14.0)
-		_box(root, "Keyboard %d" % (i + 1), Vector3(mx, WORK_TOP + 0.02, -0.05),
-			Vector3(0.42, 0.02, 0.15), PANEL)
+		var monitor := Models.place(root, "lp_desk_monitor",
+			Vector3(mx, COUNTER_TOP, -0.22))
+		if monitor == null:
+			_reception_monitor_parts(root, i, mx)
+		else:
+			monitor.name = "Monitor Shell %d" % (i + 1)
+		var keyboard := Models.place(root, "lp_keyboard",
+			Vector3(mx - 0.04, WORK_TOP, -0.30))
+		if keyboard == null:
+			_box(root, "Keyboard %d" % (i + 1),
+				Vector3(mx - 0.04, WORK_TOP + 0.01, -0.30),
+				Vector3(0.42, 0.02, 0.15), PANEL)
+		else:
+			keyboard.name = "Keyboard %d" % (i + 1)
 	# Card terminal on the visitor ledge, tilted up to the customer.
 	_box(root, "Card Terminal Base", Vector3(1.62, COUNTER_TOP + 0.02, 0.05),
 		Vector3(0.13, 0.04, 0.18), STEEL_DARK, 0.0, 0.3)
@@ -231,6 +254,30 @@ static func build_reception_counter(parent: Node3D, origin: Vector3,
 	_box(root, "Reception Sign Frame", Vector3(0.0, sign_y, 0.39),
 		Vector3(3.58, 0.50, 0.02), BRASS, 0.0, 0.6)
 	return root
+
+
+## Фолбэк для lp_desk_monitor: тот же корпус на той же высоте, что и модель,
+## из четырёх примитивов. Отсчёт от COUNTER_TOP, а не от WORK_TOP — разбор
+## габаритов Counter Ledge лежит в build_reception_counter. Панель экрана
+## сидит на -Z стороне корпуса и смотрит на персонал, а наклон 14 градусов
+## заваливает верх в зал; у модели ровно так же, поэтому yaw ей не задаётся.
+## Коллайдер не строит: его нет ни в одной ветке, стойка под комплектом уже
+## StaticBody3D.
+static func _reception_monitor_parts(root: Node3D, i: int, mx: float) -> void:
+	_cyl(root, "Monitor Foot %d" % (i + 1),
+		Vector3(mx, COUNTER_TOP + 0.02, -0.22),
+		0.10, 0.02, STEEL_DARK, 10, 0.4)
+	_box(root, "Monitor Stem %d" % (i + 1),
+		Vector3(mx, COUNTER_TOP + 0.11, -0.22),
+		Vector3(0.05, 0.18, 0.05), STEEL_DARK, 0.0, 0.4)
+	var shell := _box(root, "Monitor Shell %d" % (i + 1),
+		Vector3(mx, COUNTER_TOP + 0.36, -0.21),
+		Vector3(0.54, 0.34, 0.03), STEEL_DARK, 0.0, 0.35)
+	shell.rotation.x = deg_to_rad(14.0)
+	var face := _box(root, "Monitor Screen %d" % (i + 1),
+		Vector3(mx, COUNTER_TOP + 0.36, -0.235),
+		Vector3(0.50, 0.30, 0.01), SCREEN, 0.55)
+	face.rotation.x = deg_to_rad(14.0)
 
 
 # =============================================================================
