@@ -127,58 +127,47 @@ static func build_reception_counter(parent: Node3D, origin: Vector3,
 	var run := 4.6      # long axis, along x
 	var depth := 0.92   # front to back, along z
 
-	# --- main run -------------------------------------------------------
-	# Recessed toe kick, so the carcass does not look like it was dropped on
-	# the floor. The kick is 6 cm shallower than the body on every side.
-	_box(root, "Counter Kick", Vector3(0.0, TOE_KICK * 0.5, 0.0),
-		Vector3(run - 0.12, TOE_KICK, depth - 0.12), STONE_DARK,
-		0.0, 0.0, false, "concrete")
-	_box(root, "Counter Carcass", Vector3(0.0, 0.43, 0.0),
-		Vector3(run, 0.62, depth), WOOD, 0.0, 0.0, true)
-	# Staff worktop at 0.75, set back from the visitor edge.
-	_box(root, "Counter Worktop", Vector3(0.0, WORK_TOP - 0.02, -0.17),
-		Vector3(run - 0.10, 0.04, depth - 0.42), WOOD_LIGHT, 0.0, 0.15)
-	# Visitor ledge at 1.10, overhanging the front by 9 cm.
-	# Столешница — травертин с мелким масштабом: на полосе шириной 1.1 м
-	# полноразмерная плита в 2.4 м не показала бы ни одного шва.
-	_box(root, "Counter Ledge", Vector3(0.0, COUNTER_TOP - 0.04, 0.09),
-		Vector3(run + 0.24, 0.08, depth + 0.18), STONE, 0.0, 0.25, true,
-		"travertine")
-	_box(root, "Counter Ledge Nosing", Vector3(0.0, COUNTER_TOP - 0.11, 0.55),
-		Vector3(run + 0.24, 0.06, 0.05), BRASS, 0.0, 0.6)
-	# Fascia panelling: three recessed fields between four stiles, which is how
-	# joinery this size is actually built and reads far better than a flat face.
-	_box(root, "Counter Fascia", Vector3(0.0, 0.60, 0.475),
-		Vector3(run, 0.94, 0.05), WOOD)
-	for i in 3:
-		var fx: float = -1.5 + float(i) * 1.5
-		_box(root, "Counter Fascia Field %d" % (i + 1),
-			Vector3(fx, 0.60, 0.505), Vector3(1.22, 0.66, 0.02), WOOD_LIGHT)
-	for sx: float in [-1.0, 0.5]:
-		_box(root, "Counter Fascia Stile %.1f" % sx,
-			Vector3(sx - 0.25 + 0.25, 0.60, 0.505),
-			Vector3(0.06, 0.94, 0.02), STONE_DARK)
-	for ex: float in [-1.0, 1.0]:
-		_box(root, "Counter End Panel %s" % ("West" if ex < 0.0 else "East"),
-			Vector3(ex * (run * 0.5 + 0.03), 0.60, 0.0),
-			Vector3(0.06, 0.94, depth), WOOD_LIGHT)
-
-	# --- return wing ----------------------------------------------------
-	# Runs back along -z from the west end, closing the staff enclosure.
 	var wing_len := 2.3
 	var wing_x: float = -(run * 0.5) + 0.46
 	var wing_z: float = -(depth * 0.5) - wing_len * 0.5 + 0.10
-	_box(root, "Counter Wing Kick", Vector3(wing_x, TOE_KICK * 0.5, wing_z),
-		Vector3(depth - 0.12, TOE_KICK, wing_len - 0.12), STONE_DARK,
-		0.0, 0.0, false, "concrete")
-	_box(root, "Counter Wing Carcass", Vector3(wing_x, 0.43, wing_z),
-		Vector3(depth, 0.62, wing_len), WOOD, 0.0, 0.0, true)
+
+	# --- столярка: одна модель или пятнадцать примитивов ------------
+	# lp_lobby_counter (4.840 x 1.070 x 3.235) — это плинтус, корпус, рабочая
+	# поверхность, латунный нащельник, фасция с тремя полями, две торцевые
+	# панели и всё крыло в одном меше. Модель авторена так же, как этот
+	# узел: посетитель на +Z, персонал на -Z, поэтому yaw ей не задаётся.
+	# Две вещи, которых коробки не умеют и ради которых модель вообще есть:
+	# поля фасции утоплены в панель на 12 мм (inset), а рабочая поверхность,
+	# торцевые панели, крыло и нащельник сняты фаской в 5–6 мм.
+	var joinery := Models.place(root, "lp_lobby_counter", Vector3.ZERO)
+	if joinery == null:
+		joinery = _reception_counter_joinery(root, run, depth,
+			wing_x, wing_z, wing_len)
+	joinery.name = "Counter Joinery"
+	# lp_lobby_counter лежит в MapModels.NON_BLOCKING: выпуклая оболочка буквы
+	# «L» залила бы служебный закуток, который крыло и закрывает, и просвет
+	# 0.27 м под столешницей, где стоят клавиатуры. Оба объёма, в которые
+	# тело пускать нельзя, строятся здесь и одинаково в обеих ветках.
+	_collider(root, "Counter Carcass", Vector3(0.0, 0.43, 0.0),
+		Vector3(run, 0.62, depth))
+	_collider(root, "Counter Wing Carcass", Vector3(wing_x, 0.43, wing_z),
+		Vector3(depth, 0.62, wing_len))
+
+	# --- две каменные плиты — намеренно процедурные -----------------
+	# Столешница — травертин с мелким масштабом: на полосе шириной 1.1 м
+	# полноразмерная плита в 2.4 м не показала бы ни одного шва.
+	#
+	# ПОЧЕМУ ОНИ НЕ УШЛИ В МОДЕЛЬ. В lp_lobby_counter камня нет сознательно:
+	# здесь лежит набор travertine из MaterialLib — цвет, нормаль, шероховатость
+	# и AO по 2K, — а модель несёт один ровный цвет из атласа 128 px без нормали.
+	# Это ровно те две поверхности, на которые посетитель облокачивается: на
+	# высоте 1.10 и ближе всего к камере. Два меша здесь стоят текстуры.
+	_box(root, "Counter Ledge", Vector3(0.0, COUNTER_TOP - 0.04, 0.09),
+		Vector3(run + 0.24, 0.08, depth + 0.18), STONE, 0.0, 0.25, true,
+		"travertine")
 	_box(root, "Counter Wing Ledge", Vector3(wing_x, COUNTER_TOP - 0.04, wing_z),
 		Vector3(depth + 0.18, 0.08, wing_len), STONE, 0.0, 0.25, true,
 		"travertine")
-	_box(root, "Counter Wing Fascia",
-		Vector3(wing_x - depth * 0.5 - 0.025, 0.60, wing_z),
-		Vector3(0.05, 0.94, wing_len), WOOD_LIGHT)
 
 	# --- what a staffed desk has on it ----------------------------------
 	# Оба комплекта «монитор + клавиатура» — это lp_desk_monitor (0.520 x 0.539
@@ -254,6 +243,61 @@ static func build_reception_counter(parent: Node3D, origin: Vector3,
 	_box(root, "Reception Sign Frame", Vector3(0.0, sign_y, 0.39),
 		Vector3(3.58, 0.50, 0.02), BRASS, 0.0, 0.6)
 	return root
+
+
+## Фолбэк для lp_lobby_counter: та же столярка из пятнадцати примитивов, в
+## своём узле «Counter Joinery» — имя и глубина дерева те же, что у модели.
+## Числа исходные, кроме одного исправленного дефекта: стойки фасции стояли
+## на x -1.00 и +0.50, то есть ВНУТРИ полей (поля на -1.5/0/1.5 шириной 1.22,
+## швы между ними — на ±0.75), да ещё на той же плоскости z 0.495..0.515:
+## две коробки друг в друге с общей передней гранью в самом центре кадра от
+## входной двери. Здесь они встали в швы и вышли на 5 мм вперёд, как накладная
+## стойка и должна; в модели та же раскладка сделана честно, рамкой панели.
+## Коллайдеров не строит: оба тела стойки ставит build_reception_counter,
+## одинаково для модели и для фолбэка.
+static func _reception_counter_joinery(parent: Node3D, run: float,
+		depth: float, wing_x: float, wing_z: float,
+		wing_len: float) -> Node3D:
+	var shell := _root(parent, "Counter Joinery", Vector3.ZERO)
+	# Recessed toe kick, so the carcass does not look like it was dropped on
+	# the floor. The kick is 6 cm shallower than the body on every side.
+	_box(shell, "Counter Kick", Vector3(0.0, TOE_KICK * 0.5, 0.0),
+		Vector3(run - 0.12, TOE_KICK, depth - 0.12), STONE_DARK,
+		0.0, 0.0, false, "concrete")
+	_box(shell, "Counter Carcass Body", Vector3(0.0, 0.43, 0.0),
+		Vector3(run, 0.62, depth), WOOD)
+	# Staff worktop at 0.75, set back from the visitor edge.
+	_box(shell, "Counter Worktop", Vector3(0.0, WORK_TOP - 0.02, -0.17),
+		Vector3(run - 0.10, 0.04, depth - 0.42), WOOD_LIGHT, 0.0, 0.15)
+	_box(shell, "Counter Ledge Nosing", Vector3(0.0, COUNTER_TOP - 0.11, 0.55),
+		Vector3(run + 0.24, 0.06, 0.05), BRASS, 0.0, 0.6)
+	# Fascia panelling: three fields between the stiles, which is how joinery
+	# this size is actually built and reads far better than a flat face.
+	_box(shell, "Counter Fascia", Vector3(0.0, 0.60, 0.475),
+		Vector3(run, 0.94, 0.05), WOOD)
+	for i in 3:
+		var fx: float = -1.5 + float(i) * 1.5
+		_box(shell, "Counter Fascia Field %d" % (i + 1),
+			Vector3(fx, 0.60, 0.505), Vector3(1.22, 0.66, 0.02), WOOD_LIGHT)
+	for sx: float in [-0.75, 0.75]:
+		_box(shell, "Counter Fascia Stile %.2f" % sx,
+			Vector3(sx, 0.60, 0.5225),
+			Vector3(0.06, 0.94, 0.025), STONE_DARK)
+	for ex: float in [-1.0, 1.0]:
+		_box(shell, "Counter End Panel %s" % ("West" if ex < 0.0 else "East"),
+			Vector3(ex * (run * 0.5 + 0.03), 0.60, 0.0),
+			Vector3(0.06, 0.94, depth - 0.02), WOOD_LIGHT)
+	# Return wing: runs back along -z from the west end, closing the staff
+	# enclosure so the player cannot walk in behind the desk.
+	_box(shell, "Counter Wing Kick", Vector3(wing_x, TOE_KICK * 0.5, wing_z),
+		Vector3(depth - 0.12, TOE_KICK, wing_len - 0.12), STONE_DARK,
+		0.0, 0.0, false, "concrete")
+	_box(shell, "Counter Wing Carcass Body", Vector3(wing_x, 0.43, wing_z),
+		Vector3(depth, 0.62, wing_len), WOOD)
+	_box(shell, "Counter Wing Fascia",
+		Vector3(wing_x - depth * 0.5 - 0.025, 0.60, wing_z),
+		Vector3(0.05, 0.94, wing_len), WOOD_LIGHT)
+	return shell
 
 
 ## Фолбэк для lp_desk_monitor: тот же корпус на той же высоте, что и модель,
@@ -764,6 +808,24 @@ static func _add_body(inst: MeshInstance3D, node_name: String,
 	inst.add_child(body)
 	var collision := CollisionShape3D.new()
 	collision.name = "%s CollisionShape" % node_name
+	collision.shape = shape
+	body.add_child(collision)
+
+
+## Голое тело без меша. Модель из MapModels.NON_BLOCKING коллайдеров не
+## приносит, а два объёма стойки должны оставаться непроходимыми в обеих
+## ветках. Имена те же, что выдавал _box через _add_body, поэтому дерево
+## коллизий стойки не меняется и StaticBody3D в сцене не стало больше.
+static func _collider(parent: Node3D, node_name: String, centre: Vector3,
+		size: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.name = "%s Collision" % node_name
+	body.position = centre
+	parent.add_child(body)
+	var collision := CollisionShape3D.new()
+	collision.name = "%s CollisionShape" % node_name
+	var shape := BoxShape3D.new()
+	shape.size = size
 	collision.shape = shape
 	body.add_child(collision)
 

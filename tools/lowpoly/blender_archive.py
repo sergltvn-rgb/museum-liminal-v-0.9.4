@@ -33,6 +33,15 @@ between the four, so it is one .glb placed four times. The rationale for that
 one sits directly above build_rotunda_bench below -- keep each model's
 reasoning next to its numbers.
 
+The third model is the lobby's own front desk. LobbyProps.
+build_reception_counter is thirty-one MeshInstance3D nodes and fifteen of them
+are the L-shaped joinery: toe kick, carcass, staff worktop, brass nosing, the
+fascia with its three fields and two stiles, two end panels and the entire
+return wing. It is built once, it never varies, and it is the first object the
+player sees through the street door -- which is the one place in the building
+where a chamfer and a genuinely recessed panel field earn their .glb. Its
+reasoning sits directly above build_lobby_counter.
+
 WHAT DELIBERATELY STAYS PROCEDURAL
 ----------------------------------
     the shelves and box files    _stack_shelves, and only on the two carriages
@@ -302,7 +311,139 @@ def build_rotunda_bench(material):
     return p, p.finish(material)
 
 
-BUILDERS = (build_stack_carriage, build_rotunda_bench)
+# =========================================================================
+# lp_lobby_counter -- 4.84 x 1.07 x 3.24 m, the PUBLIC face is +Z
+# =========================================================================
+# The L-shaped reception desk in the entrance hall, placed once by
+# LobbyProps.build_reception_counter at the room origin with no yaw.
+#
+# ORIENTATION: no flip, and no negated numbers. LobbyProps already authors the
+# visitor on +Z (fascia at z 0.475, the rope queue out at z 3.1) and the staff
+# on -Z, so model space equals that local space number for number. The long run
+# is x, the return wing goes back along -z off the west end. The call site
+# passes no rotation at all.
+#
+# THE BBOX IS NOT CENTRED IN Z, AND THE WING IS WHY
+# -------------------------------------------------
+# The main run measures 0.92 deep and the wing carries the envelope out to
+# z -2.660, while the brass nosing stops at +0.575. So depth reads 3.235 and
+# width reads 4.840 -- the nosing, not the carcass: it is run + 0.240 wide and
+# so overhangs the end panels at +-2.360 by 60 mm on each side. That is the
+# figure to quote for this model, and
+# RULES drops centre_z, the lp_stack_carriage / lp_rotunda_bench exemption.
+# centre_x DOES hold and matters: the desk is centred on the room's x 0 axis,
+# where the sign rods above it and the door sightline both are.
+#
+# WHAT DELIBERATELY STAYS PROCEDURAL -- THE TWO STONE SLABS
+# ---------------------------------------------------------
+# Counter Ledge (4.84 x 0.08 x 1.10) and Counter Wing Ledge keep being built in
+# GDScript, and this is the one decision in the batch that costs meshes on
+# purpose. Both carry MaterialLib's "travertine" pack -- a 2K colour, normal,
+# roughness and AO set, deliberately small-scaled so the seams show on a 1.1 m
+# strip -- and they are the surfaces the visitor leans on, 1.10 m up and closest
+# to the camera of anything in the room. Baked into this model they would become
+# one flat 128 px atlas swatch with no normal map at all: a visible downgrade
+# exactly where the player looks. The joinery under them has no pack and loses
+# nothing. Same reasoning for the desk clutter and the hanging sign above.
+#
+# COLLISION -- lp_lobby_counter BELONGS IN MapModels.NON_BLOCKING
+# --------------------------------------------------------------
+# A generated convex hull would wrap the L into ONE solid block: it would fill
+# the staff enclosure the wing exists to close, seal the 0.27 m gap under the
+# ledge, and swallow the kick reveal. The two boxes the carcasses used to carry
+# (4.60 x 0.62 x 0.92 on the run, 0.92 x 0.62 x 2.30 on the wing) are what a
+# body has to be kept out of, so build_reception_counter now builds exactly
+# those two as bare StaticBody3D nodes next to the model -- and both stone
+# ledges keep their own colliders, untouched. Net static bodies: unchanged.
+#
+# PALETTE
+# -------
+#     WOOD        0.220 0.150 0.085  -> wood        (exact atlas match)
+#     WOOD_LIGHT  0.360 0.250 0.135  -> wood_light  (nearest; atlas tone is
+#                                      less saturated, which reads as the
+#                                      lighter oak the source intended)
+#     STONE_DARK  0.400 0.380 0.320  -> plinth      (the kick, in permanent
+#                                      shadow; its "concrete" pack is the one
+#                                      texture this model gives up, and 12 cm
+#                                      of recessed shadow line never showed it)
+#     BRASS       0.500 0.380 0.170  -> lock
+#
+# ANTI-COPLANARITY -- SEVEN JOINTS MOVED, TWO OF THEM REAL BUGS
+# ------------------------------------------------------------
+# The first two were not shimmer risks, they were wrong geometry:
+#
+#   * THE FASCIA STILES STOOD INSIDE THE FIELDS. The three fields sit at
+#     x -1.5 / 0 / 1.5 and are 1.22 wide, so the gaps between them are centred
+#     on x +-0.75. The two stiles were written at x -1.00 and +0.50 -- both
+#     INSIDE a field, not in a gap -- and at the same z 0.495..0.515, so each
+#     stile was a box interpenetrating a box with a coplanar front face, in the
+#     dead centre of the view from the street door. There are no separate stiles
+#     in this model: the fascia is three panels and each panel's own 85 mm frame
+#     IS the stile, which is how the joinery the comment describes is built.
+#   * THE FIELDS WERE PROUD, NOT RECESSED. Field front at z 0.515 against a
+#     fascia front at 0.500: 15 mm of overlay, where the source comment promises
+#     "three recessed fields". Here inset() carves them 12 mm INTO the panel.
+#
+# The other five are ordinary shared planes:
+#
+#   * kick top 0.120 was exactly carcass bottom 0.120. Kick is now 0.128 tall,
+#     so 8 mm of it is buried in the carcass.
+#   * fascia bottom 0.130 left a 10 mm slot down to the kick top. It now starts
+#     at 0.126 and overlaps the kick by 2 mm.
+#   * end panels were as deep as the carcass (0.920), sharing an edge line at
+#     z +-0.460. They are 0.900 now and the 10 mm reveal reads as a shadow.
+#   * nosing top 1.020 was exactly the stone ledge's underside. Raised 2 mm so
+#     it dies inside the slab it hangs off.
+#   * the wing fascia's inner face sat in the same plane as the west end panel's
+#     at x -2.300. Widened 0.050 -> 0.052 so it ends 2 mm inside it.
+def build_lobby_counter(material):
+    p = bb.Part("lp_lobby_counter")
+    run, depth = 4.600, 0.920
+
+    # ---- main run: kick, carcass, staff worktop --------------------------
+    p.box((0.0, 0.064, 0.0), (run - 0.120, 0.128, depth - 0.120), "plinth",
+          face_swatches={"ny": "shadow"})
+    p.box((0.0, 0.430, 0.0), (run, 0.620, depth), "wood")
+    # Worktop at 0.75: chamfered, because this is the edge the clerk's wrists
+    # rest on and the one lit surface inside the desk's own shadow.
+    top = p.box((0.0, 0.730, -0.170), (run - 0.100, 0.040, depth - 0.420),
+                "wood_light")
+    p.bevel(p.facing(top, "py"), 0.006, "wood_light")
+
+    # ---- brass nosing under the visitor ledge ---------------------------
+    nose = p.box((0.0, 0.992, 0.550), (run + 0.240, 0.060, 0.050), "lock")
+    p.bevel(p.facing(nose, "pz"), 0.005, "handle")
+
+    # ---- fascia: three panels, each with a real recessed field ----------
+    # 1.530 apiece, spanning -2.295..2.295 -- 5 mm inside the carcass ends, so
+    # no shared edge line with the end panels either.
+    for i in range(3):
+        fx = -1.530 + 1.530 * float(i)
+        panel = p.box((fx, 0.598, 0.4775), (1.530, 0.944, 0.045), "wood")
+        p.inset(p.facing(panel, "pz"), 0.085, -0.012, "wood", "wood_light")
+
+    # ---- end panels, chamfered on the corner the visitor walks past -----
+    for side in (-1.0, 1.0):
+        end = p.box((side * (run * 0.5 + 0.030), 0.598, 0.0),
+                    (0.060, 0.944, depth - 0.020), "wood_light")
+        p.bevel(p.facing(end, "px" if side > 0.0 else "nx"), 0.006,
+                "wood_light")
+
+    # ---- return wing, closing the staff enclosure along -z --------------
+    wing_len = 2.300
+    wx = -(run * 0.5) + 0.460
+    wz = -(depth * 0.5) - wing_len * 0.5 + 0.100
+    p.box((wx, 0.064, wz), (depth - 0.120, 0.128, wing_len - 0.120), "plinth",
+          face_swatches={"ny": "shadow"})
+    p.box((wx, 0.430, wz), (depth, 0.620, wing_len), "wood")
+    wing_face = p.box((wx - depth * 0.5 - 0.026, 0.598, wz),
+                      (0.052, 0.944, wing_len), "wood_light")
+    p.bevel(p.facing(wing_face, "nx"), 0.006, "wood_light")
+
+    return p, p.finish(material)
+
+
+BUILDERS = (build_stack_carriage, build_rotunda_bench, build_lobby_counter)
 
 BUDGET = {
     # Large fixture ceiling is 1200. The shell lands near 380, and the headroom
@@ -311,6 +452,10 @@ BUDGET = {
     # Furniture ceiling is 400. Twenty-four boxes and seven chamfers land near
     # 350; anything past 400 means somebody added detail a bench does not need.
     "lp_rotunda_bench": 400,
+    # Large fixture ceiling again: this is a 4.7 m L, not a chair. Twelve boxes,
+    # three insets and five chamfers land near 300, so 600 leaves room for a
+    # future drawer bank without letting the stone slabs creep in.
+    "lp_lobby_counter": 600,
 }
 
 # Per-model house-style rules, in metres.
@@ -323,6 +468,10 @@ RULES = {
     # figure the build_rotunda_bench doc comment quotes. No centre_z: the back
     # overhangs, see the block above the builder.
     "lp_rotunda_bench": {"floor_y": 0.0, "centre_x": True, "max_y": 1.030},
+    # Floor is the toe kick. max_y is the fascia and end panel tops at 1.070:
+    # 30 mm UNDER the 1.100 the stone ledge presents, because that slab is not
+    # in this model. No centre_z -- the return wing, see the header.
+    "lp_lobby_counter": {"floor_y": 0.0, "centre_x": True, "max_y": 1.070},
 }
 
 

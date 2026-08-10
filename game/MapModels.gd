@@ -90,7 +90,16 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# collider's 0.70 m, but sitting on the r 8.4 ring, which is the loop the
 	# Curator chases the player around. Four extra static bodies out there cost
 	# walkable ring at every one of them, for a bench that is already solid.
-	"lp_rotunda_bench"]
+	"lp_rotunda_bench",
+	# The lobby reception desk, and the worst hull of the three if it were
+	# generated: the mesh is an L, so ONE convex wrap both fills the staff
+	# enclosure the return wing exists to close and seals the 0.27 m slot under
+	# the visitor ledge where the keyboards sit. LobbyProps.
+	# build_reception_counter builds the two volumes that actually matter --
+	# 4.60 x 0.62 x 0.92 on the run, 0.92 x 0.62 x 2.30 on the wing -- in both
+	# the model and the fallback branch, and the two travertine slabs above them
+	# keep the colliders they always had.
+	"lp_lobby_counter"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space
