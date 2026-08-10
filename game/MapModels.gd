@@ -99,7 +99,12 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# 4.60 x 0.62 x 0.92 on the run, 0.92 x 0.62 x 2.30 on the wing -- in both
 	# the model and the fallback branch, and the two travertine slabs above them
 	# keep the colliders they always had.
-	"lp_lobby_counter"]
+	"lp_lobby_counter",
+	# The player's car already gets one deliberate 1.80 x 1.44 x 4.90 body from
+	# FirstMuseumMap._car_collider. A generated hull would be a second collider,
+	# would include the mirrors and wheel brows outside that surveyed body, and
+	# would block the DRIVER_EYE camera inside the cabin. The GLB is visual only.
+	"lp_player_car_shell"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space

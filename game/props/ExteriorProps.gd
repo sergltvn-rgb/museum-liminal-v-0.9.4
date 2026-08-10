@@ -44,6 +44,7 @@ extends RefCounted
 # either. Warm lamp glow matches FacadeProps' COL_LAMP_GLOW family.
 
 const MatLib := preload("res://game/props/MaterialLib.gd")
+const Models := preload("res://game/MapModels.gd")
 # Только через preload: глобальное имя класса в голом --script-прогоне не
 # регистрируется и вся цепочка падает (раздел 14 плана).
 # Здесь на палитру переводится только рукотворное (асфальт, бетон,
@@ -558,6 +559,45 @@ static func build_parked_car(parent: Node3D, origin: Vector3, color: Color,
 	return root
 
 
+## Procedural fallback for the opaque player-car shell. It intentionally owns
+## exactly the pieces lp_player_car_shell replaces; glass, lamps and the entire
+## camera-critical cabin remain siblings under Player Car in both branches.
+static func _player_car_shell_parts(root: Node3D, color: Color,
+		vis: float) -> Node3D:
+	var shell := Node3D.new()
+	shell.name = "Player Car Shell"
+	root.add_child(shell)
+	_box(shell, "Body", Vector3(0, 0.55, 0.35), Vector3(1.78, 0.52, 3.4),
+		color, vis, 0.0, 0.45)
+	_box(shell, "Hood", Vector3(0, 0.86, -1.62), Vector3(1.7, 0.1, 1.35),
+		color, vis, 0.0, 0.45)
+	_box(shell, "Nose", Vector3(0, 0.58, -2.2), Vector3(1.74, 0.46, 0.5),
+		color, vis, 0.0, 0.45)
+	_box(shell, "Trunk Lid", Vector3(0, 0.86, 1.75), Vector3(1.7, 0.1, 0.9),
+		color, vis, 0.0, 0.45)
+	_box(shell, "Bumper Front", Vector3(0, 0.4, -2.48),
+		Vector3(1.8, 0.22, 0.14), COL_CAR_TRIM, vis, 0.0, 0.3)
+	_box(shell, "Bumper Rear", Vector3(0, 0.4, 2.24),
+		Vector3(1.8, 0.22, 0.14), COL_CAR_TRIM, vis, 0.0, 0.3)
+	_box(shell, "Roof", Vector3(0, 1.38, 0.35), Vector3(1.64, 0.09, 1.9),
+		color, vis, 0.0, 0.45)
+	for side: float in [-1.0, 1.0]:
+		var tag := "L" if side < 0.0 else "R"
+		_box(shell, "Door %s" % tag, Vector3(side * 0.86, 0.68, 0.35),
+			Vector3(0.07, 0.55, 1.9), color, vis, 0.0, 0.45)
+		_box(shell, "Mirror Arm %s" % tag, Vector3(side * 0.95, 1.0, -0.78),
+			Vector3(0.14, 0.04, 0.05), COL_CAR_TRIM, vis, 0.0, 0.3)
+		_box(shell, "Wing Mirror %s" % tag, Vector3(side * 1.06, 1.02, -0.78),
+			Vector3(0.08, 0.14, 0.2), COL_CAR_TRIM, vis, 0.0, 0.3)
+		for wz: float in [-1.42, 1.32]:
+			var wheel := _cylinder(shell, "Wheel %s %.1f" % [tag, wz],
+				Vector3(side * 0.84, 0.34, wz), 0.34, 0.25, COL_CAR_TRIM, vis)
+			wheel.rotation_degrees.z = 90.0
+			_sphere(shell, "Hubcap %s %.1f" % [tag, wz],
+				Vector3(side * 0.965, 0.34, wz), 0.09, COL_CONCRETE, vis)
+	return shell
+
+
 ## The player's own sedan. Exterior matches build_parked_car's silhouette;
 ## on top of it the cabin is genuinely hollow and furnished for the
 ## from-behind-the-wheel POV at DRIVER_EYE: dashboard, instrument cowl,
@@ -568,54 +608,36 @@ static func build_player_car(parent: Node3D, origin: Vector3,
 	var color := Color(0.36, 0.33, 0.28)  # service-issue beige, museum motor pool
 	var root := _root(parent, "Player Car", origin, yaw_deg)
 
-	# --- Exterior shell -----------------------------------------------------
-	_box(root, "Body", Vector3(0, 0.55, 0.35), Vector3(1.78, 0.52, 3.4),
-		color, vis, 0.0, 0.45)
-	_box(root, "Hood", Vector3(0, 0.86, -1.62), Vector3(1.7, 0.1, 1.35),
-		color, vis, 0.0, 0.45)
-	_box(root, "Nose", Vector3(0, 0.58, -2.2), Vector3(1.74, 0.46, 0.5),
-		color, vis, 0.0, 0.45)
-	_box(root, "Trunk Lid", Vector3(0, 0.86, 1.75), Vector3(1.7, 0.1, 0.9),
-		color, vis, 0.0, 0.45)
-	_box(root, "Bumper Front", Vector3(0, 0.4, -2.48), Vector3(1.8, 0.22, 0.14),
-		COL_CAR_TRIM, vis, 0.0, 0.3)
-	_box(root, "Bumper Rear", Vector3(0, 0.4, 2.24), Vector3(1.8, 0.22, 0.14),
-		COL_CAR_TRIM, vis, 0.0, 0.3)
+	# --- Opaque exterior: one model, with the exact old primitives as fallback
+	var shell := Models.place(root, "lp_player_car_shell", Vector3.ZERO)
+	if shell == null:
+		shell = _player_car_shell_parts(root, color, vis)
+	shell.name = "Player Car Shell"
+
+	# Lamps deliberately stay procedural: both pairs emit, while the model atlas
+	# is opaque and non-emissive. Keeping them here also preserves night framing.
 	for side: float in [-1.0, 1.0]:
 		var tag := "L" if side < 0.0 else "R"
 		_box(root, "Headlight %s" % tag, Vector3(side * 0.62, 0.64, -2.44),
 			Vector3(0.34, 0.15, 0.06), COL_HEADLIGHT, vis, 0.35)
 		_box(root, "Taillight %s" % tag, Vector3(side * 0.62, 0.64, 2.22),
 			Vector3(0.34, 0.15, 0.06), COL_TAILLIGHT, vis, 0.35)
-		_box(root, "Mirror Arm %s" % tag, Vector3(side * 0.95, 1.0, -0.78),
-			Vector3(0.14, 0.04, 0.05), COL_CAR_TRIM, vis, 0.0, 0.3)
-		_box(root, "Wing Mirror %s" % tag, Vector3(side * 1.06, 1.02, -0.78),
-			Vector3(0.08, 0.14, 0.2), COL_CAR_TRIM, vis, 0.0, 0.3)
-		for wz: float in [-1.42, 1.32]:
-			var wheel := _cylinder(root, "Wheel %s %.1f" % [tag, wz],
-				Vector3(side * 0.84, 0.34, wz), 0.34, 0.25, COL_CAR_TRIM, vis)
-			wheel.rotation_degrees.z = 90.0
-			_sphere(root, "Hubcap %s %.1f" % [tag, wz],
-				Vector3(side * 0.965, 0.34, wz), 0.09, COL_CONCRETE, vis)
 
 	# --- Cabin shell: hollow, so the POV sees out ----------------------------
-	# Floor pan, firewall behind the engine bay, rear bulkhead, roof.
+	# Floor pan, firewall, rear bulkhead and roof SOFFIT stay inside. The opaque
+	# roof skin itself belongs to Player Car Shell in both branches.
 	_box(root, "Cabin Floor", Vector3(0, 0.42, 0.45), Vector3(1.7, 0.06, 2.1),
 		COL_CAR_INTERIOR, vis)
 	_box(root, "Firewall", Vector3(0, 0.72, -0.72), Vector3(1.7, 0.55, 0.08),
 		COL_CAR_INTERIOR, vis)
 	_box(root, "Rear Bulkhead", Vector3(0, 0.95, 1.42), Vector3(1.66, 1.0, 0.08),
 		COL_CAR_INTERIOR, vis)
-	_box(root, "Roof", Vector3(0, 1.38, 0.35), Vector3(1.64, 0.09, 1.9),
-		color, vis, 0.0, 0.45)
 	_box(root, "Roof Soffit", Vector3(0, 1.32, 0.35), Vector3(1.56, 0.03, 1.8),
 		COL_CAR_INTERIOR, vis)
 	for side: float in [-1.0, 1.0]:
 		var tag := "L" if side < 0.0 else "R"
-		# Doors: solid below the belt line, glass above, so the side windows
-		# read from inside as well as outside.
-		_box(root, "Door %s" % tag, Vector3(side * 0.86, 0.68, 0.35),
-			Vector3(0.07, 0.55, 1.9), color, vis, 0.0, 0.45)
+		# Opaque door skins belong to Player Car Shell; only their transparent
+		# glass stays here, so the side windows read from inside and outside.
 		_box(root, "Door Glass %s" % tag, Vector3(side * 0.84, 1.11, 0.35),
 			Vector3(0.04, 0.36, 1.7), COL_GLASS_TINT, vis, 0.0, 0.0, true)
 		# A-pillar from the dash corner to the roof's front edge.

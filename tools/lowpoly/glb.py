@@ -193,6 +193,15 @@ SWATCHES = {
     # monolith from the entrance doorway 13 m away. This is the first swatch
     # light enough to still read as stone at that distance in that light.
     "stone_pale": tone(STONE, -0.08),
+    # Appended for the player's service-issue beige sedan. These are exact
+    # ExteriorProps.build_player_car colours (or controlled steps of the same
+    # body colour), not a generic furniture grey: the bonnet fills the bottom
+    # third of the driving POV, where even a small palette mismatch is obvious.
+    "car_body": (0.360, 0.330, 0.280),
+    "car_body_light": tone((0.360, 0.330, 0.280), 0.10),
+    "car_body_dark": tone((0.360, 0.330, 0.280), -0.18),
+    "car_trim": tone(CASING, -0.15),
+    "car_hubcap": tone(STONE, 0.05),
 }
 
 # 8 columns of 16 px blocks = 128 px, and the image is forced square and

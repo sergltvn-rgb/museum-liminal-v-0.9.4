@@ -127,6 +127,7 @@ out as the same cylinder whichever way it is spun.
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 
@@ -443,7 +444,131 @@ def build_lobby_counter(material):
     return p, p.finish(material)
 
 
-BUILDERS = (build_stack_carriage, build_rotunda_bench, build_lobby_counter)
+# =============================================================================
+#  PLAYER CAR -- THE OPAQUE OUTER SHELL ONLY
+# =============================================================================
+#
+# This split is not optional. build_player_car is also the driving-cutscene set:
+# DRIVER_EYE sits inside it, six panes use alpha 0.35, four details emit light,
+# and the pillars/steering furniture are pitched specifically for a 66-degree
+# first-person frame. The one-material opaque atlas cannot preserve any of that.
+# The GLB therefore stops at the belt line. Glass, lamps, pillars, dash, wheel,
+# seats and roof soffit remain procedural; only the opaque exterior below moves.
+#
+# Source extrema are preserved rather than recentred to a prettier number:
+# mirrors x -1.100..+1.100, tyres touch y 0, roof y 1.335..1.425, and bumpers
+# z -2.550..+2.310. Local -Z is the nose, exactly like ExteriorProps.
+#
+# The primitive silhouette is deliberately improved, not merely fused. Tapers
+# give the body shoulders and the nose a plan-view rake; 12-20 mm bevels catch
+# light on the hood, roof, boot and bumpers; door skins have a real 6 mm inset;
+# the wheels are flat-shaded decagons, not smooth CylinderMesh instances. No
+# decorative face is coplanar: doors stand 5 mm proud of the body, seam strips
+# stand another 1 mm proud, and wheel-arch brows stand outside both.
+
+
+def build_player_car_shell(material):
+    p = bb.Part("lp_player_car_shell")
+
+    # Rotate a newly-authored upright prism onto the car's X axle. Part.prism
+    # stands on Godot +Y; a -90-degree turn about Godot +Z sends that axis to +X.
+    def axle_prism(centre, radius, width, sides, swatch, cap_swatch=None,
+                   phase=0.0):
+        mark = p.mark_verts()
+        p.prism((centre[0], centre[1] - width * 0.5, centre[2]),
+                radius, width, sides, swatch, cap_swatch=cap_swatch,
+                phase=phase)
+        verts = [v for v in p.bm.verts if v not in mark]
+        pivot = bb.V(centre)
+        matrix = (bb.Matrix.Translation(pivot)
+                  @ bb.Matrix.Rotation(math.radians(-90.0), 4,
+                                       bb.V((0.0, 0.0, 1.0)))
+                  @ bb.Matrix.Translation(-pivot))
+        bb.bmesh.ops.transform(p.bm, matrix=matrix, verts=verts)
+
+    # ---- lower shell: one shouldered volume rather than a rectangular bath --
+    body = p.taper((0.0, 0.290, 0.350), (1.680, 3.300), (1.780, 3.400),
+                   0.520, "car_body", cap_bottom=True,
+                   face_swatches={"py": "car_body_light", "ny": "car_body_dark"})
+    p.bevel(p.facing(body, "py"), 0.018, "car_body_light")
+
+    # The hood retains the source top at y 0.91, vital to DRIVER_EYE framing.
+    # Its taper narrows 40 mm per side and the bevel gives the near-camera edge
+    # a highlight without raising that surveyed top.
+    hood = p.taper((0.0, 0.790, -1.620), (1.700, 1.350), (1.620, 1.290),
+                   0.120, "car_body", cap_bottom=True,
+                   face_swatches={"py": "car_body_light"})
+    p.bevel(p.facing(hood, "py"), 0.020, "car_body_light")
+
+    # Nose is wider at the shoulder and tighter at road level. The bevel is on
+    # the leading -Z face, replacing the old square three-box junction.
+    nose = p.taper((0.0, 0.350, -2.200), (1.620, 0.420), (1.740, 0.500),
+                   0.460, "car_body", cap_bottom=True,
+                   face_swatches={"py": "car_body_light", "ny": "car_body_dark"})
+    p.bevel(p.facing(nose, "nz", tol=0.12), 0.035, "car_body_dark")
+
+    boot = p.taper((0.0, 0.810, 1.750), (1.700, 0.900), (1.620, 0.840),
+                   0.100, "car_body", cap_bottom=True,
+                   face_swatches={"py": "car_body_light"})
+    p.bevel(p.facing(boot, "py"), 0.016, "car_body_light")
+
+    for z, face in ((-2.480, "nz"), (2.240, "pz")):
+        bumper = p.box((0.0, 0.400, z), (1.800, 0.220, 0.140),
+                       "car_trim", face_swatches={"ny": "shadow"})
+        p.bevel(p.facing(bumper, face), 0.022, "car_trim")
+
+    # Roof remains opaque and in the model; the soffit beneath it and all four
+    # pillars stay procedural, so the cabin remains genuinely hollow.
+    roof = p.taper((0.0, 1.335, 0.350), (1.640, 1.900), (1.540, 1.800),
+                   0.090, "car_body", cap_bottom=True,
+                   face_swatches={"py": "car_body_light", "ny": "car_body_dark"})
+    p.bevel(p.facing(roof, "py"), 0.012, "car_body_light")
+
+    # ---- doors and real panel depth --------------------------------------
+    for side in (-1.0, 1.0):
+        outward = "nx" if side < 0.0 else "px"
+        door = p.box((side * 0.860, 0.680, 0.350),
+                     (0.070, 0.550, 1.900), "car_body")
+        p.inset(p.facing(door, outward), 0.075, -0.006,
+                "car_body_dark", "car_body")
+        # The centre break turns the old single slab into readable front/rear
+        # doors. Offset 1 mm beyond the skin: no z-fighting at grazing angles.
+        p.box((side * 0.896, 0.680, 0.350), (0.004, 0.480, 0.018),
+              "shadow")
+        # Angular wheel-arch brows. Tyres mask the lower ends; three facets are
+        # enough to read as an arch without wasting a 32-segment torus.
+        for wz in (-1.420, 1.320):
+            p.box((side * 0.898, 0.665, wz), (0.005, 0.025, 0.360),
+                  "car_body_dark")
+            for dz in (-0.235, 0.235):
+                mark = p.mark_verts()
+                p.box((side * 0.898, 0.585, wz + dz),
+                      (0.005, 0.200, 0.026), "car_body_dark")
+                p.pitch(mark, (side * 0.898, 0.585, wz + dz),
+                        -38.0 if dz < 0.0 else 38.0)
+
+        # Wing mirror arm and bevelled housing retain the exact source extrema.
+        p.box((side * 0.950, 1.000, -0.780),
+              (0.140, 0.040, 0.050), "car_trim")
+        mirror = p.box((side * 1.060, 1.020, -0.780),
+                       (0.080, 0.140, 0.200), "car_trim")
+        p.bevel(p.facing(mirror, outward), 0.012, "car_trim")
+
+        # Four low-poly tyres and inset bright hubcaps. Width and centres match
+        # the source, but 10 sides replace smooth 128-triangle CylinderMeshes.
+        for wz in (-1.420, 1.320):
+            # phase 0 puts a decagon vertex exactly at +/-Y after the axle
+            # rotation: tyre radius 0.340 at centre y 0.340 then touches y 0.
+            axle_prism((side * 0.840, 0.340, wz), 0.340, 0.250, 10,
+                       "car_trim", cap_swatch="car_trim", phase=0.0)
+            axle_prism((side * 0.976, 0.340, wz), 0.095, 0.020, 10,
+                       "car_hubcap", cap_swatch="car_hubcap", phase=0.0)
+
+    return p, p.finish(material)
+
+
+BUILDERS = (build_stack_carriage, build_rotunda_bench, build_lobby_counter,
+            build_player_car_shell)
 
 BUDGET = {
     # Large fixture ceiling is 1200. The shell lands near 380, and the headroom
@@ -456,6 +581,9 @@ BUDGET = {
     # three insets and five chamfers land near 300, so 600 leaves room for a
     # future drawer bank without letting the stone slabs creep in.
     "lp_lobby_counter": 600,
+    # Vehicle ceiling is 1200. The decagonal wheels and genuine panel work are
+    # the useful detail; 900 prevents the procedural cabin from creeping in.
+    "lp_player_car_shell": 900,
 }
 
 # Per-model house-style rules, in metres.
@@ -472,6 +600,9 @@ RULES = {
     # 30 mm UNDER the 1.100 the stone ledge presents, because that slab is not
     # in this model. No centre_z -- the return wing, see the header.
     "lp_lobby_counter": {"floor_y": 0.0, "centre_x": True, "max_y": 1.070},
+    # Source shell is asymmetric in Z: nose bumper -2.550, rear +2.310. Keep
+    # that camera-critical offset; only X is centred. Roof top is y 1.425.
+    "lp_player_car_shell": {"floor_y": 0.0, "centre_x": True, "max_y": 1.425},
 }
 
 
