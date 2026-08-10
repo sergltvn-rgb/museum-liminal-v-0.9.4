@@ -136,19 +136,62 @@ Since 0.9.4 the Atrium containment core is Blender geometry, built by
 | `lp_core_base.glb` | 316 | one, at the core origin |
 | `lp_core_column.glb` | 844 | one, on the base deck (y 0.24) |
 | `lp_core_gantry.glb` | 146 | three, r 1.36, at 45° / 135° / 225° |
-| `lp_core_plant.glb` | 282 | two, r 1.20, at 285° / 345° |
+| `lp_core_plant.glb` | 282 | two, r 1.20, at 279° / 351° |
 
 Yaw is `90.0 - <compass angle>`, because Godot's `Basis(Y, θ)` sends `+Z` to
 `(sin θ, 0, cos θ)` while the outward radius is `(cos a, 0, sin a)`. Every call keeps its
 primitive fallback inline, so a missing file still builds a core.
 
-The 315° quarter is kept clear on purpose — CCTV camera 03 looks down that ray. That is why
-the two coolant skids sit at 285° and 345° instead of the 292.5° / 337.5° the primitive
-risers used: a 0.90 m skid at r 1.20 subtends about 41° and would have closed the window.
+The 305°–325° sector is kept clear on purpose — CCTV camera 03 stands at (13.6, 3.0, -12.6)
+and its ray onto the core runs at 317.2°. That is why the two coolant skids sit at 279° and
+351°, and why there is no fourth gantry. Neither the primitive risers' 292.5° / 337.5° nor
+the first correction to 285° / 345° was good enough: a 0.90 m skid at r 1.20 subtends about
+41°, so both earlier pairs still closed the window. Do not round these angles to nicer
+numbers and do not spread them wider — at 279° / 351° only 21 mm separates a skid from the
+225° gantry. Verify with `python tools\lowpoly\check_core_layout.py`, which prints
+`LAYOUT_OK` and the width of the clear sector.
+
+Caveat: that invariant holds for the MODEL path. The primitive fallback `_build_core_plant`
+violates it — its handwheel and three cable coils sit at 315° and cover the whole sector,
+ray included. It is tolerated, not correct, because those parts are low (y 0.29…0.38) and
+only draw when the `.glb` failed to load. The checker does not model the fallback.
 
 `Anomalous Core`, `Containment Dome`, `Core Beacon Lamp`, the four cable trunks and the
 `Label3D` plaque stay procedural. Glow, a shader, emission, a length computed from the
 ceiling height and live text are all things the flat palette pipeline cannot bake.
+
+## Batch of 2026-08-10 — authored, in the map
+
+Both slots below were queued as "planned" and are now built by
+`tools/lowpoly/blender_archive.py`, the third thematic Blender file after `blender_core.py`.
+No Blender slot is queued right now; the remaining queue lives in `AGENT_PLAN.md`, section
+"Текущая работа — партия low-poly моделей в Blender".
+
+| Slot | Replaces | Meshes removed | bbox (m) | Tris | Commit |
+| --- | --- | --- | --- | --- | --- |
+| `lp_stack_carriage` | `ArchiveProps._stack_carriage` shell, 5 carriages | 160 | 0.940 x 2.201 x 3.140 | 366 | `841c90b` |
+| `lp_rotunda_bench` | `AtriumProps.build_rotunda_bench`, 4 benches | 92 | 3.280 x 1.030 x 0.692 | 344 | `1a97c1d` |
+
+The "70" and "44" the plan quoted were guesses made before anyone counted the builders:
+the carriage shell is 21 primitives per carriage, not 14, and one bench is 24, not 11.
+MeshInstance3D across the whole map went 9986 -> 9826 -> 9734.
+
+`lp_stack_carriage` covers the carriage shell only (0.94 x 2.20 x 3.00). Shelves and files
+stay procedural: only the two carriages facing the open aisle carry them, and nothing can
+see inside the rest.
+
+`lp_rotunda_bench` restores a slot that used to exist — the benches were placed from
+`лавочки.glb` until that paired 4.7 MB model was removed and replaced with primitives.
+Its authored bbox is 3.28 x 1.03 x 0.69; the doc comment at `AtriumProps.gd:785` still
+promises 3.34 x 1.03 x 0.78, and that older figure is the wrong one. Four coplanar-face
+defects of the primitive bench were fixed in the mesh and written down in
+`tools/lowpoly/blender_archive.py`: the rear post shared side faces with the frame, the
+post top shared a face with the back rail, the legs started at floor level inside the
+brass foot plates, and the stretcher touched nothing at all (moved z 0.010 -> 0.220).
+
+No Blender was needed for the third job of the batch: `LobbyProps.build_reception_counter`
+now places the existing `lp_desk_monitor` and `lp_keyboard` instead of eighteen primitives
+(commit `d614982`, MeshInstance3D 9734 -> 9728).
 
 ## Slots that no longer exist
 
