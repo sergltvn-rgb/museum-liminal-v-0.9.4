@@ -26,6 +26,13 @@ room whose whole horror is the dark slot between two of them.
 The shell is also the part that is IDENTICAL on all five carriages, which is
 what makes it a model rather than a rewrite: one .glb, placed five times.
 
+The file carries a second model on the same terms. AtriumProps.
+build_rotunda_bench is twenty-four MeshInstance3D nodes and build_atrium
+places it four times on the rotunda diagonals; nothing about a bench differs
+between the four, so it is one .glb placed four times. The rationale for that
+one sits directly above build_rotunda_bench below -- keep each model's
+reasoning next to its numbers.
+
 WHAT DELIBERATELY STAYS PROCEDURAL
 ----------------------------------
     the shelves and box files    _stack_shelves, and only on the two carriages
@@ -197,12 +204,113 @@ def build_stack_carriage(material):
     return p, p.finish(material)
 
 
-BUILDERS = (build_stack_carriage,)
+# =========================================================================
+# lp_rotunda_bench -- 3.34 x 1.03 x 0.69 m, the SEAT faces -Z
+# =========================================================================
+# The four-seater on each rotunda diagonal. AtriumProps.build_atrium places it
+# at r 8.4 on 45/135/225/315 with yaw -(angle + 90), which turns the long axis
+# onto the tangent and points the seat at the containment core.
+#
+# ORIENTATION: no 180 flip here, unlike lp_stack_carriage. The source already
+# authors +x as the length and +z as the BACK, so the seat already looks down
+# -Z and model space equals the GDScript local space number for number. The
+# call site keeps passing facing_deg straight through.
+#
+# NOT CENTRED IN Z, ON PURPOSE: the back rail and the back posts overhang to
+# +0.3525 while the brass foot plates stop at -0.340. The collider
+# (3.40 x 0.47 x 0.70 round the seat volume) stays where it was, centred on
+# z 0, because that is the volume a body has to be kept out of -- the back
+# rail at 1.03 m is over head height for the nav agent and never was solid.
+# So RULES drops centre_z and keeps centre_x, which is what holds the bench on
+# its own radius.
+#
+# COLLISION: lp_rotunda_bench belongs in MapModels.NON_BLOCKING for the
+# lp_stack_carriage reason. build_rotunda_bench keeps building its one surveyed
+# box; a generated hull would wrap the arms, the back and the foot plates as
+# well and hand the bake four extra static bodies on the main circulation ring.
+#
+# PALETTE: the bench is authored in three atrium tones and each maps to its
+# nearest atlas swatch:
+#
+#     WOOD   tone(Pal.WOOD,  -0.52) = 0.106 0.072 0.041 -> wood_dark
+#     IRON                    0.062 0.066 0.070         -> brace
+#     BRASS  tone(Pal.BRASS, -0.32) = 0.340 0.258 0.116 -> lock
+#
+# The seat boards and the arms take the lighter `wood` on their TOP face only:
+# those are the two surfaces a museum bench is polished by, and it is the one
+# piece of tonal information the flat primitives could not carry.
+#
+# FOUR NUMBERS MOVED, ALL FOR THE SAME REASON AS IN THE CARRIAGE
+# --------------------------------------------------------------
+#   * back post 0.080 -> 0.076 wide. It shared both side faces with the frame
+#     rail it lands on (both spanned x 1.440 .. 1.520) over the 20 mm they
+#     overlap in Y. Now the post is 2 mm inside the rail on each side.
+#   * back post top 1.030 -> 1.022. It ended in exactly the plane of the back
+#     rail top, 76 x 70 mm of coplanar cap right at eye level. Now it is
+#     buried 8 mm under the rail.
+#   * legs start at y 0.020 instead of 0.000. Their bottom face used to be
+#     coplanar with the brass foot plate's bottom face AND with the floor --
+#     three surfaces in one plane. The leg now stands 4 mm inside the plate.
+#   * stretcher moved from z 0.010 to 0.220 and lengthened 2.860 -> 2.900.
+#     At the source numbers it touched NOTHING: its ends stopped 5 mm short of
+#     the legs in x, and at z 0.010 it hung in the 0.42 m void between each
+#     end frame's two legs. On the rear leg line it does what a stretcher does,
+#     15 mm of each end buried in a leg, and the front legs hide it.
+def build_rotunda_bench(material):
+    p = bb.Part("lp_rotunda_bench")
+
+    # ---- seat: five boards on a 0.13 pitch, 2.5 cm of daylight between ----
+    # The chamfer is the point of modelling this at all: a bare 90 degree
+    # board edge at knee height is the tell that a bench is six boxes.
+    for i in range(5):
+        seat = p.box((0.0, 0.455, -0.26 + 0.13 * float(i)),
+                     (3.28, 0.05, 0.105), "wood_dark",
+                     face_swatches={"py": "wood"})
+        p.bevel(p.facing(seat, "py"), 0.008, "wood")
+
+    # ---- back: three boards stepping outward as they rise ----------------
+    # Each leans 5.5 degrees about ITS OWN CENTRE, so the number is the same
+    # -5.5 the GDScript sets on rotation_degrees.x and the sign convention is
+    # the one pitch() documents: positive tips the top towards +Z.
+    for i in range(3):
+        centre = (0.0, 0.63 + 0.16 * float(i), 0.270 + 0.015 * float(i))
+        mark = p.mark_verts()
+        p.box(centre, (3.28, 0.13, 0.045), "wood_dark")
+        p.pitch(mark, centre, -5.5)
+
+    # ---- the two cast-iron end frames ------------------------------------
+    for side in (-1.0, 1.0):
+        x = side * 1.48
+        # Two legs and the rail they carry the seat on.
+        p.box((x, 0.225, -0.20), (0.09, 0.41, 0.10), "brace")
+        p.box((x, 0.225, 0.22), (0.09, 0.41, 0.10), "brace")
+        p.box((x, 0.415, 0.01), (0.08, 0.07, 0.64), "brace")
+        # Back post: narrowed and shortened, see the header of this block.
+        p.box((x, 0.726, 0.315), (0.076, 0.592, 0.07), "brace")
+        # Timber arm on an iron bracket.
+        arm = p.box((side * 1.46, 0.70, -0.01), (0.07, 0.06, 0.60),
+                    "wood_dark", face_swatches={"py": "wood"})
+        p.bevel(p.facing(arm, "py"), 0.006, "wood")
+        p.box((side * 1.46, 0.57, -0.25), (0.06, 0.30, 0.06), "brace")
+        # Brass foot plate: the museum bolts its benches to the floor.
+        p.box((x, 0.012, 0.0), (0.17, 0.024, 0.68), "lock")
+
+    # Stretcher on the rear leg line, and the back rail.
+    p.box((0.0, 0.155, 0.220), (2.900, 0.06, 0.06), "brace")
+    p.box((0.0, 1.000, 0.315), (3.04, 0.06, 0.075), "brace")
+
+    return p, p.finish(material)
+
+
+BUILDERS = (build_stack_carriage, build_rotunda_bench)
 
 BUDGET = {
     # Large fixture ceiling is 1200. The shell lands near 380, and the headroom
     # is deliberate: the shelves are NOT in this model and must not creep in.
     "lp_stack_carriage": 700,
+    # Furniture ceiling is 400. Twenty-four boxes and seven chamfers land near
+    # 350; anything past 400 means somebody added detail a bench does not need.
+    "lp_rotunda_bench": 400,
 }
 
 # Per-model house-style rules, in metres.
@@ -211,6 +319,10 @@ RULES = {
     # end, so the bbox runs -1.6225 .. +1.5175. See the header. max_y is the
     # dust panel 0.5 mm over the 2.200 cap, which is STACK_CARRIAGE_H.
     "lp_stack_carriage": {"floor_y": 0.0, "centre_x": True, "max_y": 2.201},
+    # Floor is the brass foot plate. max_y is the back rail top at 1.030, the
+    # figure the build_rotunda_bench doc comment quotes. No centre_z: the back
+    # overhangs, see the block above the builder.
+    "lp_rotunda_bench": {"floor_y": 0.0, "centre_x": True, "max_y": 1.030},
 }
 
 

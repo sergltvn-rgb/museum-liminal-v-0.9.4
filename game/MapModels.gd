@@ -82,7 +82,15 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# carriage -- on the exact rail run the player has to walk down. Five extra
 	# static bodies per block, a narrower aisle for Recast to erode, and the
 	# StaticBody3D count moves off 547 for nothing gained.
-	"lp_stack_carriage"]
+	"lp_stack_carriage",
+	# The four rotunda benches. Same argument again, and the sharpest case of
+	# it: build_rotunda_bench builds ONE surveyed 3.40 x 0.47 x 0.70 box round
+	# the seat volume, while a hull of this mesh would also wrap the arms, the
+	# back rail at 1.03 m and the brass foot plates -- 0.69 m deep against the
+	# collider's 0.70 m, but sitting on the r 8.4 ring, which is the loop the
+	# Curator chases the player around. Four extra static bodies out there cost
+	# walkable ring at every one of them, for a bench that is already solid.
+	"lp_rotunda_bench"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space

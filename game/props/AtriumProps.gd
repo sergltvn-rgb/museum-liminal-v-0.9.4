@@ -785,11 +785,46 @@ static func build_floor_signage(parent: Node3D, origin: Vector3,
 ## Bounding box 3.34 x 1.03 x 0.78 m; seat top y 0.45, back rail top y 1.03.
 ## ONE collider, a 3.40 x 0.47 x 0.70 box round the seat volume: the slats, the
 ## arms and the back are decoration, and a body each would only litter the bake.
+##
+## THE TWENTY-FOUR BOXES BELOW ARE NOW THE FALLBACK. The bench itself is one
+## Blender-authored mesh, lp_rotunda_bench, built by
+## tools/lowpoly/blender_archive.py -- the same trade the archive carriage and
+## the reception counter made: twenty-four MeshInstance3D nodes, four times
+## over, down to four. The model is authored in exactly the local space the
+## parts below use (+x the length, +z the back), so facing_deg goes straight
+## through with no flip, and the four chamfered seat boards are the one thing
+## it adds that a box could not carry.
 static func build_rotunda_bench(parent: Node3D, origin: Vector3,
 		facing_deg := 0.0, tag := "") -> Node3D:
 	var node_name := "Rotunda Bench"
 	if not tag.is_empty():
 		node_name = "Rotunda Bench %s" % tag
+	# Same shape as build_reception_desk and lp_reception_counter: place the
+	# model, fall back to the primitives when the .glb is missing or has not
+	# been imported, and give the node THE SAME NAME in both branches -- the
+	# map, the tests and the CCTV cone all address this bench by name and must
+	# not be able to tell which branch built it.
+	var root := Models.place(parent, "lp_rotunda_bench", origin, 1.0,
+		facing_deg)
+	if root == null:
+		root = _rotunda_bench_parts(parent, node_name, origin, facing_deg)
+	else:
+		root.name = node_name
+	# The collider is built HERE, next to the model, in both branches: one box
+	# round the seat volume, which is why lp_rotunda_bench sits in
+	# MapModels.NON_BLOCKING. See the note there before adding a hull.
+	_collider(root, "Bench Body", Vector3(0, 0.235, 0.0),
+		Vector3(3.40, 0.47, 0.70))
+	return root
+
+
+## The bench as primitives: the fallback for build_rotunda_bench, and the
+## record of what lp_rotunda_bench is a copy of. Four numbers differ in the
+## model and every one of them removes a pair of coplanar faces -- they are
+## listed above build_rotunda_bench in tools/lowpoly/blender_archive.py.
+## Builds no collider: its caller owns that for both branches.
+static func _rotunda_bench_parts(parent: Node3D, node_name: String,
+		origin: Vector3, facing_deg: float) -> Node3D:
 	var root := _root(parent, node_name, origin)
 	root.rotation_degrees.y = facing_deg
 
@@ -832,8 +867,6 @@ static func build_rotunda_bench(parent: Node3D, origin: Vector3,
 		Vector3(2.86, 0.06, 0.06), IRON)
 	_box(root, "Bench Back Rail", Vector3(0, 1.00, 0.315),
 		Vector3(3.04, 0.06, 0.075), IRON)
-	_collider(root, "Bench Body", Vector3(0, 0.235, 0.0),
-		Vector3(3.40, 0.47, 0.70))
 	return root
 
 
