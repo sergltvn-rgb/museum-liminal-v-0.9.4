@@ -3473,10 +3473,39 @@ func _add_drive_set(parent: Node) -> void:
 		Vector3(0.92, 0.58, 0.08), Color(0.24, 0.42, 0.30), 0.1, 0.0, false)
 	_box(set_root, "Parking Exit Stripe", Vector3(33.2, 1.68, 52.55),
 		Vector3(0.58, 0.10, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	# F: the three east-margin posts are lp_street_bollard models now instead of
+	# code cylinders. The model measures 0.18 x 0.85 x 0.18 (blender_street_v2.py,
+	# module V02) against the primitive's 0.18 diameter x 0.80 -- 50 mm taller and
+	# otherwise the same post, so the margin reads as before.
+	#
+	# Collision is KEPT on purpose. _cylinder() defaults to with_collision true,
+	# so these posts already stopped the player, and dropping the hull here would
+	# silently open a walk-through where a solid post used to be. Note that the
+	# street treats identical posts the other way round: StreetProps._place_flat
+	# discards the hull MapModels generates for lp_street_bollard. That
+	# inconsistency is recorded, not resolved -- the lot keeps what it had.
+	#
+	# The node name stays "Parking Bollard %d": test_map_verification pins it.
+	# Model roots are Node3D with the mesh inside, so the test's old
+	# MeshInstance3D filter was rewritten in the same step.
+	#
+	# The cylinder stays as the fallback: place() returns null when the .glb has
+	# not been imported, and without this branch the margin would quietly lose
+	# its posts while every test still passed.
 	for i in range(3):
-		_cylinder(set_root, "Parking Bollard %d" % i,
-			Vector3(52.1, 0.40, 45.0 + float(i) * 3.0),
-			0.09, 0.80, ExteriorProps.COL_IRON)
+		var post_at := Vector3(52.1, 0.0, 45.0 + float(i) * 3.0)
+		var post := MuseumModels.place(set_root, "lp_street_bollard", post_at)
+		if post == null:
+			# Say so out loud. Both paths leave the node counts identical -- three
+			# cylinders out, three model meshes in, hulls one for one -- so the
+			# verdict numbers cannot tell a resolved model from a silent fallback.
+			# This warning is the only thing that can.
+			push_warning("FirstMuseumMap: lp_street_bollard did not resolve; run Godot --headless --import after exporting")
+			_cylinder(set_root, "Parking Bollard %d" % i,
+				post_at + Vector3(0.0, 0.40, 0.0),
+				0.09, 0.80, ExteriorProps.COL_IRON)
+		else:
+			post.name = "Parking Bollard %d" % i
 
 	ExteriorProps.build_parked_car(set_root, Vector3(37.5, 0.005, 42.6),
 		Color(0.25, 0.30, 0.40), 0.0)

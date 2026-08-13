@@ -362,6 +362,17 @@ const BLOCK3_PARKING_REQUIRED := [
 ]
 const BLOCK3_PARKING_WHEEL_STOPS := 5
 const BLOCK3_PARKING_BOLLARDS := 3
+## REWRITTEN 2026-08-13 with the owner's word: the three east-margin posts are
+## lp_street_bollard models now, and MapModels.place() returns a Node3D root
+## with the mesh inside it, so the old "at least three MeshInstance3D named
+## Parking Bollard*" filter could never match one -- it would have failed the
+## finished product and passed the placeholder. The check now pins the
+## observable outcome instead: a post at each authored position, each carrying
+## real geometry. That holds for the model and for the cylinder fallback alike,
+## and still fails on a missing post or an empty node.
+const BLOCK3_PARKING_BOLLARD_POSITIONS := [
+	Vector2(52.1, 45.0), Vector2(52.1, 48.0), Vector2(52.1, 51.0),
+]
 const BLOCK3_EXTRA_CAR_POS := Vector2(49.5, 42.6)
 
 
@@ -372,8 +383,6 @@ func _verify_block3_parking(generated: Node) -> void:
 			missing.append(node_name)
 	var wheel_stops := generated.find_children(
 		"Parking Wheel Stop*", "MeshInstance3D", true, false)
-	var bollards := generated.find_children(
-		"Parking Bollard*", "MeshInstance3D", true, false)
 	var extra_car: Node3D = null
 	for candidate in generated.find_children("Parked Car*", "Node3D", true, false):
 		var car := candidate as Node3D
@@ -390,15 +399,40 @@ func _verify_block3_parking(generated: Node) -> void:
 		for part: String in BLOCK3_CAR_PARTS:
 			if extra_car.get_node_or_null(part) == null:
 				malformed.append("%s missing %s" % [extra_car.name, part])
+	var bollard_found: Array[bool] = []
+	bollard_found.resize(BLOCK3_PARKING_BOLLARD_POSITIONS.size())
+	bollard_found.fill(false)
+	for candidate in generated.find_children(
+			"Parking Bollard*", "Node3D", true, false):
+		var post := candidate as Node3D
+		if post == null:
+			continue
+		var post_xz := Vector2(post.global_position.x, post.global_position.z)
+		for i in range(BLOCK3_PARKING_BOLLARD_POSITIONS.size()):
+			if post_xz.distance_to(BLOCK3_PARKING_BOLLARD_POSITIONS[i]) \
+					> BLOCK3_PROP_EPSILON:
+				continue
+			bollard_found[i] = true
+			# A post has to carry geometry: the primitive IS the mesh, the model
+			# keeps it in a child. A bare Node3D satisfies neither branch.
+			if not (post is MeshInstance3D) and post.find_children(
+					"*", "MeshInstance3D", true, false).is_empty():
+				malformed.append("%s carries no mesh" % post.name)
+			break
+	var bollards_missing: Array[String] = []
+	for i in range(bollard_found.size()):
+		if not bollard_found[i]:
+			bollards_missing.append(str(BLOCK3_PARKING_BOLLARD_POSITIONS[i]))
 	if not missing.is_empty() \
 			or wheel_stops.size() < BLOCK3_PARKING_WHEEL_STOPS \
-			or bollards.size() < BLOCK3_PARKING_BOLLARDS \
+			or not bollards_missing.is_empty() \
 			or not malformed.is_empty():
-		_fail("Block 3 parking: missing [%s], wheel stops %d/%d, bollards %d/%d, malformed [%s]"
+		_fail("Block 3 parking: missing [%s], wheel stops %d/%d, bollard posts missing [%s] of %d, malformed [%s]"
 			% [", ".join(missing), wheel_stops.size(), BLOCK3_PARKING_WHEEL_STOPS,
-				bollards.size(), BLOCK3_PARKING_BOLLARDS, ", ".join(malformed)])
+				", ".join(bollards_missing), BLOCK3_PARKING_BOLLARDS,
+				", ".join(malformed)])
 	else:
-		_ok("Block 3 parking: five marked bays, four cars, kerbs, signs and bollards")
+		_ok("Block 3 parking: five marked bays, four cars, kerbs, signs and three posts with geometry")
 
 
 ## ARRIVAL: THE GROUND THE DRIVE HANDS CONTROL BACK ON MUST BE STANDABLE
