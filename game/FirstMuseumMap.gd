@@ -521,7 +521,7 @@ func _wall_segment(parent: Node, seg_name: String, center: Vector3,
 # which side of the wall they swing out into -- see _door_leaves().
 func _add_door_frame(parent: Node, center: Vector3, axis: String,
 		leaves := false, open_towards := 1.0, gap := DOOR_GAP,
-		interaction_required := false, model_name := "lp_door_leaf") -> void:
+		interaction_required := false, model_name := "lp_service_door_leaf") -> void:
 	var frame_color := Color(0.06, 0.06, 0.058)
 	# Frames span both back-to-back walls (2 x WALL_THICKNESS) plus a lip.
 	var frame_depth := WALL_THICKNESS * 2.0 + 0.14
@@ -582,7 +582,8 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 			interaction_required, model_name)
 
 
-# Museum double doors that actually open. Each leaf is lp_door_leaf.glb hung
+# Museum double doors that actually open. Service openings use authored steel
+# leaves; the planetarium uses the narrower glazed language of the entrance.
 # on its own pivot, and DoorSwing turns the pivots: open when somebody walks
 # into the doorway, shut again a couple of seconds after they have gone.
 #
@@ -607,7 +608,7 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 # |x| < 2.6, the spine from the street door to the atrium door).
 func _door_leaves(parent: Node, center: Vector3, axis: String,
 		open_towards := 1.0, gap := DOOR_GAP, interaction_required := false,
-		model_name := "lp_door_leaf") -> void:
+		model_name := "lp_service_door_leaf") -> void:
 	var leaf_h: float = 2.58 if interaction_required else WALL_HEIGHT - 0.98
 	# The automatic interior pair keeps its established 80 mm meeting gap. The
 	# ceremonial entrance gets a real 10 mm joint: 5 mm allowance on each leaf.
@@ -615,7 +616,9 @@ func _door_leaves(parent: Node, center: Vector3, axis: String,
 	var leaf_w: float = gap * 0.5 - centre_clear
 	var leaf_clear: float = 0.04 if interaction_required else 0.05
 	var hinge_y: float = 0.36 if interaction_required else 0.0
-	var leaf_color := Color(0.15, 0.11, 0.075)
+	# Missing-model fallback is metal too. A failed import must never quietly
+	# bring the rejected wooden door back.
+	var leaf_color := Color(0.11, 0.15, 0.17)
 	# Past 100 degrees the leaves stand clear of the walkable gap, which is how
 	# a doorway keeps its 0.9 m of navmesh with both doors thrown wide.
 	var swings := [96.0, 96.0] if interaction_required else [104.0, 100.0]
@@ -3103,18 +3106,9 @@ func _add_outdoor(parent: Node) -> void:
 	# то есть вплотную к перрону, но ни одной плитой в его ступени не лезет.
 	GroundsProps.build_forecourt(parent as Node3D)
 
-	# Long planting beds frame the route without narrowing the playable path.
-	for side: float in [-1.0, 1.0]:
-		var bed_x: float = side * 10.5
-		var bed_tag: String = "West" if side < 0.0 else "East"
-		_box(parent, "Formal Lawn %s" % bed_tag, Vector3(bed_x, -0.005, 45), Vector3(13, 0.08, 14),
-			Color(0.25, 0.37, 0.23), 0.0, 0.0, false)
-		_box(parent, "Lawn Stone Border %s" % bed_tag, Vector3(bed_x, 0.05, 45), Vector3(13.4, 0.12, 14.4),
-			Color(0.50, 0.50, 0.47), 0.0, 0.0, false)
-		_box(parent, "Lawn Inset %s" % bed_tag, Vector3(bed_x, 0.065, 45), Vector3(12.8, 0.08, 13.8),
-			Color(0.25, 0.37, 0.23), 0.0, 0.0, false)
-		for z: float in [40.0, 45.0, 50.0]:
-			_add_plant(parent, Vector3(side * 6.2, 0, z))
+	# The two lawns, their borders, hedges, topiary and flowers now arrive as
+	# mirrored lp_forecourt_garden models from GroundsProps. Keeping the old
+	# boxes here would put two lawns in the same plane and restore ball-flowers.
 
 	# Six finished fixtures create an even cadence from curb to entrance.
 	# Their curved brackets face inward, framing the walk as a paired avenue.
@@ -3124,31 +3118,25 @@ func _add_outdoor(parent: Node) -> void:
 			ExteriorProps.build_lamp_post(parent as Node3D,
 				Vector3(lx, 0.0, z), yaw)
 
-	# Facing benches form a deliberate pause point halfway to the entrance.
-	# The seat and the back used to be two planks hanging in mid-air: the seat
-	# floated at y 0.39..0.51 and the back at 0.55..1.05 with nothing under
-	# either of them. Legs at both ends and two posts carrying the back make it
-	# a bench. Both benches also shared one node name, so Godot renamed the
-	# second pair to @MeshInstance3D@NNN; they are told apart by side now.
+	# Facing benches are authored models now: four slats, cast supports and a
+	# real back frame. One surveyed box keeps the old collision footprint.
 	for side: float in [-1.0, 1.0]:
 		var bx: float = side * 8.0
 		var tag: String = "West" if side < 0.0 else "East"
-		# Grown from 2.6 x 0.62 (a two-seater plank) to 3.4 x 0.72: a four-seat
-		# park bench, which is the scale the 64 m forecourt asks for. Seat top
-		# stays at 0.52 (sitting height); the back is taller, 0.55..1.13.
-		_box(parent, "Forecourt Bench %s Seat" % tag, Vector3(bx, 0.45, 43.5),
-			Vector3(3.4, 0.14, 0.72), Color(0.28, 0.22, 0.16))
-		_box(parent, "Forecourt Bench %s Back" % tag, Vector3(bx, 0.84, 43.86),
-			Vector3(3.4, 0.58, 0.09), Color(0.25, 0.19, 0.14))
-		for end_side: float in [-1.0, 1.0]:
-			var ex: float = bx + end_side * 1.55
-			var end_tag: String = "L" if end_side < 0.0 else "R"
-			_box(parent, "Forecourt Bench %s Leg %s" % [tag, end_tag],
-				Vector3(ex, 0.19, 43.5), Vector3(0.12, 0.38, 0.66),
-				Color(0.20, 0.16, 0.12))
-			_box(parent, "Forecourt Bench %s Post %s" % [tag, end_tag],
-				Vector3(ex, 0.82, 43.86), Vector3(0.10, 0.62, 0.09),
-				Color(0.20, 0.16, 0.12))
+		var bench := MuseumModels.place(parent, "lp_forecourt_bench",
+			Vector3(bx, 0.0, 43.5))
+		if bench != null:
+			bench.name = "Forecourt Bench %s" % tag
+			_prop_box_collider(bench, "Bench Collision",
+				Vector3(3.40, 1.03, 0.72), Vector3(0.0, 0.515, 0.0))
+		else:
+			push_warning("lp_forecourt_bench did not resolve; using bench fallback")
+			_box(parent, "Forecourt Bench %s Seat" % tag,
+				Vector3(bx, 0.45, 43.5), Vector3(3.4, 0.14, 0.72),
+				Color(0.28, 0.22, 0.16))
+			_box(parent, "Forecourt Bench %s Back" % tag,
+				Vector3(bx, 0.84, 43.86), Vector3(3.4, 0.58, 0.09),
+				Color(0.25, 0.19, 0.14))
 
 	# The sign board itself is part of the facade now: FacadeProps._sign_board()
 	# centres a 6.8 x 0.55 board named "Museum Sign" on the portico frieze, its
@@ -3196,6 +3184,20 @@ func _add_outdoor(parent: Node) -> void:
 ## actually walks down -- a sedan you can step through is worse than no sedan.
 ## One box per car, sized to the shell and parented under the car's own root so
 ## it inherits the car's yaw, is all the physics a parked prop needs.
+func _prop_box_collider(root_node: Node3D, collider_name: String,
+		size: Vector3, local_position: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.name = collider_name
+	body.position = local_position
+	root_node.add_child(body)
+	var box := BoxShape3D.new()
+	box.size = size
+	var collision := CollisionShape3D.new()
+	collision.name = "CollisionShape"
+	collision.shape = box
+	body.add_child(collision)
+
+
 func _car_collider(car: Node3D, size: Vector3) -> void:
 	var body := StaticBody3D.new()
 	body.name = "Car Collision"
@@ -4418,7 +4420,8 @@ func build_map() -> void:
 	_add_door_frame(map_root, Vector3(0, 0, -15), "x")    # Atrium <-> Time Wing
 	_add_door_frame(map_root, Vector3(-25, 0, 7), "x", true)    # Office <-> Storage
 	_add_door_frame(map_root, Vector3(-25, 0, -7), "x", true)   # Office <-> Archive
-	_add_door_frame(map_root, Vector3(0, 0, -33), "x", true)    # Time Wing <-> Planetarium
+	_add_door_frame(map_root, Vector3(0, 0, -33), "x", true, 1.0,
+		DOOR_GAP, false, "lp_gallery_door_leaf")  # Time Wing <-> Planetarium
 	_add_door_frame(map_root, Vector3(-25, 0, 17), "x", true)   # Storage <-> Restoration Lab
 	_add_door_frame(map_root, Vector3(0, 0, 35), "x", true, -1.0,
 		ENTRANCE_DOOR_GAP, true, "lp_museum_door_leaf")  # E-only public entrance

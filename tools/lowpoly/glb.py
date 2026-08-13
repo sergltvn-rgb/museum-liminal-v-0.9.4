@@ -202,6 +202,21 @@ SWATCHES = {
     "car_body_dark": tone((0.360, 0.330, 0.280), -0.18),
     "car_trim": tone(CASING, -0.15),
     "car_hubcap": tone(STONE, 0.05),
+    # Appended for the authored forecourt suite. Keep these restrained: the
+    # garden is read in daylight and at dusk, but it must still belong to the
+    # same muted PS1-horror palette as the museum rather than a theme park.
+    "court_stone": tone(STONE, 0.12),
+    "court_stone_dark": tone(STONE, -0.18),
+    "court_grass": (0.19, 0.30, 0.16),
+    "court_hedge": (0.105, 0.19, 0.10),
+    "court_soil": (0.24, 0.17, 0.11),
+    "leaf": (0.20, 0.34, 0.16),
+    "leaf_dark": (0.12, 0.24, 0.11),
+    "flower_red": (0.57, 0.18, 0.20),
+    "flower_cream": (0.70, 0.57, 0.28),
+    "flower_lilac": (0.43, 0.30, 0.56),
+    "water": (0.12, 0.24, 0.29),
+    "water_light": (0.27, 0.43, 0.47),
 }
 
 # 8 columns of 16 px blocks = 128 px, and the image is forced square and

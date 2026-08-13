@@ -34,6 +34,7 @@ extends RefCounted
 # металл, дерево. Трава, вода, цветы и камыш остаются своими.
 # Производные — `static var`: вызов `tone()` не константное выражение.
 const Pal := preload("res://game/props/Palette.gd")
+const MuseumModels := preload("res://game/MapModels.gd")
 
 const COL_MEADOW := Color(0.29, 0.35, 0.24)
 const COL_LAWN := Color(0.26, 0.38, 0.22)
@@ -1061,6 +1062,16 @@ static func _court_paving(root: Node3D) -> void:
 
 
 static func _fountain(root: Node3D) -> void:
+	var authored := MuseumModels.place(root, "lp_court_fountain",
+		Vector3(0, 0, FOUNTAIN_Z))
+	if authored != null:
+		authored.name = "Court Fountain"
+		# Same honest round blocker as the old basin; the imported hollow ring
+		# stays visual-only so a convex hull cannot fill the water and apron.
+		_solid_cyl(root, "Fountain Collision", Vector3(0, 0.40, FOUNTAIN_Z),
+			3.06, 0.80)
+		return
+	push_warning("lp_court_fountain did not resolve; using procedural fallback")
 	var f := Node3D.new()
 	f.name = "Court Fountain"
 	f.position = Vector3(0, 0, FOUNTAIN_Z)
@@ -1138,6 +1149,18 @@ static func _fountain(root: Node3D) -> void:
 ## four beds and four topiary cones. The side facing the axis stays open so
 ## the benches at (+-8, 43.5) are still reachable.
 static func _parterres(root: Node3D) -> void:
+	var east := MuseumModels.place(root, "lp_forecourt_garden",
+		Vector3(12.0, 0.0, 45.0))
+	if east != null:
+		east.name = "Parterre East"
+		var west := MuseumModels.place(root, "lp_forecourt_garden",
+			Vector3(-12.0, 0.0, 45.0), 1.0, 180.0)
+		if west != null:
+			west.name = "Parterre West"
+		_garden_colliders(root, 12.0)
+		_garden_colliders(root, -12.0)
+		return
+	push_warning("lp_forecourt_garden did not resolve; using procedural fallback")
 	var parterre := Node3D.new()
 	parterre.name = "Parterres"
 	root.add_child(parterre)
@@ -1186,6 +1209,20 @@ static func _parterres(root: Node3D) -> void:
 					1.64, "foliage", COL_HEDGE, 120.0, 12)
 				_solid_cyl(parterre, "Topiary Collision",
 					at + Vector3(0, 1.00, 0), 0.56, 2.00)
+
+
+static func _garden_colliders(parent: Node3D, cx: float) -> void:
+	var side := signf(cx)
+	# Three hedge runs keep the same open side toward the arrival axis.
+	_solid_box(parent, "Garden Outer Hedge Collision %s" % cx,
+		Vector3(cx + side * 6.03, 0.50, 45.0), Vector3(0.62, 0.64, 13.18))
+	for z in [38.42, 51.58]:
+		_solid_box(parent, "Garden End Hedge Collision %s %s" % [cx, z],
+			Vector3(cx, 0.49, z), Vector3(12.36, 0.62, 0.62))
+	for xoff in [-4.75, 4.75]:
+		for zoff in [-4.88, 4.88]:
+			_solid_cyl(parent, "Garden Topiary Collision %s %s" % [cx, Vector2(xoff, zoff)],
+				Vector3(cx + xoff, 1.00, 45.0 + zoff), 0.55, 2.00)
 
 
 static func _parterre_hedge(parent: Node3D, tag: String, a: float, b: float,
@@ -1242,6 +1279,36 @@ static func _street_gate(root: Node3D) -> void:
 	var gate := Node3D.new()
 	gate.name = "Court Gate"
 	root.add_child(gate)
+
+	var first_pier := MuseumModels.place(gate, "lp_court_gate_pier",
+		Vector3(-5.9, 0.0, 51.50))
+	if first_pier != null:
+		first_pier.name = "Court Gate Pier West"
+		var second_pier := MuseumModels.place(gate, "lp_court_gate_pier",
+			Vector3(5.9, 0.0, 51.50))
+		if second_pier != null:
+			second_pier.name = "Court Gate Pier East"
+		for side: float in [-1.0, 1.0]:
+			var sx := side * 5.9
+			var tag := "West" if side < 0.0 else "East"
+			_solid_box(gate, "Court Gate Collision %s" % tag,
+				Vector3(sx, 1.60, 51.50), Vector3(1.46, 3.20, 1.46))
+			var leaf := MuseumModels.place(gate, "lp_court_gate_leaf",
+				Vector3(sx + side * 0.62, 0.0, 51.50), 1.0, -side * 102.0)
+			if leaf != null:
+				leaf.name = "Court Gate Leaf %s" % tag
+			# Seven linked sections run from each pier to the side wall. This is
+			# the missing fence the old gate commentary explicitly omitted.
+			for i in range(7):
+				var fx := side * (8.40 + float(i) * 3.50)
+				var section := MuseumModels.place(gate, "lp_court_fence_section",
+					Vector3(fx, 0.0, 51.50))
+				if section != null:
+					section.name = "Court Fence %s %d" % [tag, i]
+				_solid_box(gate, "Court Fence Collision %s %d" % [tag, i],
+					Vector3(fx, 0.91, 51.50), Vector3(3.50, 1.82, 0.16))
+		return
+	push_warning("lp_court_gate_pier did not resolve; using procedural gate fallback")
 
 	for side: float in [-1.0, 1.0]:
 		var sx: float = side * 5.9

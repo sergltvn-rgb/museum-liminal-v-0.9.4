@@ -69,6 +69,7 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# body that swings -- and a StaticBody3D across a doorway is precisely what
 	# the navigation bake must never see.
 	"lp_door_leaf", "lp_museum_door_leaf",
+	"lp_service_door_leaf", "lp_gallery_door_leaf",
 	# The shell of an archive rolling-stack carriage, placed five times per
 	# block. Same shape of argument as "lp_door_leaf" above: the body that stops
 	# the player is a single box built next to the model in
@@ -100,6 +101,12 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# the model and the fallback branch, and the two travertine slabs above them
 	# keep the colliders they always had.
 	"lp_lobby_counter",
+	# Forecourt models use deliberate simple colliders in GroundsProps: one
+	# cylinder for the fountain, three hedge boxes per garden, thin boxes for
+	# fence sections and the surveyed old boxes for piers/benches. Convex hulls
+	# of the complete garden or hollow basin would fill their open space.
+	"lp_forecourt_garden", "lp_court_fountain", "lp_court_gate_pier",
+	"lp_court_gate_leaf", "lp_court_fence_section", "lp_forecourt_bench",
 	# The player's car already gets one deliberate 1.80 x 1.44 x 4.90 body from
 	# FirstMuseumMap._car_collider. A generated hull would be a second collider,
 	# would include the mirrors and wheel brows outside that surveyed body, and

@@ -4,7 +4,8 @@ extends SceneTree
 ## Строит карту тем же способом, что test_map_verification (instantiate + два
 ## кадра), находит узлы "Door Swing ..." и меряет то, чего не видно на
 ## скриншоте:
-##   MODEL — створка собрана из lp_door_leaf, а не из примитива-фолбэка;
+##   MODEL — служебные створки стальные, планетарий повторяет язык входа,
+##           а главный вход использует свою широкую парадную модель;
 ##   BODY  — петля это RigidBody3D с ОДНИМ боксом и БЕЗ StaticBody3D внутри:
 ##           статика поперёк проёма запекается в навмеш как стена;
 ##   OPEN  — в построенной позе коллайдеры створок стоят вне ходового
@@ -114,6 +115,13 @@ func _audit(swing: Node) -> int:
 	var manual := swing.has_method("is_interaction_required") \
 		and bool(swing.call("is_interaction_required"))
 	var header_y := 3.05 if manual else HEADER_Y
+	var model_name := str(swing.get_meta("door_model", ""))
+	var expected_model := "lp_museum_door_leaf" if manual else \
+		("lp_gallery_door_leaf" if centre.distance_to(Vector3(0, 0, -33)) < 0.05 \
+		else "lp_service_door_leaf")
+	if model_name != expected_model:
+		notes.append("uses %s, expected %s" % [model_name, expected_model])
+		problems += 1
 	if manual:
 		if not bool(swing.call("is_closed")):
 			notes.append("manual entrance was not built shut")
