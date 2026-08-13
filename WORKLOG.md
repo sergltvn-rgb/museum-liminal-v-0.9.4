@@ -58,7 +58,8 @@ StaticBody3D 511, CollisionShape3D 526, камер 11, `ALL CHECKS PASSED`, `[CL
 Сейчас — явный коммит только перечисленных файлов и push рабочей ветки; `main` не трогать.
 
 **СТАТУС.** проверено
-**Коммит.** см. следующий checkpoint в git log
+**Коммит.** `eba69d5` — `feat: rebuild forecourt and museum doors as Blender models`;
+подтверждён со стороны GitHub, ветка `wip/audit-2026-07-26`, `main` не менялся.
 
 ---
 
