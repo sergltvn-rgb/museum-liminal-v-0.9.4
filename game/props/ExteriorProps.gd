@@ -363,9 +363,59 @@ static func _rng(seed_value: int) -> RandomNumberGenerator:
 ## column with base and neck rings, a curved bracket and a warm glass lantern
 ## under a bronze cap. No Light3D on purpose — the map's light budget is
 ## verified, so the glow is emissive like the forecourt lamps.
+##
+## MODEL-FIRST SINCE 2026-08-13, on the owner's instruction, by the pattern
+## build_player_car already uses: the cast body is the lp_alley_lamp module and
+## the exact old primitives stay behind it as the fallback. The street set's
+## lp_street_lamp could NOT be reused for this -- its swan neck carries the
+## lantern 1.832 m out over a carriageway, while this fixture has half a metre
+## of bracket, so reusing it would have hung a motorway lantern on a garden
+## column. Measured, the new module is 0.460 x 4.188 x 0.906 m against the
+## primitive's 0.46 x 4.256 x 0.92: the silhouette holds to 70 mm of height.
+##
+## Two things are done to the placed body on purpose, and both are visible
+## below rather than assumed: the cull range is re-applied by hand, because
+## MapModels.place() knows nothing about `vis` and the ring-road run passes
+## 0.0 = never cull; and the generated convex hull is removed, because this
+## file builds no physics bodies at all and these posts have never been solid.
+##
+## The lit lantern stays procedural in BOTH branches, exactly as the car's
+## headlamps do: the atlas is opaque and non-emissive, so the glow is a
+## transparent emissive shell sitting on the module's own glass volume
+## (measured 0.23-0.33 m wide, 0.30 m tall, centred y 3.947, z -0.496). Drop
+## it and the avenue goes dark at night while the mesh still looks right in a
+## daylight screenshot -- the failure this project keeps catching late.
 static func build_lamp_post(parent: Node3D, origin: Vector3, yaw_deg := 0.0,
 		vis := 150.0) -> Node3D:
 	var root := _root(parent, "Country Lamp", origin, yaw_deg)
+	var body := Models.place(root, "lp_alley_lamp", Vector3.ZERO)
+	if body == null:
+		# Only reachable when the .glb is absent (unimported clone, editor
+		# preview before a reimport). A warning and the old fixture, not a
+		# hard failure and not an empty node standing in the avenue.
+		push_warning("ExteriorProps: lp_alley_lamp did not resolve; " +
+			"Country Lamp at %s falls back to primitives" % origin)
+		_lamp_post_parts(root, vis)
+		return root
+	# Deliberately NOT named "Country Lamp <anything>": the verification sweep
+	# gathers these fixtures with a RECURSIVE "Country Lamp*" filter, so a child
+	# answering to the same prefix would be counted as a second post standing at
+	# the same coordinates -- and then judged for a lantern glow that hangs on
+	# its parent, not on it.
+	body.name = "Lamp Casting"
+	_apply_vis(body, vis)
+	_strip_model_collision(body)
+	_box(root, "Lantern Glass", Vector3(0, 3.95, -0.50),
+		Vector3(0.35, 0.30, 0.35), COL_LAMP_GLOW, vis, 1.2, 0.0, true)
+	return root
+
+
+## The pre-model fixture, kept whole rather than deleted: stepped pedestal,
+## turned column, base and neck rings, the bracket cone pitched 65 degrees and
+## the bronze-capped lantern at local z -0.5. This is what every one of these
+## posts looked like until 2026-08-13, and it is what they look like again if
+## the module goes missing.
+static func _lamp_post_parts(root: Node3D, vis: float) -> void:
 	_box(root, "Pedestal", Vector3(0, 0.14, 0), Vector3(0.46, 0.28, 0.46),
 		COL_CONCRETE, vis)
 	_box(root, "Pedestal Cap", Vector3(0, 0.31, 0), Vector3(0.36, 0.06, 0.36),
@@ -383,7 +433,55 @@ static func build_lamp_post(parent: Node3D, origin: Vector3, yaw_deg := 0.0,
 		Vector3(0.2, 0.3, 0.2), COL_LAMP_GLOW, vis, 1.2)
 	_cone(root, "Lantern Cap", Vector3(0, 4.19, -0.5), 0.19, 0.03, 0.13,
 		COL_BRONZE, vis, 0.0, 0.6)
-	return root
+
+
+## Imported meshes arrive with no visibility range, so the `vis` contract every
+## builder in this file carries has to be re-applied to a placed subtree by
+## hand. Same two fields and the same "0.0 means never cull" rule as
+## _primitive() above, so a placed module fades exactly where its primitive
+## twin did.
+static func _apply_vis(placed: Node3D, vis: float) -> void:
+	if vis <= 0.0:
+		return
+	var meshes := placed.find_children("*", "MeshInstance3D", true, false)
+	if placed is MeshInstance3D:
+		meshes.append(placed)
+	for node in meshes:
+		var mesh_node := node as MeshInstance3D
+		if mesh_node == null:
+			continue
+		mesh_node.visibility_range_end = vis
+		mesh_node.visibility_range_fade_mode = \
+			GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+
+## MapModels.place() wraps every model it does not list as non-blocking in a
+## generated convex hull. This file's contract is the opposite one -- see
+## "COLLISION — DELIBERATELY NONE" in the header -- and these fixtures have
+## never been solid, neither on the ring road nor on the forecourt walk. So the
+## hull comes straight back off: the swap stays purely visual, the navigation
+## bake sees the same world, and the verified StaticBody3D count does not move.
+## Making the posts solid is a separate, deliberate change: StreetProps._upright_box
+## is the precedent, one declared box per mast, and it narrows the walk the
+## player takes from the car to the portico -- the owner's call, not a
+## side effect of swapping a mesh.
+##
+## Two-step walk (collect, then free) copied from StreetProps._strip_collision
+## instead of importing it: nothing in game/props depends on another props file.
+static func _strip_model_collision(node: Node) -> void:
+	var bodies: Array[Node] = []
+	_find_static_bodies(node, bodies)
+	for body in bodies:
+		body.get_parent().remove_child(body)
+		body.free()
+
+
+static func _find_static_bodies(node: Node, out: Array[Node]) -> void:
+	for child in node.get_children():
+		if child is StaticBody3D:
+			out.append(child)
+		else:
+			_find_static_bodies(child, out)
 
 
 ## Bus shelter: concrete pad, three-sided iron-and-glass pavilion, wooden

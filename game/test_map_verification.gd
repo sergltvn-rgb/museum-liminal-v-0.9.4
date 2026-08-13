@@ -215,27 +215,48 @@ func _init() -> void:
 		_quit(0)
 
 
-## BLOCK 3: THE SIX FORECOURT LAMPS USE THE FINISHED EXTERIOR PROP
+## BLOCK 3: THE SIX FORECOURT LAMPS ARE FINISHED FIXTURES, AND THEY ARE LIT
 ##
 ## The visible walk from the parked car to the portico used to be lined by six
-## cylinders with glowing boxes on top. Block 3 explicitly replaces those
-## placeholders with ExteriorProps.build_lamp_post at the authored coordinates.
-## Assert the observable finished hierarchy, not a source-code call: every spot
-## must carry the stepped pedestal, turned column and lantern glass.
+## cylinders with glowing boxes on top. Block 3 replaced those placeholders with
+## ExteriorProps.build_lamp_post at the authored coordinates.
+##
+## REWRITTEN 2026-08-13 with the owner's word, the same way the parking block
+## was: build_lamp_post now places the lp_alley_lamp module and keeps its own
+## primitives only as a fallback, so the old ["Pedestal", "Column",
+## "Lantern Glass"] child-name list could never match the finished product. It
+## would have failed the model and passed a bare stub carrying three correctly
+## named empty boxes -- the exact inversion of what a check is for. What the
+## walk actually needs is asserted instead, and it holds for the module and for
+## the primitives alike:
+##   1. a post standing at each authored position,
+##   2. carrying real geometry rather than being an empty Node3D,
+##   3. tall enough to be a lamp post at all (module 4.188 m, primitives
+##      4.256 m; a wheel stop is 0.18 m and a bollard 0.845 m),
+##   4. and carrying an emissive lantern -- the one part the opaque model atlas
+##      cannot supply, and the one that decides whether this walk reads at all
+##      after dark.
+## Point 4 is the point: a mesh swap that photographs correctly at noon and
+## leaves the approach pitch black would otherwise ship green.
 const FORECOURT_LAMP_POSITIONS := [
 	Vector2(-4.5, 39.5), Vector2(4.5, 39.5),
 	Vector2(-4.5, 45.0), Vector2(4.5, 45.0),
 	Vector2(-4.5, 50.5), Vector2(4.5, 50.5),
 ]
 const FORECOURT_LAMP_EPSILON := 0.02
-const FORECOURT_LAMP_PARTS := ["Pedestal", "Column", "Lantern Glass"]
+## Measured from the fixture's own origin, so it reads the same on the forecourt
+## (y 0.0) and on the ring road (y -0.02). Both branches clear 4.18 m, so this
+## gate only ever catches something that is not a lamp post.
+const FORECOURT_LAMP_MIN_HEIGHT := 4.0
 
 
 func _verify_forecourt_lamps(generated: Node) -> void:
 	var found: Array[bool] = []
 	found.resize(FORECOURT_LAMP_POSITIONS.size())
 	found.fill(false)
-	var malformed: Array[String] = []
+	var bare: Array[String] = []
+	var stunted: Array[String] = []
+	var dark: Array[String] = []
 	for candidate in generated.find_children("Country Lamp*", "Node3D", true, false):
 		var lamp := candidate as Node3D
 		if lamp == null:
@@ -245,19 +266,49 @@ func _verify_forecourt_lamps(generated: Node) -> void:
 			if xz.distance_to(FORECOURT_LAMP_POSITIONS[i]) > FORECOURT_LAMP_EPSILON:
 				continue
 			found[i] = true
-			for part: String in FORECOURT_LAMP_PARTS:
-				if lamp.get_node_or_null(part) == null:
-					malformed.append("%s missing %s" % [lamp.name, part])
+			# The primitive fixture is a tree of meshes hung straight off the
+			# root; the module keeps its mesh one level down. Collect either
+			# shape and judge the whole post, not a node name.
+			var meshes: Array[Node] = lamp.find_children(
+				"*", "MeshInstance3D", true, false)
+			if lamp is MeshInstance3D:
+				meshes.append(lamp)
+			if meshes.is_empty():
+				bare.append("%s carries no mesh" % lamp.name)
+				break
+			var top := -INF
+			var lit := false
+			for node in meshes:
+				var mesh_node := node as MeshInstance3D
+				if mesh_node == null:
+					continue
+				var box: AABB = mesh_node.global_transform * mesh_node.get_aabb()
+				top = maxf(top, box.end.y)
+				# Imported atlas materials arrive on the mesh itself and carry no
+				# emission; the lantern glow is a material_override this project
+				# builds by hand, in both branches. So that is what is asked for.
+				var mat := mesh_node.material_override as StandardMaterial3D
+				if mat != null and mat.emission_enabled \
+						and mat.emission_energy_multiplier > 0.0:
+					lit = true
+			var height := top - lamp.global_position.y
+			if height < FORECOURT_LAMP_MIN_HEIGHT:
+				stunted.append("%s stands %.2f m" % [lamp.name, height])
+			if not lit:
+				dark.append(str(lamp.name))
 			break
 	var missing: Array[String] = []
 	for i in range(found.size()):
 		if not found[i]:
 			missing.append(str(FORECOURT_LAMP_POSITIONS[i]))
-	if not missing.is_empty() or not malformed.is_empty():
-		_fail("Forecourt lamps: missing [%s], malformed [%s]"
-			% [", ".join(missing), ", ".join(malformed)])
+	if not missing.is_empty() or not bare.is_empty() \
+			or not stunted.is_empty() or not dark.is_empty():
+		_fail("Forecourt lamps: missing [%s], empty [%s], too short [%s], unlit [%s]"
+			% [", ".join(missing), ", ".join(bare), ", ".join(stunted),
+				", ".join(dark)])
 	else:
-		_ok("Forecourt lamps: six ExteriorProps fixtures at the authored positions")
+		_ok("Forecourt lamps: six fixtures over %.1f m, each with a lit lantern, "
+			% FORECOURT_LAMP_MIN_HEIGHT + "at the authored positions")
 
 
 ## BLOCK 3: THE OUTER TREE LINE AND ROAD VEHICLES USE EXTERIOR BUILDERS

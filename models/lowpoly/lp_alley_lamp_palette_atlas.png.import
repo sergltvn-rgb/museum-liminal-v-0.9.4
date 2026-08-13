@@ -2,11 +2,10 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://2b2f8rftg84l"
-path.s3tc="res://.godot/imported/lp_park_deck_palette_atlas.png-df3ab00f2b2560a1a6ff0ab77ed89035.s3tc.ctex"
+uid="uid://dhxnj6gpaapvx"
+path="res://.godot/imported/lp_alley_lamp_palette_atlas.png-45200cf3d62d9f5351693a87416033ed.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
-"vram_texture": true
+"vram_texture": false
 }
 generator_parameters={
 "md5": "87fdfe05cad25523550cdc4080d41587"
@@ -14,12 +13,12 @@ generator_parameters={
 
 [deps]
 
-source_file="res://models/lowpoly/lp_park_deck_palette_atlas.png"
-dest_files=["res://.godot/imported/lp_park_deck_palette_atlas.png-df3ab00f2b2560a1a6ff0ab77ed89035.s3tc.ctex"]
+source_file="res://models/lowpoly/lp_alley_lamp_palette_atlas.png"
+dest_files=["res://.godot/imported/lp_alley_lamp_palette_atlas.png-45200cf3d62d9f5351693a87416033ed.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -41,4 +40,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

@@ -20,11 +20,12 @@ is therefore at the wrong coordinates and carries pieces V2 deletes outright
 (far pavement, both crossings, both visitor pockets, the second lamp row).
 Filtering cannot fix a coordinate; the modules are rebuilt here instead.
 
-MODULE LIST -- twelve. The first eight are what STREET_SCHEME_V2 section 9
-item 7 approved; the last four are the car park, added 2026-08-13 on the
+MODULE LIST -- thirteen. The first eight are what STREET_SCHEME_V2 section 9
+item 7 approved; the four car park pieces were added 2026-08-13 on the
 owner's instruction that everything out here be modelled rather than built
-from code primitives. They are recorded as an addition to the scheme, not as
-something the scheme already asked for.
+from code primitives, and lp_alley_lamp the same evening, for the eighteen
+forecourt and ring-road posts that same instruction covers. They are recorded
+as additions to the scheme, not as something the scheme already asked for.
 ------------------------------------------------------------------------------
     lp_street_road_20      R01  20 m carriageway tile, 7.0 wide
     lp_street_walk_20      S01  20 m museum-side pavement tile, 3.1 wide
@@ -39,6 +40,8 @@ something the scheme already asked for.
     lp_park_wheel_stop          1.45 m precast stop, one per bay
     lp_park_sign                parking board on a 1.80 m post
     lp_park_exit_sign           exit board on a 1.56 m post
+    lp_alley_lamp               4.19 m cast-iron lamp on a 0.50 m bracket:
+                                the forecourt avenue and the ring road
 
 lp_street_bridge.glb (BG01) is NOT rebuilt. The P0 model is a bridge and stays
 correct as a shape; only its placement moves 2.5 m with the carriageway, which
@@ -567,11 +570,104 @@ def build_park_exit_sign(material):
     return p, p.finish(material)
 
 
+# =========================================================================
+# lp_alley_lamp -- the SHORT-BRACKET lamp: forecourt avenue and ring road
+# =========================================================================
+# ADDED 2026-08-13. Eighteen fixtures out here are still code primitives from
+# ExteriorProps.build_lamp_post: six down the forecourt avenue (x +-4.5,
+# z 39.5 / 45.0 / 50.5, FirstMuseumMap) and twelve along the ring road
+# (GroundsProps._fixtures). This is the module that replaces them.
+#
+# WHY THIS IS NOT lp_street_lamp UNDER ANOTHER NAME. That module's swan neck
+# reaches 1.832 m, which is right for a column on the kerb at z 55.10 lighting
+# a lane axis at z 57.25. The forecourt avenue is 9.0 m wide and its columns
+# stand ON THE EDGES, x +-4.5, facing each other: a 1.832 m neck would hang
+# the two lanterns 5.3 m apart over the middle of the walk, cantilevered off a
+# column with nothing underneath. The primitive being replaced reaches 0.500 m
+# (Lantern Glass at local z -0.5), and 0.5 m over a 1.5 m half-walk is what a
+# garden lamp does. A different fixture class, so a different module -- not a
+# rename.
+#
+# BRACKET DIRECTION. The lantern hangs over local -Z, exactly as the primitive
+# does, so every yaw at all eighteen call sites keeps meaning what it means
+# today: -90 / +90 turn the forecourt pair inward and the ring row keeps
+# facing the carriageway. A module reaching +Z instead would have been
+# eighteen silent 180-degree edits, and centre_z is therefore waived here for
+# the same reason as the shelter: the thing IS a cantilever.
+#
+# SILHOUETTE. Locked to the primitive so nothing on the forecourt moves: a
+# 0.460 m plinth, mast head at 3.930 (the street lamp's, because these are the
+# same ironwork seen fifteen metres apart), glass centred 3.947 against the
+# primitive's 3.940, bracket 0.496. Only the top is different -- 4.187 against
+# the primitive's 4.256, because the cast crown replaces a 0.13 m cone. What
+# the model adds is what a model is for: a two-stage base, a faceted mast, a
+# chamfered lantern rim. Not new dimensions.
+def build_alley_lamp(material):
+    p = bb.Part("lp_alley_lamp")
+
+    # Cast base in two stages, the upper one starting 10 mm down inside the
+    # lower and emerging 20 mm narrower: a real shoulder, not two faces
+    # fighting over one plane.
+    p.taper((0.0, 0.0, 0.0), (0.460, 0.460), (0.400, 0.400), 0.120,
+            "carcass_dark", cap_top=True, cap_bottom=False)
+    p.taper((0.0, 0.110, 0.0), (0.380, 0.380), (0.340, 0.340), 0.130,
+            "carcass_dark", cap_top=True, cap_bottom=False)
+
+    # Collar, foot 20 mm inside the base top at 0.240.
+    p.prism((0.0, 0.220, 0.0), 0.130, 0.180, 8, "carcass_dark",
+            cap_swatch="carcass_side")
+
+    # Faceted mast, 85 -> 60 mm, head at 3.930. Foot 40 mm inside the collar.
+    p.prism((0.0, 0.360, 0.0), 0.085, 3.570, 8, "carcass",
+            top_radius=0.060, cap_swatch="carcass_side")
+
+    # Neck ring. The primitive carried a torus here, and it is the one
+    # ornament that tells the eye where the shaft ends and the bracket starts.
+    p.prism((0.0, 3.700, 0.0), 0.092, 0.070, 8, "carcass_dark",
+            cap_swatch="carcass_side")
+
+    # The bracket: two straight segments, pitched NEGATIVE because pitch()
+    # carries positive degrees towards +Z and the lantern belongs over -Z.
+    # Reach 0.300 * (sin 42 + sin 80) = 0.496 m, rise 0.275 m. Each segment is
+    # built vertically on the end of the last one and then pitched about that
+    # same point -- this toolchain has no rotation about Z, so a curve is a
+    # chain of straight pieces (see build_street_lamp for the long version).
+    seg, overlap = 0.300, 0.030
+    ay, az = 3.870, 0.0            # 60 mm down inside the mast head
+    for i, angle in enumerate((-42.0, -80.0)):
+        r0 = 0.052 - 0.007 * float(i)
+        r1 = 0.052 - 0.007 * float(i + 1)
+        mark = p.mark_verts()
+        p.prism((0.0, ay, az), r0, seg + overlap, 8, "carcass",
+                top_radius=r1, cap_swatch="carcass_side")
+        p.pitch(mark, (0.0, ay, az), angle)
+        rad = math.radians(angle)
+        ay += seg * math.cos(rad)
+        az += seg * math.sin(rad)
+
+    # Lantern, hung under the end of the bracket. It stops 48 mm short of the
+    # crown above it, so the two are joined rather than merely adjacent.
+    shoulder = ay - 0.048
+    glass = p.mark_faces()
+    p.taper((0.0, shoulder - 0.300, az), (0.230, 0.230), (0.330, 0.330),
+            0.300, "glass_sheen", cap_top=True, cap_bottom=True,
+            face_swatches={"py": "carcass_dark", "ny": "glass_dead"})
+    # Cast rim under the glass: the chamfer that says the lantern has a
+    # bottom instead of being cut off.
+    p.bevel(p.facing(p.new_faces(glass), "ny"), 0.014, "carcass_side")
+
+    # Crown, sunk 20 mm into the shoulder.
+    p.prism((0.0, shoulder - 0.020, az), 0.180, 0.110, 8, "carcass_dark",
+            top_radius=0.050, cap_swatch="carcass_side")
+
+    return p, p.finish(material)
+
+
 BUILDERS = (build_road_tile, build_walk_tile, build_verge_tile,
             build_bay_tile, build_drive_apron, build_bollard,
             build_street_lamp, build_shelter,
             build_park_deck, build_park_wheel_stop, build_park_sign,
-            build_park_exit_sign)
+            build_park_exit_sign, build_alley_lamp)
 
 BUDGET = {
     "lp_street_road_20": 300,
@@ -589,6 +685,9 @@ BUDGET = {
     "lp_park_wheel_stop": 120,
     "lp_park_sign": 200,
     "lp_park_exit_sign": 200,
+    # Two tapers, five prisms, one tapered glass and one bevel ring. Half the
+    # street lamp's neck, so well under its 600.
+    "lp_alley_lamp": 400,
 }
 
 # Per-model house-style rules. floor_y is checked for every model; the two
@@ -613,6 +712,13 @@ RULES = {
     "lp_park_wheel_stop": {"centre_x": True, "centre_z": True},
     "lp_park_sign": {"centre_x": True, "centre_z": True},
     "lp_park_exit_sign": {"centre_x": True, "centre_z": True},
+    # The alley lamp gets reach_nz in a PAIR, minimum and maximum, and the
+    # maximum is the one that matters. The defect this module exists to
+    # prevent is not a bracket that is too short: it is lp_street_lamp's
+    # 1.832 m neck being reused over a 9 m walk whose columns face each other.
+    # A minimum alone would have waved that straight through.
+    "lp_alley_lamp": {"centre_x": True, "reach_nz": 0.450,
+                      "reach_nz_max": 0.750},
 }
 
 # Sizes StreetProps has to agree with. Checked here so a modelling change can
@@ -641,6 +747,14 @@ EXPECT_SIZE = {
     "lp_park_wheel_stop": (1.450, 0.180, 0.220),
     "lp_park_sign": (0.820, 2.280, 0.100),
     "lp_park_exit_sign": (0.920, 1.970, 0.100),
+    # The alley lamp, MEASURED off the first build and pasted back in, not
+    # predicted: 0.460 is the plinth, 4.188 the top of the cast crown, and
+    # 0.906 the depth from the back of the plinth (+0.230) to the front of
+    # that crown (-0.676). The primitive being replaced measured 0.46 x 4.256
+    # x 0.92 the same way, so the fixture keeps its silhouette to within
+    # 70 mm of height and 14 mm of depth. Writing a wish here instead of a
+    # measurement is what the park sign's 0.080 story is about.
+    "lp_alley_lamp": (0.460, 4.188, 0.906),
 }
 
 
@@ -683,6 +797,15 @@ def main():
         if rule.get("reach_z") and hi[2] < rule["reach_z"] - 2e-3:
             failures.append("%s: reaches z %.4f, needs %.4f to hang over the"
                             " lane" % (part.name, hi[2], rule["reach_z"]))
+        if rule.get("reach_nz") and -lo[2] < rule["reach_nz"] - 2e-3:
+            failures.append("%s: hangs %.4f over -Z, needs %.4f to get the"
+                            " lantern off its own column"
+                            % (part.name, -lo[2], rule["reach_nz"]))
+        if rule.get("reach_nz_max") and -lo[2] > rule["reach_nz_max"] + 2e-3:
+            failures.append("%s: hangs %.4f over -Z, past the %.4f a short"
+                            " bracket may reach -- this is the street lamp's"
+                            " neck on a garden column"
+                            % (part.name, -lo[2], rule["reach_nz_max"]))
         if part.name in EXPECT_SIZE:
             want = EXPECT_SIZE[part.name]
             for axis, got, exp in zip("XYZ", size, want):
