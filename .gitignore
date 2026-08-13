@@ -82,6 +82,12 @@ tools/*_tmp.py
 # --import) and the terrain is procedural anyway. Kept on disk so the editor
 # stops asking, excluded from history so nobody ships a broken binary addon.
 addons/terrabrush/
+
+# Личная папка владельца — само имя говорит, что она не для истории. До этой
+# строки её не прятало НИЧТО: в .git/info/exclude лежит только .claude/worktrees/,
+# то есть один `git add -A` — и личный архив уехал бы в ПУБЛИЧНЫЙ репозиторий.
+# Именно поэтому все коммиты здесь собираются пофайлово.
+/Британка (в гит игнор)/
  
 # уменьшенные копии референсов для просмотра агентом 
 references/**/small/ 
