@@ -1255,7 +1255,7 @@ static func _street_gate(root: Node3D) -> void:
 		_cone(gate, "Court Gate Cap %s" % tag, Vector3(sx, 3.28, 51.50), 0.66,
 			0.06, 0.32, "stone", COL_COPING, 0.0, 4)
 		_box(gate, "Court Gate Lantern %s" % tag, Vector3(sx, 3.66, 51.50),
-			Vector3(0.34, 0.46, 0.34), "plain", COL_GLOW, 0.0, false, 1.1)
+			Vector3(0.34, 0.46, 0.34), "plain", COL_GLOW, 0.0, false, 0.9)
 		_cone(gate, "Court Gate Lantern Cap %s" % tag, Vector3(sx, 3.96, 51.50),
 			0.26, 0.03, 0.18, "metal", COL_BRONZE, 0.0, 4)
 		_solid_box(gate, "Court Gate Collision %s" % tag,

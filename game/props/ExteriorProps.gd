@@ -405,8 +405,22 @@ static func build_lamp_post(parent: Node3D, origin: Vector3, yaw_deg := 0.0,
 	body.name = "Lamp Casting"
 	_apply_vis(body, vis)
 	_strip_model_collision(body)
-	_box(root, "Lantern Glass", Vector3(0, 3.95, -0.50),
-		Vector3(0.35, 0.30, 0.35), COL_LAMP_GLOW, vis, 1.2, 0.0, true)
+	# WHY 0.9 AND NOT 1.2. COL_LAMP_GLOW is (0.95, 0.83, 0.55). At energy 1.2 the
+	# emission is (1.14, 1.00, 0.66): red is over the ceiling and green sits
+	# exactly on it, so two of the three channels clip and the warm hue is
+	# destroyed -- the plafond renders as a WHITE block. That is what the owner
+	# saw in the acceptance shot and called strange. 0.9 gives
+	# (0.855, 0.747, 0.495): still the brightest thing on the post, still amber,
+	# nothing clipped. It is also the number the gate lanterns in GroundsProps
+	# have used all along, so this brings the fixture into the family instead of
+	# inventing a new brightness.
+	# WHY THE BOX SHRANK. The module's own glass is 0.23..0.33 m wide and 0.30 m
+	# tall around (0, 3.947, -0.496). A 0.35 cube swallowed that taper whole, so
+	# the lantern read as a cube on a stick no matter how good the model was.
+	# 0.29 x 0.26 x 0.29 stands proud of the narrow bottom and stays inside the
+	# wide top, so the cast rim and the trapezoid silhouette survive.
+	_box(root, "Lantern Glass", Vector3(0, 3.947, -0.496),
+		Vector3(0.29, 0.26, 0.29), COL_LAMP_GLOW, vis, 0.9, 0.0, true)
 	return root
 
 
@@ -429,8 +443,11 @@ static func _lamp_post_parts(root: Node3D, vis: float) -> void:
 	arm.rotation_degrees.x = 65.0
 	_box(root, "Lantern Body", Vector3(0, 3.94, -0.5),
 		Vector3(0.26, 0.4, 0.26), COL_BRONZE, vis, 0.0, 0.6)
+	# Same ceiling rule as the modelled branch above: 1.2 clipped red and green
+	# and turned this glass white. This one is already framed by a 0.26 bronze
+	# body, so only the energy needed correcting.
 	_box(root, "Lantern Glass", Vector3(0, 3.94, -0.5),
-		Vector3(0.2, 0.3, 0.2), COL_LAMP_GLOW, vis, 1.2)
+		Vector3(0.2, 0.3, 0.2), COL_LAMP_GLOW, vis, 0.9)
 	_cone(root, "Lantern Cap", Vector3(0, 4.19, -0.5), 0.19, 0.03, 0.13,
 		COL_BRONZE, vis, 0.0, 0.6)
 

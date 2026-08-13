@@ -767,9 +767,16 @@ static func _porch_parapets(root: Node3D) -> void:
 		_box(root, "Lantern Body %s" % side_name,
 			Vector3(x, 1.19, 3.60), Vector3(0.22, 0.36, 0.22), COL_BRONZE,
 			0.0, 0.6)
+		# 1.3 clipped this glass to white. COL_LAMP_GLOW is (0.95, 0.83, 0.55), so
+		# at 1.3 the emission is (1.235, 1.079, 0.715): red AND green sit over the
+		# ceiling, the hue is gone and the porch lanterns render as white cubes --
+		# which is what the owner saw in the acceptance shot and called strange.
+		# 0.9 gives (0.855, 0.747, 0.495), still the brightest thing on the porch
+		# and still amber. It is also the energy the gate lanterns in GroundsProps
+		# have used all along, so the whole outdoor family now agrees.
 		_box(root, "Lantern Glass %s" % side_name,
 			Vector3(x, 1.19, 3.60), Vector3(0.16, 0.26, 0.16), COL_LAMP_GLOW,
-			1.3)
+			0.9)
 		_cone(root, "Lantern Cap %s" % side_name,
 			Vector3(x, 1.42, 3.60), 0.16, 0.02, 0.10, COL_BRONZE, 0.0, 0.6)
 
@@ -813,9 +820,11 @@ static func _door_portal(root: Node3D) -> void:
 		_box(root, "Sconce Bracket %s" % side_name,
 			Vector3(x, 2.32, 0.06), Vector3(0.10, 0.24, 0.16), COL_BRONZE,
 			0.0, 0.6)
+		# Same ceiling rule as the porch lantern above: 1.3 clipped two channels
+		# and turned the door sconces white.
 		_box(root, "Sconce Glass %s" % side_name,
 			Vector3(x, 2.44, 0.13), Vector3(0.14, 0.22, 0.14), COL_LAMP_GLOW,
-			1.3)
+			0.9)
 		_cone(root, "Sconce Cap %s" % side_name,
 			Vector3(x, 2.58, 0.13), 0.11, 0.02, 0.08, COL_BRONZE, 0.0, 0.6)
 
