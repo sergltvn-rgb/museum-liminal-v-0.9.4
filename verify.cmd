@@ -62,12 +62,15 @@ goto :verdict
 rem --- verdict ----------------------------------------------------------------
 rem One grep, fixed vocabulary. Every line below is a number or a ruling; no
 rem line here is noise. If you need more, open the log yourself.
+rem The terrabrush .dll error is known and permanent (the addon does not load in
+rem this project, see .gitignore); "Failed to open" used to match /c:"FAIL" and
+rem faked an [ATTENTION] on a fully green run, so it is filtered out here.
 :verdict
 echo.
 echo ===================== VERDICT =====================
-findstr /i /c:"MeshInstance3D" /c:"StaticBody3D" /c:"CollisionShape3D" /c:"Security cameras" /c:"ALL CHECKS" /c:"RESULT:" /c:"[DOORS]" /c:"[MUSEUM ENTRANCE]" /c:"[OK]" /c:"FAIL" /c:"SCRIPT ERROR" /c:"Parse Error" "%LOG%"
+findstr /i /c:"MeshInstance3D" /c:"StaticBody3D" /c:"CollisionShape3D" /c:"Security cameras" /c:"ALL CHECKS" /c:"RESULT:" /c:"[DOORS]" /c:"[MUSEUM ENTRANCE]" /c:"[OK]" /c:"FAIL" /c:"SCRIPT ERROR" /c:"Parse Error" "%LOG%" | findstr /v /i /c:"terrabrush"
 echo ===================================================
-findstr /i /c:"FAIL" /c:"SCRIPT ERROR" /c:"Parse Error" "%LOG%" >nul 2>nul
+findstr /i /c:"FAIL" /c:"SCRIPT ERROR" /c:"Parse Error" "%LOG%" | findstr /v /i /c:"terrabrush" >nul 2>nul
 if not errorlevel 1 (
   echo [ATTENTION] the log contains FAIL or a script error -- do not report "done".
 ) else (
