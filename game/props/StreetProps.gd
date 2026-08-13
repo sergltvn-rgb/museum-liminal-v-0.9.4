@@ -119,6 +119,11 @@ const BOLLARD_FIRST_X := -40.0
 const BOLLARD_PITCH := 8.0
 const BOLLARD_COUNT := 13
 const BOLLARD_Z := 64.60
+# The post's own measured footprint, 0.18 x 0.85 x 0.18 (blender_street_v2
+# EXPECT_SIZE). Unlike the lamp there is nothing to trim here: the module is a
+# plain upright, so the box is the module. See _build_furniture for why the
+# posts inside the walkable band now carry one.
+const BOLLARD_COLLIDER := Vector3(0.18, 0.85, 0.18)
 
 # The stop moves to the MUSEUM side. In P0 it stood on the far pavement, so
 # the only way to reach it was across seven metres of carriageway.
@@ -189,11 +194,31 @@ static func _build_furniture(root: Node3D) -> void:
 		var x := LAMP_FIRST_X + float(i) * LAMP_PITCH
 		_place_lamp(root, x)
 
+	# WHY THESE ARE SOLID NOW (2026-08-13, owner's call to align the rule)
+	# The line this replaced said "the verge is set dressing seen from a moving
+	# car ... the far side is unreachable anyway". Half of that is wrong, and it
+	# is the half that mattered. The verge is NOT the far side: it is z 62.50 to
+	# 64.60 on the museum bank, and _build_ground_collision lays a walkable
+	# Street Floor Verge across it for the full band, x -31.7..31.7. So a player
+	# can stand at the bollard line and walk straight through seven of these
+	# posts -- x -24, -16, -8, 0, 8, 16, 24 by BOLLARD_FIRST_X -40 and pitch 8.
+	# The same model in the car park was solid the whole time, because
+	# FirstMuseumMap._cylinder defaults to with_collision. One post that stops
+	# you and an identical post that does not, forty metres apart, is not a
+	# trade-off -- it is an accident. Aligned on the honest side.
+	#
+	# The hull is still discarded and a box put back by hand, exactly as the
+	# lamp does: MapModels' convex hull costs a hull per mesh, and a 0.18 m
+	# upright deserves a 0.18 m box, not an approximation of one. Posts outside
+	# the band keep no body: there is no floor out there to stand on, so a body
+	# would guard ground the player can never reach.
 	for i in range(BOLLARD_COUNT):
 		var x := BOLLARD_FIRST_X + float(i) * BOLLARD_PITCH
-		# The verge is set dressing seen from a moving car; a physics body per
-		# post out there buys nothing and the far side is unreachable anyway.
-		_place_flat(root, "lp_street_bollard", Vector3(x, 0.0, BOLLARD_Z))
+		var post := _place_flat(root, "lp_street_bollard",
+				Vector3(x, 0.0, BOLLARD_Z))
+		if post == null or absf(x) > BAND_HALF_X:
+			continue
+		_upright_box(post, "Bollard Post", BOLLARD_COLLIDER)
 
 	# The shelter keeps its hull deliberately. MapModels derives ONE convex
 	# hull per mesh, so the pavilion is a solid mass rather than a room you can
@@ -241,7 +266,7 @@ static func _place_lamp(root: Node3D, x: float) -> void:
 	var node := _place_flat(root, "lp_street_lamp", pos)
 	if node == null or absf(x) > BAND_HALF_X:
 		return
-	_mast_box(node, "Lamp Mast", LAMP_MAST_COLLIDER)
+	_upright_box(node, "Lamp Mast", LAMP_MAST_COLLIDER)
 
 
 ## One upright box standing on a placed module's own floor origin, parented to
@@ -249,7 +274,12 @@ static func _place_lamp(root: Node3D, x: float) -> void:
 ## world-space arithmetic. Built by hand rather than through _ground_box
 ## because this one needs no BoxMesh: the module itself is the visible thing,
 ## and no test looks for a slab here.
-static func _mast_box(node: Node3D, node_name: String, size: Vector3) -> void:
+##
+## Named _upright_box rather than _mast_box since 2026-08-13: the bollard row
+## uses it too, and a helper called "mast" that also fences posts is a comment
+## that lies. Callers pass their own node_name, so the collider reads as
+## "Lamp Mast Collision" or "Bollard Post Collision" in the tree.
+static func _upright_box(node: Node3D, node_name: String, size: Vector3) -> void:
 	var body := StaticBody3D.new()
 	body.name = "%s Collision" % node_name
 	body.position = Vector3(0.0, size.y * 0.5, 0.0)
