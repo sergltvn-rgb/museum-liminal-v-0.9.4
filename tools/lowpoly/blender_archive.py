@@ -554,6 +554,15 @@ def build_player_car_shell(material):
                        (0.080, 0.140, 0.200), "car_trim")
         p.bevel(p.facing(mirror, outward), 0.012, "car_trim")
 
+        # Two separate pull handles, a rocker strip and a fuel door make the
+        # side read as a service sedan rather than one extruded shell.
+        for hz in (-0.300, 0.780):
+            p.box((side * 0.902, 0.860, hz), (0.022, 0.055, 0.230), "lock")
+        p.box((side * 0.902, 0.365, 0.350), (0.024, 0.070, 1.900),
+              "car_body_dark")
+        if side > 0.0:
+            p.panel((0.903, 0.790, 1.570), (0.22, 0.22), "car_trim", "px")
+
         # Four low-poly tyres and inset bright hubcaps. Width and centres match
         # the source, but 10 sides replace smooth 128-triangle CylinderMeshes.
         for wz in (-1.420, 1.320):
@@ -563,6 +572,24 @@ def build_player_car_shell(material):
                        "car_trim", cap_swatch="car_trim", phase=0.0)
             axle_prism((side * 0.976, 0.340, wz), 0.095, 0.020, 10,
                        "car_hubcap", cap_swatch="car_hubcap", phase=0.0)
+
+    # Front and rear identity: recessed grille, two plates, panel seams,
+    # wipers and a visible tail pipe. Lamps stay runtime-emissive, but these
+    # opaque details now give both cutscene exterior angles something to read.
+    p.panel((0.0, 0.510, -2.551), (0.82, 0.20), "shadow", "nz")
+    for gx in (-0.27, -0.09, 0.09, 0.27):
+        p.box((gx, 0.510, -2.557), (0.035, 0.18, 0.018), "car_trim")
+    p.panel((0.0, 0.285, -2.552), (0.42, 0.14), "stone_pale", "nz")
+    p.panel((0.0, 0.390, 2.311), (0.42, 0.14), "stone_pale", "pz")
+    # Hood and boot centre seams, 2 mm proud of the horizontal skins.
+    p.box((0.0, 0.912, -1.620), (0.018, 0.004, 1.22), "car_body_dark")
+    p.box((0.0, 0.862, 1.750), (0.018, 0.004, 0.76), "car_body_dark")
+    # Twin wiper blades rest along the lower windshield edge.
+    for side in (-1.0, 1.0):
+        mark = p.mark_verts()
+        p.box((side * 0.34, 0.965, -0.845), (0.52, 0.026, 0.025), "car_trim")
+        p.swing(mark, side * math.radians(7.0))
+    p.box((0.66, 0.165, 2.330), (0.16, 0.08, 0.24), "car_trim")
 
     return p, p.finish(material)
 
@@ -581,9 +608,10 @@ BUDGET = {
     # three insets and five chamfers land near 300, so 600 leaves room for a
     # future drawer bank without letting the stone slabs creep in.
     "lp_lobby_counter": 600,
-    # Vehicle ceiling is 1200. The decagonal wheels and genuine panel work are
-    # the useful detail; 900 prevents the procedural cabin from creeping in.
-    "lp_player_car_shell": 900,
+    # Vehicle ceiling is 1200. Wheels, panel work, handles, grille, plates and
+    # wipers stay comfortably below it; the transparent/emissive cabin layer
+    # still remains runtime-authored.
+    "lp_player_car_shell": 1200,
 }
 
 # Per-model house-style rules, in metres.

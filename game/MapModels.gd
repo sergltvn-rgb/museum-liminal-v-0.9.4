@@ -107,6 +107,9 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# of the complete garden or hollow basin would fill their open space.
 	"lp_forecourt_garden", "lp_court_fountain", "lp_court_gate_pier",
 	"lp_court_gate_leaf", "lp_court_fence_section", "lp_forecourt_bench",
+	# Urns keep GroundsProps' one surveyed cylinder; the sign was always
+	# walk-through; a hull around five bike hoops would fill every opening.
+	"lp_court_urn", "lp_hours_sign", "lp_bike_rack",
 	# The player's car already gets one deliberate 1.80 x 1.44 x 4.90 body from
 	# FirstMuseumMap._car_collider. A generated hull would be a second collider,
 	# would include the mirrors and wheel brows outside that surveyed body, and

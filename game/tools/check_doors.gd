@@ -8,8 +8,10 @@ extends SceneTree
 ##           а главный вход использует свою широкую парадную модель;
 ##   BODY  — петля это RigidBody3D с ОДНИМ боксом и БЕЗ StaticBody3D внутри:
 ##           статика поперёк проёма запекается в навмеш как стена;
-##   OPEN  — в построенной позе коллайдеры створок стоят вне ходового
-##           просвета, а меш не залезает в него глубже ручки;
+##   MANUAL — все пять пар стартуют закрытыми, входят в museum_swing_door
+##           и не имеют proximity-сенсора;
+##   OPEN  — после ручного открытия коллайдеры стоят вне ходового просвета,
+##           а меш не залезает в него глубже ручки;
 ##   SHUT  — закрытая пара перекрывает проём и не залезает в косяки.
 ##
 ## Ход анимации гоняем детерминированно: дёргаем _physics_process(1/60)
@@ -43,10 +45,10 @@ const JAMB_HALF := 0.92
 ## ручку, а случай, когда в проходе окажется само полотно.
 const OPEN_CLEAR_BODY := 0.86
 const OPEN_CLEAR_MESH := 0.78
-## Допуски закрытой пары: автоматические полотна сохраняют прежний 80 мм
+## Допуски закрытой пары: служебные полотна сохраняют прежний 80 мм
 ## технический стык, но у парадной музейной пары допускается не более 12 мм.
 const SHUT_GAP_MAX := 0.09
-const MANUAL_SHUT_GAP_MAX := 0.012
+const ENTRANCE_SHUT_GAP_MAX := 0.012
 const JAMB_OVERRUN_MAX := 0.005
 ## Низ полотна и низ перемычки (WALL_HEIGHT - 0.7).
 const FLOOR_CLEAR_MIN := 0.02
@@ -114,22 +116,28 @@ func _audit(swing: Node) -> int:
 	var jamb_half := half_gap + 0.02
 	var manual := swing.has_method("is_interaction_required") \
 		and bool(swing.call("is_interaction_required"))
-	var header_y := 3.05 if manual else HEADER_Y
 	var model_name := str(swing.get_meta("door_model", ""))
-	var expected_model := "lp_museum_door_leaf" if manual else \
+	var entrance_geometry := centre.distance_to(Vector3(0, 0, 35)) < 0.05
+	var header_y := 3.05 if entrance_geometry else HEADER_Y
+	var expected_model := "lp_museum_door_leaf" if entrance_geometry else \
 		("lp_gallery_door_leaf" if centre.distance_to(Vector3(0, 0, -33)) < 0.05 \
 		else "lp_service_door_leaf")
 	if model_name != expected_model:
 		notes.append("uses %s, expected %s" % [model_name, expected_model])
 		problems += 1
-	if manual:
-		if not bool(swing.call("is_closed")):
-			notes.append("manual entrance was not built shut")
-			problems += 1
-		if swing.get_node_or_null("Door Sensor") != null:
-			notes.append("manual entrance still has an automatic sensor")
-			problems += 1
-		_drive(swing, true)
+	if not manual:
+		notes.append("swing door is still automatic")
+		problems += 1
+	elif not swing.is_in_group("museum_swing_door"):
+		notes.append("manual door is outside museum_swing_door")
+		problems += 1
+	if not bool(swing.call("is_closed")):
+		notes.append("manual door was not built shut")
+		problems += 1
+	if swing.get_node_or_null("Door Sensor") != null:
+		notes.append("manual door still has an automatic sensor")
+		problems += 1
+	_drive(swing, true)
 
 	var kids: Array[String] = []
 	for c in hinges[0].get_children():
@@ -172,7 +180,7 @@ func _audit(swing: Node) -> int:
 			notes.append("hinge %d has no mesh at all" % i)
 			problems += 1
 
-	# --- поза, в которой карта построена: обе створки должны стоять вне просвета
+	# --- ручное открытие: обе створки должны выйти из ходового просвета
 	var open_clear := [0.0, 0.0]
 	var open_body := [0.0, 0.0]
 	var open_depth := [0.0, 0.0]
@@ -210,7 +218,7 @@ func _audit(swing: Node) -> int:
 		bottom = minf(bottom, box.position.y)
 	var centre_gap: float = float(inner[0]) + float(inner[1])
 	var overrun: float = maxf(float(outer[0]), float(outer[1])) - jamb_half
-	var shut_gap_max := MANUAL_SHUT_GAP_MAX if manual else SHUT_GAP_MAX
+	var shut_gap_max := ENTRANCE_SHUT_GAP_MAX if entrance_geometry else SHUT_GAP_MAX
 	if centre_gap > shut_gap_max:
 		notes.append("shut pair leaves a %.3f m gap down the middle (max %.3f)"
 			% [centre_gap, shut_gap_max])
@@ -239,7 +247,7 @@ func _audit(swing: Node) -> int:
 		label, "X" if wall_axis == 0 else "Z",
 		"manual" if manual else "automatic", half_gap * 2.0])
 	print("        hinge 0: %s" % ", ".join(kids))
-	print("        built open  body %.3f / %.3f  mesh %.3f / %.3f  reach into room %.2f / %.2f m"
+	print("        test open   body %.3f / %.3f  mesh %.3f / %.3f  reach into room %.2f / %.2f m"
 		% [open_body[0], open_body[1], open_clear[0], open_clear[1],
 			open_depth[0], open_depth[1]])
 	print("        shut  %3d steps (%.2f s)  centre gap %.3f  jamb %+.3f  slab %.3f thick  y %.3f..%.3f"
@@ -252,7 +260,8 @@ func _audit(swing: Node) -> int:
 
 
 ## Гоняем дверь до упора без реального времени. _hold обнуляем, иначе первые
-## пять секунд после постройки дверь по замыслу держит открытую позу.
+## Старый automatic-режим держит дверь открытой пять секунд; карта его больше
+## не использует, но probe умеет прогнать и его для повторного использования.
 func _drive(swing: Node, want_open: bool) -> int:
 	if swing.has_method("is_interaction_required") \
 			and bool(swing.call("is_interaction_required")):

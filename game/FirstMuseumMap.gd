@@ -523,12 +523,13 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 		leaves := false, open_towards := 1.0, gap := DOOR_GAP,
 		interaction_required := false, model_name := "lp_service_door_leaf") -> void:
 	var frame_color := Color(0.06, 0.06, 0.058)
+	var entrance_geometry := model_name == "lp_museum_door_leaf"
 	# Frames span both back-to-back walls (2 x WALL_THICKNESS) plus a lip.
 	var frame_depth := WALL_THICKNESS * 2.0 + 0.14
 	var jamb_thick := 0.18
 	# The public leaves start on the 0.36 m stylobate and reach 2.98 m, so
 	# their frame rises to the room lintel. Interior frames keep the old head.
-	var jamb_height: float = WALL_HEIGHT - (0.35 if interaction_required else 0.7)
+	var jamb_height: float = WALL_HEIGHT - (0.35 if entrance_geometry else 0.7)
 	var jamb_y := jamb_height * 0.5
 	var jamb_offset := gap * 0.5 + jamb_thick * 0.5
 	var span := gap + jamb_thick * 2.0
@@ -551,7 +552,7 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 			Vector3(span, 0.04, frame_depth), frame_color.darkened(0.1),
 			0.0, 0.0, false)
 		# Generic green room plaques do not belong on the classical street portal.
-		if not interaction_required:
+		if not entrance_geometry:
 			for i in range(2):
 				var s: float = -1.0 if i == 0 else 1.0
 				_box(parent, "Doorway Sign %s %d" % [center, i],
@@ -571,15 +572,16 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 		_box(parent, "Door Frame Threshold %s" % [center], center + Vector3(0, 0.02, 0),
 			Vector3(frame_depth, 0.04, span), frame_color.darkened(0.1),
 			0.0, 0.0, false)
-		if not interaction_required:
+		if not entrance_geometry:
 			for i in range(2):
 				var s: float = -1.0 if i == 0 else 1.0
 				_box(parent, "Doorway Sign %s %d" % [center, i],
 					center + Vector3(s * (frame_depth * 0.5 + 0.03), header_y, 0),
 					Vector3(0.05, 0.22, 0.85), sign_color, 0.9, 0.0, false)
 	if leaves:
-		_door_leaves(parent, center, axis, open_towards, gap,
-			interaction_required, model_name)
+		# Every ordinary swing pair follows the public entrance contract now:
+		# built shut, no proximity sensor, state held until the next E press.
+		_door_leaves(parent, center, axis, open_towards, gap, true, model_name)
 
 
 # Museum double doors that actually open. Service openings use authored steel
@@ -607,21 +609,23 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 # lobby side is guaranteed clear (LobbyProps keeps every collider out of
 # |x| < 2.6, the spine from the street door to the atrium door).
 func _door_leaves(parent: Node, center: Vector3, axis: String,
-		open_towards := 1.0, gap := DOOR_GAP, interaction_required := false,
+		open_towards := 1.0, gap := DOOR_GAP, interaction_required := true,
 		model_name := "lp_service_door_leaf") -> void:
-	var leaf_h: float = 2.58 if interaction_required else WALL_HEIGHT - 0.98
-	# The automatic interior pair keeps its established 80 mm meeting gap. The
-	# ceremonial entrance gets a real 10 mm joint: 5 mm allowance on each leaf.
-	var centre_clear: float = 0.005 if interaction_required else 0.04
+	# Behaviour and dimensions are separate decisions. All five visible swing
+	# pairs are hand-operated now, but only the tall public entrance uses the
+	# ceremonial 2.58 m leaf, 10 mm centre joint and lifted hinge origin.
+	var entrance_geometry := model_name == "lp_museum_door_leaf"
+	var leaf_h: float = 2.58 if entrance_geometry else WALL_HEIGHT - 0.98
+	var centre_clear: float = 0.005 if entrance_geometry else 0.04
 	var leaf_w: float = gap * 0.5 - centre_clear
-	var leaf_clear: float = 0.04 if interaction_required else 0.05
-	var hinge_y: float = 0.36 if interaction_required else 0.0
+	var leaf_clear: float = 0.04 if entrance_geometry else 0.05
+	var hinge_y: float = 0.36 if entrance_geometry else 0.0
 	# Missing-model fallback is metal too. A failed import must never quietly
 	# bring the rejected wooden door back.
 	var leaf_color := Color(0.11, 0.15, 0.17)
 	# Past 100 degrees the leaves stand clear of the walkable gap, which is how
 	# a doorway keeps its 0.9 m of navmesh with both doors thrown wide.
-	var swings := [96.0, 96.0] if interaction_required else [104.0, 100.0]
+	var swings := [96.0, 96.0] if entrance_geometry else [104.0, 100.0]
 	var shut := [0.0, 180.0] if axis == "x" else [-90.0, 90.0]
 	var swing := Node3D.new()
 	swing.name = "Door Swing %s" % [center]
@@ -1491,7 +1495,10 @@ func _add_room_lights(parent: Node) -> void:
 ## by hand, the atrium lamp is the light the blackout brings UP rather than down,
 ## and the flashlight belongs to the player.
 const BLACKOUT_EXEMPT_LIGHTS := ["Sun", "Skylight Beam", "Atrium Emergency Light",
-		"Player Flashlight", "Cam Floodlight"]
+		"Player Flashlight", "Cam Floodlight",
+		# Municipal/court circuits stay live when the museum mains fail. These
+		# are the only useful pools on the walk back outside after the blackout.
+		"Street Lamp Light", "Court Gate Light West", "Court Gate Light East"]
 const EMERGENCY_LAMP_NAME := "Emergency Lamp"
 
 
@@ -3301,29 +3308,51 @@ func _add_street_extras(parent: Node) -> void:
 	# pair at +-8.6. All three keep clear of the gate piers, which occupy
 	# x 3.97..5.43 mirrored over z 53.47..54.93, and of the hydrant at x 11.5.
 	const KERB_STRIP_Z := 53.6
-	_cylinder(parent, "Hours Sign Pole", Vector3(6.4, 0.7, KERB_STRIP_Z), 0.04,
-		1.4, Color(0.18, 0.19, 0.21))
-	_box(parent, "Hours Sign Board", Vector3(6.4, 1.55, KERB_STRIP_Z),
-		Vector3(1.5, 0.7, 0.06), Color(0.88, 0.86, 0.80), 0.1, 0.0, false)
+	var hours_sign := MuseumModels.place(parent as Node3D, "lp_hours_sign",
+		Vector3(6.4, 0.0, KERB_STRIP_Z))
+	if hours_sign != null:
+		hours_sign.name = "Hours Sign"
+	else:
+		_cylinder(parent, "Hours Sign Pole", Vector3(6.4, 0.7, KERB_STRIP_Z),
+			0.04, 1.4, Color(0.18, 0.19, 0.21))
+		_box(parent, "Hours Sign Board", Vector3(6.4, 1.55, KERB_STRIP_Z),
+			Vector3(1.5, 0.7, 0.06), Color(0.88, 0.86, 0.80), 0.1, 0.0, false)
 	_add_label(parent, tr("EXHIBIT_OPEN_HOURS"),
 		Vector3(6.4, 1.55, KERB_STRIP_Z - 0.1), Color(0.20, 0.24, 0.20))
-	for i in range(4):
-		_torus(parent, "Bike Rack Hoop %d" % i,
-			Vector3(-10.0 - float(i) * 0.8, 0.4, KERB_STRIP_Z), 0.32, 0.42,
-			Color(0.42, 0.45, 0.48))
-	# r 0.28 x 0.76 was a waste basket, not street furniture. r 0.36 x 1.00 with
-	# a rim puts the opening at 1.0 m, i.e. hand height.
+
+	var rack := MuseumModels.place(parent as Node3D, "lp_bike_rack",
+		Vector3(-11.2, 0.0, KERB_STRIP_Z))
+	if rack != null:
+		rack.name = "Bike Rack"
+	else:
+		for i in range(4):
+			_torus(parent, "Bike Rack Hoop %d" % i,
+				Vector3(-10.0 - float(i) * 0.8, 0.4, KERB_STRIP_Z),
+				0.32, 0.42, Color(0.42, 0.45, 0.48))
+
 	for bin_x: float in [-8.6, 8.6]:
 		var bin_tag: String = "West" if bin_x < 0.0 else "East"
-		var bin_pos := Vector3(bin_x, 0.50, KERB_STRIP_Z)
-		_cylinder(parent, "Street Bin %s" % bin_tag, bin_pos, 0.36, 1.00,
-			Color(0.16, 0.25, 0.18))
-		_cylinder(parent, "Street Bin Rim %s" % bin_tag,
-			bin_pos + Vector3(0, 0.52, 0), 0.39, 0.06, Color(0.12, 0.19, 0.14))
-	_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0), 0.14, 0.6,
-		Color(0.62, 0.14, 0.12))
-	_sphere(parent, "Fire Hydrant Cap", Vector3(11.5, 0.66, 54.0), 0.15,
-		Color(0.62, 0.14, 0.12))
+		var bin_model := MuseumModels.place(parent as Node3D, "lp_street_bin",
+			Vector3(bin_x, 0.0, KERB_STRIP_Z))
+		if bin_model != null:
+			bin_model.name = "Street Bin %s" % bin_tag
+		else:
+			var bin_pos := Vector3(bin_x, 0.50, KERB_STRIP_Z)
+			_cylinder(parent, "Street Bin %s" % bin_tag, bin_pos, 0.36, 1.00,
+				Color(0.16, 0.25, 0.18))
+			_cylinder(parent, "Street Bin Rim %s" % bin_tag,
+				bin_pos + Vector3(0, 0.52, 0), 0.39, 0.06,
+				Color(0.12, 0.19, 0.14))
+
+	var hydrant := MuseumModels.place(parent as Node3D, "lp_fire_hydrant",
+		Vector3(11.5, 0.0, 54.0))
+	if hydrant != null:
+		hydrant.name = "Fire Hydrant"
+	else:
+		_cylinder(parent, "Fire Hydrant", Vector3(11.5, 0.3, 54.0),
+			0.14, 0.6, Color(0.62, 0.14, 0.12))
+		_sphere(parent, "Fire Hydrant Cap", Vector3(11.5, 0.66, 54.0),
+			0.15, Color(0.62, 0.14, 0.12))
 
 	# The delivery pallet and its two crates are gone. They were three flat-
 	# coloured boxes sitting in the open west half of the forecourt saying the
@@ -3988,54 +4017,52 @@ func _on_intro_finished(_skipped: bool) -> void:
 ## footway and then swerved into the live lane to park.
 ## Shot cuts hide the two small pose jumps between segments 2->3 and 3->4.
 func _drive_shots() -> Array:
+	# Six continuous 30-second segments. The car never leaves the V2 westbound
+	# lane (z 57.2); added detail comes from camera grammar, not a new route.
 	_drive_track = [
-		{"t0": 0.0, "t1": 6.5, "from": Vector3(236, 0.01, 57.2),
-			"to": Vector3(168, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
-		{"t0": 6.5, "t1": 13.0, "from": Vector3(168, 0.01, 57.2),
+		{"t0": 0.0, "t1": 5.5, "from": Vector3(236, 0.01, 57.2),
+			"to": Vector3(178, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 5.5, "t1": 11.0, "from": Vector3(178, 0.01, 57.2),
 			"to": Vector3(134, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
-		{"t0": 13.0, "t1": 19.0, "from": Vector3(124, 0.01, 57.2),
-			"to": Vector3(62, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
-		{"t0": 19.0, "t1": 22.2, "from": Vector3(58, 0.01, 57.2),
+		{"t0": 11.0, "t1": 16.5, "from": Vector3(134, 0.01, 57.2),
+			"to": Vector3(68, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
+		{"t0": 16.5, "t1": 20.5, "from": Vector3(68, 0.01, 57.2),
 			"to": Vector3(24.0, 0.01, 57.2), "yaw0": 90.0, "yaw1": 90.0},
-		{"t0": 22.2, "t1": 24.5, "from": Vector3(24.0, 0.01, 57.2),
+		{"t0": 20.5, "t1": 24.5, "from": Vector3(24.0, 0.01, 57.2),
 			"to": DRIVE_CAR_PARKED_POS, "yaw0": 90.0,
 			"yaw1": DRIVE_CAR_PARKED_YAW},
 		{"t0": 24.5, "t1": 30.0, "from": DRIVE_CAR_PARKED_POS,
 			"to": DRIVE_CAR_PARKED_POS, "yaw0": DRIVE_CAR_PARKED_YAW,
 			"yaw1": DRIVE_CAR_PARKED_YAW},
 	]
-	# Driver's eye in world terms while the car points west (yaw 90): the POV
-	# camera rides exactly there, so the wheel sits low-left and the hood low
-	# in frame, the way build_player_car framed its cabin for DRIVER_EYE.
 	var eye: Vector3 = ExteriorProps.DRIVER_EYE.rotated(Vector3.UP, deg_to_rad(90.0))
 	return [
-		# Deep forest, both tree bands closing over the road, mountains past
-		# them on either side. The look point is the far road axis so the
-		# whole move reads as driving, not floating.
+		# Three true cabin POVs. Low sequence-time bob supplies suspension and
+		# engine motion without breaking the surveyed DRIVER_EYE registration.
 		{"from": (_drive_track[0]["from"] as Vector3) + eye,
 			"to": (_drive_track[0]["to"] as Vector3) + eye,
 			"look": Vector3(40, 1.0, 57.2), "text": "STORY_DRIVE_01",
-			"time": 6.5, "card": false},
-		# Over the river bridge at x 150; the glance goes ahead-left, down the
-		# water towards the southern ranges, while the parapets sweep past.
+			"time": 5.5, "card": false, "bob": 0.012},
 		{"from": (_drive_track[1]["from"] as Vector3) + eye,
 			"to": (_drive_track[1]["to"] as Vector3) + eye,
 			"look": Vector3(60, 2.0, 78.0), "text": "STORY_DRIVE_02",
-			"time": 6.5, "card": false},
-		# Down the single lamp row and past the bus stop at x 26, museum end of
-		# the road. Eyes back on the road: the look point is the street ahead.
+			"time": 5.5, "card": false, "bob": 0.016},
 		{"from": (_drive_track[2]["from"] as Vector3) + eye,
 			"to": (_drive_track[2]["to"] as Vector3) + eye,
 			"look": Vector3(0, 1.2, 57.0), "text": "STORY_DRIVE_03",
-			"time": 6.0, "card": false},
-		# Exterior: a static camera on the far edge of the road watches the sedan
-		# come in off the open road and pull up at the museum's own kerb.
-		{"from": Vector3(19.0, 1.9, 61.6), "to": Vector3(19.0, 1.9, 61.6),
-			"look": Vector3(10.0, 0.9, 56.6), "text": "STORY_DRIVE_04",
-			"time": 5.5, "card": false},
-		# The reveal: up over the lot wall and across the forecourt onto the
-		# facade, the same (0, 4.2, 35) aim the museum intro opens with.
-		{"from": Vector3(33, 2.4, 47.5), "to": Vector3(14, 4.0, 51),
+			"time": 5.5, "card": false, "bob": 0.010},
+		# Parallel exterior tracking shot: grille, plates, handles and wheels now
+		# have time on screen before the final manoeuvre.
+		{"from": Vector3(66.0, 1.65, 61.2), "to": Vector3(31.0, 1.55, 60.8),
+			"look": Vector3(20.0, 0.82, 57.2), "text": "STORY_DRIVE_04",
+			"time": 4.0, "card": false},
+		# New low three-quarter insert on the nose as the car settles at the kerb.
+		{"from": Vector3(12.5, 0.82, 53.2), "to": Vector3(12.5, 0.82, 53.2),
+			"look": Vector3(8.5, 0.72, 56.75), "text": "",
+			"time": 4.0, "card": false},
+		# Final crane reveal keeps the parked car in the lower edge, then gives
+		# the lit gate, armillary fountain and facade the closing composition.
+		{"from": Vector3(17.0, 2.4, 49.0), "to": Vector3(7.0, 4.2, 48.0),
 			"look": Vector3(0, 4.2, 35), "text": "STORY_DRIVE_05",
 			"time": 5.5, "card": false},
 	]
@@ -4062,6 +4089,13 @@ func _sync_drive_car() -> void:
 	_drive_car.position = (seg["from"] as Vector3).lerp(seg["to"] as Vector3, k)
 	_drive_car.rotation.y = lerp_angle(
 		deg_to_rad(float(seg["yaw0"])), deg_to_rad(float(seg["yaw1"])), k)
+	# Tiny visual suspension motion shares the cutscene clock with the camera.
+	# It is disabled once parked, so gameplay inherits the exact authored pose.
+	if t < 24.5:
+		_drive_car.position.y += sin(t * 7.4) * 0.010
+		_drive_car.rotation.z = deg_to_rad(sin(t * 4.1) * 0.22)
+	else:
+		_drive_car.rotation.z = 0.0
 
 
 # --- The prologue ------------------------------------------------------------
@@ -4421,7 +4455,7 @@ func build_map() -> void:
 	_add_door_frame(map_root, Vector3(-25, 0, 7), "x", true)    # Office <-> Storage
 	_add_door_frame(map_root, Vector3(-25, 0, -7), "x", true)   # Office <-> Archive
 	_add_door_frame(map_root, Vector3(0, 0, -33), "x", true, 1.0,
-		DOOR_GAP, false, "lp_gallery_door_leaf")  # Time Wing <-> Planetarium
+		DOOR_GAP, true, "lp_gallery_door_leaf")  # Time Wing <-> Planetarium
 	_add_door_frame(map_root, Vector3(-25, 0, 17), "x", true)   # Storage <-> Restoration Lab
 	_add_door_frame(map_root, Vector3(0, 0, 35), "x", true, -1.0,
 		ENTRANCE_DOOR_GAP, true, "lp_museum_door_leaf")  # E-only public entrance

@@ -1291,6 +1291,10 @@ static func _street_gate(root: Node3D) -> void:
 		for side: float in [-1.0, 1.0]:
 			var sx := side * 5.9
 			var tag := "West" if side < 0.0 else "East"
+			# The GLB carries the iron-and-glass housing; this small source and
+			# real light sit inside it. Both sides use the same helper, so the
+			# east lantern can no longer silently diverge from the west one.
+			_gate_lantern(gate, tag, Vector3(sx, 3.64, 51.50))
 			_solid_box(gate, "Court Gate Collision %s" % tag,
 				Vector3(sx, 1.60, 51.50), Vector3(1.46, 3.20, 1.46))
 			var leaf := MuseumModels.place(gate, "lp_court_gate_leaf",
@@ -1321,10 +1325,12 @@ static func _street_gate(root: Node3D) -> void:
 			Vector3(1.40, 0.20, 1.40), "stone", COL_COPING, 0.0)
 		_cone(gate, "Court Gate Cap %s" % tag, Vector3(sx, 3.28, 51.50), 0.66,
 			0.06, 0.32, "stone", COL_COPING, 0.0, 4)
-		_box(gate, "Court Gate Lantern %s" % tag, Vector3(sx, 3.66, 51.50),
-			Vector3(0.34, 0.46, 0.34), "plain", COL_GLOW, 0.0, false, 0.9)
+		_box(gate, "Court Gate Lantern Housing %s" % tag,
+			Vector3(sx, 3.66, 51.50), Vector3(0.34, 0.46, 0.34),
+			"metal", COL_IRON, 0.0, false)
 		_cone(gate, "Court Gate Lantern Cap %s" % tag, Vector3(sx, 3.96, 51.50),
 			0.26, 0.03, 0.18, "metal", COL_BRONZE, 0.0, 4)
+		_gate_lantern(gate, tag, Vector3(sx, 3.64, 51.50))
 		_solid_box(gate, "Court Gate Collision %s" % tag,
 			Vector3(sx, 1.60, 51.50), Vector3(1.46, 3.20, 1.46))
 
@@ -1355,6 +1361,26 @@ static func _street_gate(root: Node3D) -> void:
 				COL_BRONZE, 0.0, false)
 
 
+## Luminous core shared by the model and fallback gate piers. The surrounding
+## housing is Blender geometry; this is deliberately tiny so it reads as a bulb
+## behind glazing rather than the old glowing cube. The OmniLight3D provides the
+## actual pool of light on both sides of the gate.
+static func _gate_lantern(parent: Node3D, tag: String, at: Vector3) -> void:
+	var root := Node3D.new()
+	root.name = "Court Gate Lantern %s" % tag
+	root.position = at
+	parent.add_child(root)
+	_box(root, "Gate Lantern Glow", Vector3.ZERO, Vector3(0.11, 0.22, 0.11),
+		"plain", COL_GLOW, 0.0, false, 2.8)
+	var light := OmniLight3D.new()
+	light.name = "Court Gate Light %s" % tag
+	light.light_color = COL_GLOW
+	light.light_energy = 4.5
+	light.omni_range = 7.5
+	light.shadow_enabled = false
+	root.add_child(light)
+
+
 # --- court fixtures -----------------------------------------------------------
 
 
@@ -1371,20 +1397,24 @@ static func _court_fixtures(root: Node3D) -> void:
 	for ux: float in [-7.7, 7.7]:
 		for uz: float in [36.8, 39.6]:
 			var at := Vector3(ux, 0.0, uz)
-			_box(fixtures, "Urn Plinth", at + Vector3(0, 0.22, 0),
-				Vector3(0.86, 0.44, 0.86), "stone", COL_STONE_DARK, 0.0)
-			_box(fixtures, "Urn Die", at + Vector3(0, 0.62, 0),
-				Vector3(0.66, 0.40, 0.66), "stone", COL_STONE, 0.0)
-			_cone(fixtures, "Urn Foot", at + Vector3(0, 0.92, 0), 0.20, 0.34,
-				0.22, "stone", COL_BASIN, 0.0, 14)
-			_sphere(fixtures, "Urn Body", at + Vector3(0, 1.28, 0), 0.44,
-				"stone", COL_BASIN, 0.0)
-			_torus(fixtures, "Urn Lip", at + Vector3(0, 1.58, 0), 0.34, 0.48,
-				"stone", COL_COPING, 0.0)
-			_sphere(fixtures, "Urn Planting", at + Vector3(0, 1.70, 0), 0.36,
-				"foliage", COL_HEDGE, 0.0)
-			_solid_cyl(fixtures, "Urn Collision", at + Vector3(0, 0.85, 0), 0.48,
-				1.70)
+			var urn := MuseumModels.place(fixtures, "lp_court_urn", at)
+			if urn != null:
+				urn.name = "Court Urn %s %s" % [ux, uz]
+			else:
+				# Missing-import fallback keeps the old stone silhouette, but the
+				# production path is the authored vase with individual leaves.
+				_box(fixtures, "Urn Plinth", at + Vector3(0, 0.22, 0),
+					Vector3(0.86, 0.44, 0.86), "stone", COL_STONE_DARK, 0.0)
+				_box(fixtures, "Urn Die", at + Vector3(0, 0.62, 0),
+					Vector3(0.66, 0.40, 0.66), "stone", COL_STONE, 0.0)
+				_cone(fixtures, "Urn Foot", at + Vector3(0, 0.92, 0),
+					0.20, 0.34, 0.22, "stone", COL_BASIN, 0.0, 14)
+				_sphere(fixtures, "Urn Body", at + Vector3(0, 1.28, 0), 0.44,
+					"stone", COL_BASIN, 0.0)
+				_torus(fixtures, "Urn Lip", at + Vector3(0, 1.58, 0),
+					0.34, 0.48, "stone", COL_COPING, 0.0)
+			_solid_cyl(fixtures, "Urn Collision", at + Vector3(0, 0.73, 0),
+				0.46, 1.46)
 
 	# Bollards ring the fountain apron and the walk down the axis is left clear.
 	# Skipping the four axial posts was not enough: the ones at 60, 120, 240 and

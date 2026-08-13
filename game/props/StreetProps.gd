@@ -109,6 +109,15 @@ const LAMP_Z := 55.10
 # 0.120 sinks the cast foot 30 mm into the +0.150 pavement, so the foot is
 # planted rather than sitting on the slab with a shared face.
 const LAMP_Y := 0.120
+# The imported atlas cannot emit and a dark glass swatch does not illuminate
+# anything. These are measured from build_street_lamp's neck endpoint: the
+# lantern centre is y 4.020 and z +1.832 in the module's local frame.
+const LAMP_GLOW_LOCAL := Vector3(0.0, 4.020, 1.832)
+const LAMP_GLOW_SIZE := Vector3(0.22, 0.20, 0.22)
+const LAMP_GLOW_COLOR := Color(0.95, 0.78, 0.46)
+const LAMP_LIGHT_ENERGY := 6.0
+const LAMP_LIGHT_RANGE := 11.0
+static var _lamp_glow_material: StandardMaterial3D = null
 # The box that stops the player at a lamp: the SHAFT only, foot to head of
 # mast, arc and plafond deliberately left open. See _place_lamp for why the
 # generated hull cannot be used and why this is 0.30 and not the plinth's
@@ -264,9 +273,53 @@ static func _build_furniture(root: Node3D) -> void:
 static func _place_lamp(root: Node3D, x: float) -> void:
 	var pos := Vector3(x, LAMP_Y, LAMP_Z)
 	var node := _place_flat(root, "lp_street_lamp", pos)
-	if node == null or absf(x) > BAND_HALF_X:
+	if node == null:
 		return
-	_upright_box(node, "Lamp Mast", LAMP_MAST_COLLIDER)
+	_add_street_lamp_light(node)
+	if absf(x) <= BAND_HALF_X:
+		_upright_box(node, "Lamp Mast", LAMP_MAST_COLLIDER)
+
+
+## One small emissive bulb inside the authored glass and one real downward
+## light. The mesh makes the source itself readable; the SpotLight3D is what
+## finally paints the pavement and carriageway. Keeping the light shadowless
+## avoids six extra shadow maps for fixtures whose iron shell already provides
+## the silhouette.
+static func _add_street_lamp_light(node: Node3D) -> void:
+	var bulb_mesh := BoxMesh.new()
+	bulb_mesh.size = LAMP_GLOW_SIZE
+	var bulb := MeshInstance3D.new()
+	bulb.name = "Street Lamp Glow"
+	bulb.position = LAMP_GLOW_LOCAL
+	bulb.mesh = bulb_mesh
+	bulb.material_override = _street_lamp_glow_material()
+	bulb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(bulb)
+
+	var light := SpotLight3D.new()
+	light.name = "Street Lamp Light"
+	light.position = LAMP_GLOW_LOCAL + Vector3(0.0, -0.05, 0.0)
+	light.rotation_degrees.x = -90.0
+	light.light_color = LAMP_GLOW_COLOR
+	light.light_energy = LAMP_LIGHT_ENERGY
+	light.spot_range = LAMP_LIGHT_RANGE
+	light.spot_angle = 68.0
+	light.shadow_enabled = false
+	node.add_child(light)
+
+
+static func _street_lamp_glow_material() -> StandardMaterial3D:
+	if _lamp_glow_material != null:
+		return _lamp_glow_material
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = LAMP_GLOW_COLOR
+	mat.roughness = 0.34
+	mat.emission_enabled = true
+	mat.emission = LAMP_GLOW_COLOR
+	mat.emission_energy_multiplier = 3.2
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	_lamp_glow_material = mat
+	return mat
 
 
 ## One upright box standing on a placed module's own floor origin, parented to

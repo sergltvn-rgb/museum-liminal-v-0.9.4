@@ -163,6 +163,7 @@ func _init() -> void:
 		_verify_camera_geometry(mounts)
 		_verify_minimap_rooms(generated)
 		_verify_forecourt_lamps(generated)
+		_verify_exterior_fixture_lights(generated)
 		_verify_block3_landscape(generated)
 		_verify_block3_parking(generated)
 		_verify_arrival_exit(generated)
@@ -309,6 +310,58 @@ func _verify_forecourt_lamps(generated: Node) -> void:
 	else:
 		_ok("Forecourt lamps: six fixtures over %.1f m, each with a lit lantern, "
 			% FORECOURT_LAMP_MIN_HEIGHT + "at the authored positions")
+
+
+## The street modules and gate piers used to carry dark atlas glass only. An
+## emissive mesh is not illumination, so require both the readable source and a
+## live Light3D on every authored fixture.
+func _verify_exterior_fixture_lights(generated: Node) -> void:
+	var street_lights := generated.find_children(
+		"Street Lamp Light", "SpotLight3D", true, false)
+	var street_glows := generated.find_children(
+		"Street Lamp Glow", "MeshInstance3D", true, false)
+	var gate_lights := generated.find_children(
+		"Court Gate Light*", "OmniLight3D", true, false)
+	var gate_glows := generated.find_children(
+		"Gate Lantern Glow", "MeshInstance3D", true, false)
+	var weak: Array[String] = []
+	for node in street_lights:
+		var spot := node as SpotLight3D
+		if spot == null or not spot.visible or spot.light_energy < 5.9 \
+				or spot.spot_range < 10.9 or spot.spot_angle < 67.9:
+			weak.append(str(node.name))
+	for node in gate_lights:
+		var omni := node as OmniLight3D
+		if omni == null or not omni.visible or omni.light_energy < 4.4 \
+				or omni.omni_range < 7.4:
+			weak.append(str(node.name))
+	for node in street_glows + gate_glows:
+		var glow := node as MeshInstance3D
+		var mat := glow.material_override as StandardMaterial3D if glow != null else null
+		if mat == null or not mat.emission_enabled \
+				or mat.emission_energy_multiplier < 2.5:
+			weak.append(str(node.name))
+	var west := generated.find_child("Court Gate Lantern West", true, false) as Node3D
+	var east := generated.find_child("Court Gate Lantern East", true, false) as Node3D
+	var symmetry_ok := west != null and east != null \
+		and absf(west.global_position.x + east.global_position.x) < 0.02 \
+		and absf(west.global_position.y - east.global_position.y) < 0.02 \
+		and absf(west.global_position.z - east.global_position.z) < 0.02
+	if gate_lights.size() == 2:
+		var gate_a := gate_lights[0] as OmniLight3D
+		var gate_b := gate_lights[1] as OmniLight3D
+		symmetry_ok = symmetry_ok and gate_a != null and gate_b != null \
+			and absf(gate_a.light_energy - gate_b.light_energy) < 0.001 \
+			and absf(gate_a.omni_range - gate_b.omni_range) < 0.001 \
+			and gate_a.light_color.is_equal_approx(gate_b.light_color)
+	if street_lights.size() != 6 or street_glows.size() != 6 \
+			or gate_lights.size() != 2 or gate_glows.size() != 2 \
+			or not weak.is_empty() or not symmetry_ok:
+		_fail("Exterior fixture lights: street %d/%d, gate %d/%d, weak [%s], symmetric %s"
+			% [street_lights.size(), street_glows.size(), gate_lights.size(),
+				gate_glows.size(), ", ".join(weak), symmetry_ok])
+	else:
+		_ok("Exterior fixture lights: 6 strong street spots + 2 symmetric gate omnis, all live")
 
 
 ## BLOCK 3: THE OUTER TREE LINE AND ROAD VEHICLES USE EXTERIOR BUILDERS
@@ -1131,7 +1184,7 @@ const PLAZA_Z_MIN := 35.4
 const PLAZA_Z_MAX := 41.0
 const PLAZA_FOOT_INSET := 0.15
 const PLAZA_PROP_GAP := 0.40
-const PLAZA_PLINTH_NAMES := ["Urn Plinth"]
+const PLAZA_PLINTH_NAMES := ["Urn Plinth", "lp_court_urn"]
 
 
 func _verify_plaza_footing(generated: Node) -> void:
@@ -1317,8 +1370,22 @@ func _verify_blackout(map_root: Node, generated: Node) -> void:
 			_fail("Blackout: the office tube housing still glows at %.2f"
 				% mat.emission_energy_multiplier)
 			return
-	_ok("Blackout: %d mains lamps registered, office dark on entry "
-		% registered.size() + "(only the battery lamp and the flashlight left)")
+	var exterior_lights := generated.find_children(
+		"Street Lamp Light", "SpotLight3D", true, false)
+	exterior_lights.append_array(generated.find_children(
+		"Court Gate Light*", "OmniLight3D", true, false))
+	var exterior_dark: Array[String] = []
+	for node in exterior_lights:
+		var exterior := node as Light3D
+		if exterior == null or not exterior.is_visible_in_tree() \
+				or exterior.light_energy <= 0.01:
+			exterior_dark.append(str(node.name))
+	if exterior_lights.size() != 8 or not exterior_dark.is_empty():
+		_fail("Blackout: exterior circuit has %d/8 fixtures, dark [%s]"
+			% [exterior_lights.size(), ", ".join(exterior_dark)])
+		return
+	_ok("Blackout: %d mains lamps registered, office dark, 8 exterior fixtures live"
+		% registered.size())
 
 
 ## Everything lit inside the office rectangle that is not allowed to be.
@@ -1620,13 +1687,30 @@ func _verify(map_root: Node) -> void:
 				_ok("Atrium/Gravity shared wall coincides at x=15")
 
 
-## The three service-room portals must read as open, not merely be passable.
-## Measure rendered BoxMesh geometry in the player's body-height band; thresholds
-## below the feet and lintels above the head are deliberately outside the band.
+## The three service-room portals must be visually clear when the player opens
+## them. They now start shut by design, so drive the same manual contract the
+## gameplay E action uses, measure the body-height channel, then restore shut.
 func _verify_storage_door_clearance(generated: Node) -> void:
 	var problems: Array[String] = []
 	var measured: Array[float] = []
 	var scanned := 0
+	var opened_swings: Array[Node] = []
+	var all_swings := generated.find_children("Door Swing*", "Node3D", true, false)
+	for center in STORAGE_DOOR_CENTERS:
+		var swing: Node = null
+		for candidate in all_swings:
+			var candidate_3d := candidate as Node3D
+			if candidate_3d != null \
+					and candidate_3d.global_position.distance_to(center) < 0.05:
+				swing = candidate
+				break
+		if swing == null or not swing.has_method("set_open"):
+			problems.append("%s has no manual Door Swing" % center)
+			continue
+		swing.call("set_open", true)
+		for _step in range(90):
+			swing.call("_physics_process", 1.0 / 60.0)
+		opened_swings.append(swing)
 	var meshes := generated.find_children("*", "MeshInstance3D", true, false)
 	for center in STORAGE_DOOR_CENTERS:
 		var nearest := INF
@@ -1675,8 +1759,12 @@ func _verify_storage_door_clearance(generated: Node) -> void:
 			var mid := walk_box.get_center()
 			problems.append("%s cannot be walked through, %s stands in the %.2f m channel at (%.2f %.2f %.2f)"
 				% [center, walker.name, DOOR_WALK_WIDTH, mid.x, mid.y, mid.z])
+	for swing in opened_swings:
+		swing.call("set_open", false)
+		for _step in range(90):
+			swing.call("_physics_process", 1.0 / 60.0)
 	if problems.is_empty():
-		_ok("Storage door visuals: %d openings clear by %.3f/%.3f/%.3f m (gate %.2f m), %d meshes weighed against the %.2f x %.2f m walking channels"
+		_ok("Storage door visuals: %d manual openings clear by %.3f/%.3f/%.3f m (gate %.2f m), %d meshes weighed against the %.2f x %.2f m walking channels"
 			% [STORAGE_DOOR_CENTERS.size(), measured[0], measured[1], measured[2],
 				DOOR_VISUAL_CLEARANCE, scanned, DOOR_WALK_WIDTH,
 				DOOR_WALK_DEPTH * 2.0])

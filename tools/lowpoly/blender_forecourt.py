@@ -96,41 +96,69 @@ def build_garden(material):
     return p, p.finish(material)
 
 
+def _segmented_ring(p, centre_y, radius, tube, segments, swatch, pitch=0.0):
+    """Faceted armillary ring built from tangent boxes, then tilted as one."""
+    ring_mark = p.mark_verts()
+    tangent = math.tau * radius / float(segments) * 1.06
+    for i in range(segments):
+        a = math.tau * i / float(segments)
+        mark = p.mark_verts()
+        # At +X the tangent runs along Z; swing() carries both position and
+        # orientation around Y, closing the ring without crossed radial bars.
+        p.box((radius, centre_y, 0.0), (tube, tube, tangent), swatch)
+        p.swing(mark, a)
+    if abs(pitch) > 0.001:
+        p.pitch(ring_mark, (0.0, centre_y, 0.0), pitch)
+
+
 def build_fountain(material):
     p = bb.Part("lp_court_fountain")
-    # Low reflecting basin: a quiet civic object, not the former wedding-cake
-    # stack with 28 rigid vertical water tubes.
-    p.prism((0.0, 0.0, 0.0), 2.96, 0.20, 16, "court_stone_dark",
+    # V2 is an armillary court fountain: the footprint and low collision stay
+    # unchanged, but the centre now has a readable museum-scale silhouette.
+    p.prism((0.0, 0.0, 0.0), 2.96, 0.18, 20, "court_stone_dark",
             cap_swatch="court_stone_dark")
-    for i in range(16):
-        a = math.tau * i / 16.0
+    for i in range(20):
+        a = math.tau * i / 20.0
         mark = p.mark_verts()
-        p.box((2.79, 0.44, 0.0), (0.34, 0.58, 1.05), "court_stone",
-              face_swatches={"py": "court_stone", "ny": "court_stone_dark"})
+        p.box((2.80, 0.25, 0.0), (0.32, 0.42, 0.92), "court_stone",
+              face_swatches={"py": "stone_pale", "ny": "court_stone_dark"})
         p.swing(mark, a)
         mark = p.mark_verts()
-        p.box((2.79, 0.755, 0.0), (0.46, 0.12, 1.08), "stone_pale")
+        p.box((2.80, 0.49, 0.0), (0.44, 0.12, 0.94), "stone_pale")
         p.swing(mark, a)
-    p.prism((0.0, 0.205, 0.0), 2.58, 0.075, 16, "water",
+    p.prism((0.0, 0.19, 0.0), 2.60, 0.055, 20, "water",
             cap_swatch="water_light")
 
-    # A single compact monument and four bronze spouts. The water remains a
-    # still dark plane; no fake cylinders hang in mid-air.
-    p.prism((0.0, 0.205, 0.0), 0.78, 0.34, 12, "court_stone_dark",
+    # Stepped octagonal pedestal, kept low enough that the rings float above
+    # the pool rather than turning back into the rejected tiered cake.
+    p.prism((0.0, 0.19, 0.0), 0.82, 0.27, 12, "court_stone_dark",
             cap_swatch="court_stone")
-    p.prism((0.0, 0.525, 0.0), 0.54, 0.30, 10, "court_stone",
-            top_radius=0.43, cap_swatch="stone_pale")
-    p.taper((-0.0, 0.80, 0.0), (0.62, 0.62), (0.25, 0.25), 0.94,
+    p.taper((0.0, 0.44, 0.0), (1.18, 1.18), (0.76, 0.76), 0.43,
             "court_stone", cap_top=True, cap_bottom=False,
             face_swatches={"py": "stone_pale"})
-    p.prism((0.0, 1.72, 0.0), 0.24, 0.18, 8, "lock",
-            top_radius=0.10, cap_swatch="handle")
+    p.prism((0.0, 0.84, 0.0), 0.13, 0.60, 8, "lock",
+            top_radius=0.105, cap_swatch="handle")
+
+    # Faceted globe and four bronze rings. The same atlas material is kept,
+    # but the geometry catches both daylight and the new gate/street lighting.
+    p.taper((0.0, 1.43, 0.0), (0.14, 0.14), (0.58, 0.58), 0.30,
+            "court_stone", cap_bottom=True)
+    p.taper((0.0, 1.73, 0.0), (0.58, 0.58), (0.14, 0.14), 0.30,
+            "court_stone", cap_top=True, cap_bottom=False,
+            face_swatches={"py": "stone_pale"})
+    for tilt in (0.0, 58.0, -58.0, 90.0):
+        _segmented_ring(p, 1.73, 0.78, 0.055, 14, "lock", tilt)
+
+    # Four short mouths and four impact ripples give the object a water story
+    # without reviving the old rigid airborne tube forest.
     for i in range(4):
         a = math.tau * i / 4.0
         mark = p.mark_verts()
-        p.box((0.48, 1.03, 0.0), (0.38, 0.15, 0.16), "lock")
-        p.prism((0.69, 0.99, 0.0), 0.09, 0.11, 8, "handle_dark",
+        p.box((0.64, 0.96, 0.0), (0.42, 0.13, 0.16), "lock")
+        p.prism((0.88, 0.895, 0.0), 0.085, 0.11, 8, "handle_dark",
                 cap_swatch="handle")
+        p.prism((1.42, 0.246, 0.0), 0.24, 0.018, 12, "water",
+                cap_swatch="water_light")
         p.swing(mark, a)
     return p, p.finish(material)
 
@@ -143,18 +171,29 @@ def build_gate_pier(material):
     p.box((0.0, 2.96, 0.0), (1.40, 0.22, 1.40), "stone_pale")
     p.taper((0.0, 3.05, 0.0), (1.18, 1.18), (0.58, 0.58), 0.34,
             "court_stone", cap_top=True)
-    # Lantern housing, with real posts and dark glazing rather than a glow cube.
-    for x in (-0.18, 0.18):
-        for z in (-0.18, 0.18):
-            p.box((x, 3.64, z), (0.045, 0.52, 0.045), "handle_dark")
+
+    # A real four-sided lantern: sill, corner posts, glazed panels, cross
+    # mullions, crown, pitched roof and finial. Runtime adds only the tiny bulb
+    # and OmniLight3D inside this authored housing.
+    p.box((0.0, 3.39, 0.0), (0.56, 0.10, 0.56), "handle_dark")
+    p.prism((0.0, 3.36, 0.0), 0.31, 0.10, 8, "lock",
+            top_radius=0.27, cap_swatch="handle")
+    for x in (-0.205, 0.205):
+        for z in (-0.205, 0.205):
+            p.box((x, 3.70, z), (0.050, 0.62, 0.050), "handle_dark")
     for axis in (-1, 1):
-        p.panel((axis * 0.205, 3.64, 0.0), (0.34, 0.40), "glass_sheen",
+        p.panel((axis * 0.231, 3.70, 0.0), (0.36, 0.48), "glass_sheen",
                 "px" if axis > 0 else "nx")
-        p.panel((0.0, 3.64, axis * 0.205), (0.34, 0.40), "glass_sheen",
+        p.panel((0.0, 3.70, axis * 0.231), (0.36, 0.48), "glass_sheen",
                 "pz" if axis > 0 else "nz")
-    p.box((0.0, 3.38, 0.0), (0.48, 0.08, 0.48), "handle_dark")
-    p.taper((0.0, 3.88, 0.0), (0.54, 0.54), (0.12, 0.12), 0.22,
+        # Cross mullions sit proud of the glass on every side.
+        p.box((axis * 0.234, 3.70, 0.0), (0.022, 0.045, 0.39), "handle")
+        p.box((0.0, 3.70, axis * 0.234), (0.39, 0.045, 0.022), "handle")
+    p.box((0.0, 4.02, 0.0), (0.58, 0.09, 0.58), "handle_dark")
+    p.taper((0.0, 4.055, 0.0), (0.66, 0.66), (0.16, 0.16), 0.25,
             "handle_dark", cap_top=True)
+    p.prism((0.0, 4.28, 0.0), 0.085, 0.15, 8, "lock",
+            top_radius=0.0, cap_swatch="lock")
     return p, p.finish(material)
 
 
@@ -209,11 +248,94 @@ def build_bench(material):
     return p, p.finish(material)
 
 
+def build_urn(material):
+    p = bb.Part("lp_court_urn")
+    p.box((0.0, 0.10, 0.0), (0.78, 0.20, 0.78), "court_stone_dark")
+    p.taper((0.0, 0.18, 0.0), (0.62, 0.62), (0.48, 0.48), 0.30,
+            "court_stone", cap_top=True, cap_bottom=False)
+    p.prism((0.0, 0.46, 0.0), 0.16, 0.18, 10, "court_stone_dark",
+            top_radius=0.20, cap_swatch="court_stone")
+    p.taper((0.0, 0.60, 0.0), (0.42, 0.42), (0.78, 0.78), 0.28,
+            "court_stone", cap_top=True, cap_bottom=False)
+    p.box((0.0, 0.89, 0.0), (0.86, 0.10, 0.86), "stone_pale")
+    p.prism((0.0, 0.945, 0.0), 0.36, 0.045, 12, "court_soil",
+            cap_swatch="court_soil")
+    # Upright leaves replace the old single foliage sphere.
+    for i in range(7):
+        a = math.tau * i / 7.0
+        r = 0.12 if i % 2 == 0 else 0.22
+        p.prism((math.cos(a) * r, 0.96, math.sin(a) * r), 0.075,
+                0.50 if i % 2 == 0 else 0.36, 6,
+                "leaf" if i % 2 == 0 else "leaf_dark", top_radius=0.018)
+    return p, p.finish(material)
+
+
+def build_hours_sign(material):
+    p = bb.Part("lp_hours_sign")
+    for x in (-0.58, 0.58):
+        p.box((x, 0.62, 0.0), (0.08, 1.24, 0.08), "handle_dark")
+        p.box((x, 0.04, 0.0), (0.30, 0.08, 0.30), "carcass_dark")
+    p.box((0.0, 1.37, 0.0), (1.58, 0.76, 0.12), "carcass_dark")
+    p.box((0.0, 1.37, -0.066), (1.40, 0.58, 0.025), "stone_pale")
+    p.box((0.0, 1.77, 0.0), (1.70, 0.08, 0.16), "lock")
+    return p, p.finish(material)
+
+
+def build_bike_rack(material):
+    p = bb.Part("lp_bike_rack")
+    for i in range(5):
+        x = -1.28 + i * 0.64
+        for z in (-0.34, 0.34):
+            p.box((x, 0.43, z), (0.070, 0.86, 0.070), "handle")
+            p.box((x, 0.035, z), (0.22, 0.07, 0.22), "carcass_dark")
+        p.box((x, 0.86, 0.0), (0.070, 0.070, 0.72), "handle")
+        # Short bevel-like shoulders make the rectangular hoop read as bent tube.
+        for z, angle in ((-0.30, -42.0), (0.30, 42.0)):
+            mark = p.mark_verts()
+            p.box((x, 0.80, z), (0.072, 0.22, 0.072), "handle")
+            p.pitch(mark, (x, 0.80, z), angle)
+    return p, p.finish(material)
+
+
+def build_street_bin(material):
+    p = bb.Part("lp_street_bin")
+    p.prism((0.0, 0.0, 0.0), 0.38, 0.10, 12, "carcass_dark",
+            top_radius=0.35, cap_swatch="handle_dark")
+    p.prism((0.0, 0.08, 0.0), 0.34, 0.78, 12, "court_hedge",
+            top_radius=0.30, cap_swatch="leaf_dark")
+    p.prism((0.0, 0.84, 0.0), 0.39, 0.09, 12, "carcass_dark",
+            top_radius=0.36, cap_swatch="handle")
+    p.prism((0.0, 0.915, 0.0), 0.29, 0.045, 12, "shadow",
+            cap_swatch="shadow")
+    p.box((0.0, 0.52, -0.326), (0.28, 0.22, 0.025), "handle_dark")
+    return p, p.finish(material)
+
+
+def build_fire_hydrant(material):
+    p = bb.Part("lp_fire_hydrant")
+    p.prism((0.0, 0.0, 0.0), 0.27, 0.10, 10, "carcass_dark",
+            top_radius=0.23, cap_swatch="handle_dark")
+    p.prism((0.0, 0.08, 0.0), 0.18, 0.54, 10, "flower_red",
+            top_radius=0.20, cap_swatch="flower_red")
+    p.prism((0.0, 0.60, 0.0), 0.25, 0.11, 10, "flower_red",
+            top_radius=0.20, cap_swatch="handle")
+    p.prism((0.0, 0.70, 0.0), 0.19, 0.16, 10, "flower_red",
+            top_radius=0.045, cap_swatch="handle_dark")
+    for side in (-1.0, 1.0):
+        p.box((side * 0.22, 0.45, 0.0), (0.20, 0.20, 0.20), "flower_red")
+        p.box((side * 0.34, 0.45, 0.0), (0.08, 0.14, 0.14), "handle_dark")
+    return p, p.finish(material)
+
+
 BUILDERS = (build_garden, build_fountain, build_gate_pier, build_gate_leaf,
-            build_fence_section, build_bench)
-BUDGET = {"lp_forecourt_garden": 5200, "lp_court_fountain": 1600,
-          "lp_court_gate_pier": 500, "lp_court_gate_leaf": 500,
-          "lp_court_fence_section": 500, "lp_forecourt_bench": 500}
+            build_fence_section, build_bench, build_urn, build_hours_sign,
+            build_bike_rack, build_street_bin, build_fire_hydrant)
+BUDGET = {"lp_forecourt_garden": 5200, "lp_court_fountain": 2600,
+          "lp_court_gate_pier": 800, "lp_court_gate_leaf": 500,
+          "lp_court_fence_section": 500, "lp_forecourt_bench": 500,
+          "lp_court_urn": 500, "lp_hours_sign": 300,
+          "lp_bike_rack": 900, "lp_street_bin": 300,
+          "lp_fire_hydrant": 300}
 
 
 def main():

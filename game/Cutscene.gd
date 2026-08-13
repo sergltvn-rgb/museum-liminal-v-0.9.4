@@ -23,6 +23,7 @@ extends Node3D
 ##     "text": String   a catalogue KEY, not a sentence — see below
 ##     "time": float    seconds this shot holds, fades included
 ##     "card": bool     true = caption over a black title card instead of the world
+##     "bob":  float    optional subtle road/handheld camera motion in metres
 ##
 ## "text" carries the key and this node calls tr() every frame. The inlined
 ## version stored the *translated* string, baked once when the shot list was
@@ -316,7 +317,16 @@ func _apply(elapsed: float) -> void:
 		var from: Vector3 = shot.get("from", _camera.global_position)
 		var to: Vector3 = shot.get("to", from)
 		var look: Vector3 = shot.get("look", from + Vector3.FORWARD)
-		_camera.global_position = from.lerp(to, eased)
+		var camera_pos := from.lerp(to, eased)
+		# Optional low-amplitude motion for a camera physically riding in a car
+		# or held by an operator. It is keyed to sequence time, not frame delta,
+		# so hitches cannot accumulate drift and the shot still ends exactly at
+		# its authored endpoints once the next cut takes over.
+		var bob := maxf(0.0, float(shot.get("bob", 0.0)))
+		if bob > 0.0:
+			camera_pos.y += sin(into * 7.4) * bob
+			camera_pos.z += sin(into * 3.7 + 0.8) * bob * 0.35
+		_camera.global_position = camera_pos
 		_aim(look)
 
 	if is_instance_valid(_caption):

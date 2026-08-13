@@ -11,7 +11,7 @@ extends Node3D
 ##       lp_*_door_leaf         visual leaf, running along local +X
 ##       Door Leaf Collider     one deliberate BoxShape3D for the moving leaf
 ##     Door Hinge <centre> 1    the other leaf, mirrored by its shut yaw
-##     Door Sensor              automatic doors only; never made for entrance
+##     Door Sensor              legacy automatic mode only; absent on map doors
 ##
 ## WHY RIGIDBODY3D. Navigation is baked from static colliders. A StaticBody3D or
 ## AnimatableBody3D leaf would bake a wall across its own doorway. A frozen
@@ -25,9 +25,9 @@ const OPEN_HOLD := 2.2
 const SETTLE_HOLD := 5.0
 const SENSOR_SIZE := Vector3(3.4, 2.4, 3.4)
 const SETTLED_DEG := 0.05
-## GameManager uses this group only for the unpowered public entrance. Office
+## GameManager uses this group for every unpowered museum swing pair. Office
 ## blast doors keep their own `office_door` group and power economy untouched.
-const INTERACTION_GROUP := "museum_entrance_door"
+const INTERACTION_GROUP := "museum_swing_door"
 const INTERACTION_HEIGHT := 1.60
 
 var _hinges: Array[Node3D] = []
@@ -43,9 +43,10 @@ func _ready() -> void:
 	set_physics_process(not _hinges.is_empty())
 
 
-## Both angle lists are absolute Y rotations in degrees. `interaction_required`
-## is true only for the street entrance: it starts shut, has no proximity
-## sensor, joins INTERACTION_GROUP and holds its state until another E press.
+## Both angle lists are absolute Y rotations in degrees. Map doors pass
+## `interaction_required = true`: they start shut, have no proximity sensor,
+## join INTERACTION_GROUP and hold state until another E press. The automatic
+## branch remains only as a safe reusable fallback for non-map callers.
 func setup(hinges: Array, open_yaw: Array, shut_yaw: Array,
 		interaction_required := false) -> void:
 	_hinges.clear()

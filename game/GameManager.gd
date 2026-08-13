@@ -108,9 +108,9 @@ const POWER_CRITICAL_LEVEL := 12.0
 const DOOR_BUTTON_DISTANCE := 2.2
 ## Значение обязано совпадать с FirstMuseumMap.OFFICE_DOOR_GROUP.
 const OFFICE_DOOR_GROUP := "office_door"
-## The public museum entrance is a hand-operated swing door, not part of
-## the powered office-door economy. It still uses the same interact action.
-const MUSEUM_ENTRANCE_GROUP := "museum_entrance_door"
+## The museum's ordinary swing doors are hand-operated and stay separate from
+## the powered office-door economy. They still use the same interact action.
+const MUSEUM_ENTRANCE_GROUP := "museum_swing_door"
 const MUSEUM_ENTRANCE_DISTANCE := 2.75
 const MUSEUM_ENTRANCE_FACING_DOT := 0.55
 ## Имя узла створки — служебное и английское; игроку в окне питания показывается
@@ -1380,9 +1380,9 @@ func _interact() -> void:
 		else:
 			_pick_up(str(target.get_meta("equipment_id")))
 		return
-	# Парадная дверь — ручная: E меняет её состояние только рядом и только
-	# когда камера действительно направлена на портал. Гермоcтворки ниже
-	# остаются отдельной, запитанной системой.
+	# Обычные распашные двери ручные: E меняет ближайшую пару только рядом и
+	# только когда камера направлена на портал. Гермоcтворки ниже остаются
+	# отдельной, запитанной системой.
 	if _toggle_museum_entrance():
 		return
 	# Кнопка гермостворки проверяется ДО компьютера: если игрок тянется к кнопке,
@@ -2979,7 +2979,7 @@ func _hide_protocol() -> void:
 		_player.set("movement_locked", false)
 
 
-## Парадная дверь под рукой только когда совпали ОБА условия: расстояние и
+## Распашная дверь под рукой только когда совпали ОБА условия: расстояние и
 ## направление взгляда. Один лишь радиус позволял бы открыть её спиной, а один
 ## raycast терял бы цель, когда створки уже стоят вдоль стен.
 func _museum_entrance_at_hand() -> Node:
@@ -3359,8 +3359,8 @@ func _update_hint() -> void:
 		# was not before, so the prompt used to be suppressed while carrying.
 		# One ray per frame, the same one _interact() would cast on the next press.
 		var target := _raycast_body()
-		# Один поиск каждой дверной системы на кадр. Парадная дверь получает
-		# приоритет: она не должна наследовать отказ питания от офисной кнопки.
+		# Один поиск каждой дверной системы на кадр. Ручная распашная дверь
+		# получает приоритет и не наследует отказ питания офисной кнопки.
 		var entrance_here := _museum_entrance_at_hand()
 		var door_here := _door_at_hand() if entrance_here == null else null
 		if target != null and target.is_in_group("equipment") and _free_belt_slot() >= 0:
