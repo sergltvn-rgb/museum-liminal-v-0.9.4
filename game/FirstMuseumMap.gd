@@ -3441,38 +3441,103 @@ func _add_drive_set(parent: Node) -> void:
 	# master's staff lot is a blockout of this lot; this one is the finished
 	# composition, with the kerbs, wheel stops, signs, bollards and cars below
 	# all set out around bays at z 41.8. See StreetProps for the full reasoning.
-	var lot := _box(set_root, "Museum Parking Lot", Vector3(42.4, -0.03, 46.5),
-		Vector3(21.2, 0.07, 17.0), ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
-	lot.visibility_range_end = 0.0
-	_box(set_root, "Parking Kerb", Vector3(42.4, 0.03, 38.2),
-		Vector3(21.2, 0.12, 0.4), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
-	_box(set_root, "Parking Kerb East", Vector3(52.8, 0.03, 46.5),
-		Vector3(0.4, 0.12, 16.2), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
-	for i in range(6):
-		_box(set_root, "Parking Bay Line %d" % i,
-			Vector3(36.0 + float(i) * 3.0, 0.017, 41.8),
-			Vector3(0.12, 0.012, 5.6), ExteriorProps.COL_BAY_LINE,
-			0.1, 0.0, false)
+	# 2026-08-13, on the owner's instruction that the lot be modelled: the
+	# asphalt, both kerbs and all six bay separators are now ONE mesh,
+	# lp_park_deck (21.2 x 0.155 x 17.0, tools/lowpoly/blender_street_v2.py).
+	# It is placed at y -0.065 so the asphalt top lands on 0.005 and the kerb
+	# tops on 0.090 -- where the nine primitives it replaces stood.
+	#
+	# It arrives with NO collider, and that is deliberate rather than
+	# forgotten: every box below was authored with with_collision false, the
+	# paragraph at the top of this block explains why (nothing out here is
+	# meant to be stood on), and a convex hull round a 21 x 17 m slab would be
+	# a yard-sized static body for the navigation bake to filter back out.
+	# MapModels.NON_BLOCKING carries the entry and the reasoning.
+	#
+	# The primitives stay as the fallback, and deliberately as the WHOLE set:
+	# place() returns null until the .glb has been imported, and without this
+	# branch the lot would lose its floor, both kerbs and every bay line at
+	# once while every test still reported green.
+	var deck := MuseumModels.place(set_root, "lp_park_deck",
+		Vector3(42.4, -0.065, 46.5))
+	if deck == null:
+		push_warning("FirstMuseumMap: lp_park_deck did not resolve; run Godot --headless --import after exporting")
+		var lot := _box(set_root, "Museum Parking Lot", Vector3(42.4, -0.03, 46.5),
+			Vector3(21.2, 0.07, 17.0), ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
+		lot.visibility_range_end = 0.0
+		_box(set_root, "Parking Kerb", Vector3(42.4, 0.03, 38.2),
+			Vector3(21.2, 0.12, 0.4), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
+		_box(set_root, "Parking Kerb East", Vector3(52.8, 0.03, 46.5),
+			Vector3(0.4, 0.12, 16.2), ExteriorProps.COL_CONCRETE, 0.0, 0.0, false)
+		for i in range(6):
+			_box(set_root, "Parking Bay Line %d" % i,
+				Vector3(36.0 + float(i) * 3.0, 0.017, 41.8),
+				Vector3(0.12, 0.012, 5.6), ExteriorProps.COL_BAY_LINE,
+				0.1, 0.0, false)
+	else:
+		# Keep the authored node name: the map's own furniture is addressed by
+		# name from tests and from code that looks the lot up.
+		deck.name = "Museum Parking Lot"
+
+	# Five precast wheel stops, one per bay, on the same terms: model first,
+	# primitive as the fallback, no collider either way.
 	for i in range(5):
-		_box(set_root, "Parking Wheel Stop %d" % i,
-			Vector3(37.5 + float(i) * 3.0, 0.10, 41.25),
-			Vector3(1.45, 0.18, 0.22), ExteriorProps.COL_CONCRETE,
-			0.0, 0.0, false)
+		var stop_at := Vector3(37.5 + float(i) * 3.0, 0.01, 41.25)
+		var stop := MuseumModels.place(set_root, "lp_park_wheel_stop", stop_at)
+		if stop == null:
+			push_warning("FirstMuseumMap: lp_park_wheel_stop did not resolve; run Godot --headless --import after exporting")
+			_box(set_root, "Parking Wheel Stop %d" % i,
+				stop_at + Vector3(0.0, 0.09, 0.0),
+				Vector3(1.45, 0.18, 0.22), ExteriorProps.COL_CONCRETE,
+				0.0, 0.0, false)
+		else:
+			stop.name = "Parking Wheel Stop %d" % i
 
 	# Two supported symbol boards mark parking and exit; neither is a floating
 	# Label3D. Three low bollards hold the east pedestrian margin.
-	_cylinder(set_root, "Parking Sign Pole", Vector3(51.9, 0.90, 40.0),
-		0.05, 1.80, ExteriorProps.COL_IRON)
-	_box(set_root, "Parking Sign Board", Vector3(51.9, 1.92, 40.0),
-		Vector3(0.82, 0.72, 0.08), Color(0.20, 0.34, 0.62), 0.1, 0.0, false)
-	_box(set_root, "Parking Sign Glyph", Vector3(51.9, 1.92, 39.95),
-		Vector3(0.36, 0.36, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
-	_cylinder(set_root, "Parking Exit Pole", Vector3(33.2, 0.78, 52.6),
-		0.05, 1.56, ExteriorProps.COL_IRON)
-	_box(set_root, "Parking Exit Board", Vector3(33.2, 1.68, 52.6),
-		Vector3(0.92, 0.58, 0.08), Color(0.24, 0.42, 0.30), 0.1, 0.0, false)
-	_box(set_root, "Parking Exit Stripe", Vector3(33.2, 1.68, 52.55),
-		Vector3(0.58, 0.10, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	# Both boards are models now, each one mesh instead of three primitives.
+	#
+	# NEITHER GETS A COLLIDER, and that took a second look to get right. The
+	# posts are _cylinder calls and _cylinder defaults with_collision to true,
+	# which reads as "the posts are solid" -- but _primitive only builds a body
+	# when every dimension clears 0.12 x 0.08 x 0.12, and a 0.05 m radius post
+	# measures 0.10 x 1.80 x 0.10. Both signs have been walk-through dressing
+	# since the day they were written, exactly like the rest of this lot. So the
+	# models are in MapModels.NON_BLOCKING and get nothing added: giving them a
+	# post box here would not have preserved the old behaviour, it would have
+	# quietly introduced physics the author never put in.
+	#
+	# Hulling them would be worse still: one convex wedge from a 0.10 m foot out
+	# to the 0.82 m board at head height, a sign you walk into.
+	#
+	# One honest visual difference: the primitive boards carried emission 0.1
+	# and the models do not, because the street atlas has no emissive swatch.
+	# They are lit dressing now rather than faintly self-lit dressing.
+	var sign_at := Vector3(51.9, 0.0, 40.0)
+	var park_sign := MuseumModels.place(set_root, "lp_park_sign", sign_at)
+	if park_sign == null:
+		push_warning("FirstMuseumMap: lp_park_sign did not resolve; run Godot --headless --import after exporting")
+		_cylinder(set_root, "Parking Sign Pole", Vector3(51.9, 0.90, 40.0),
+			0.05, 1.80, ExteriorProps.COL_IRON)
+		_box(set_root, "Parking Sign Board", Vector3(51.9, 1.92, 40.0),
+			Vector3(0.82, 0.72, 0.08), Color(0.20, 0.34, 0.62), 0.1, 0.0, false)
+		_box(set_root, "Parking Sign Glyph", Vector3(51.9, 1.92, 39.95),
+			Vector3(0.36, 0.36, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	else:
+		park_sign.name = "Parking Sign"
+
+	var exit_at := Vector3(33.2, 0.0, 52.6)
+	var exit_sign := MuseumModels.place(set_root, "lp_park_exit_sign", exit_at)
+	if exit_sign == null:
+		push_warning("FirstMuseumMap: lp_park_exit_sign did not resolve; run Godot --headless --import after exporting")
+		_cylinder(set_root, "Parking Exit Pole", Vector3(33.2, 0.78, 52.6),
+			0.05, 1.56, ExteriorProps.COL_IRON)
+		_box(set_root, "Parking Exit Board", Vector3(33.2, 1.68, 52.6),
+			Vector3(0.92, 0.58, 0.08), Color(0.24, 0.42, 0.30), 0.1, 0.0, false)
+		_box(set_root, "Parking Exit Stripe", Vector3(33.2, 1.68, 52.55),
+			Vector3(0.58, 0.10, 0.025), ExteriorProps.COL_BAY_LINE, 0.0, 0.0, false)
+	else:
+		exit_sign.name = "Parking Exit Sign"
 	# F: the three east-margin posts are lp_street_bollard models now instead of
 	# code cylinders. The model measures 0.18 x 0.85 x 0.18 (blender_street_v2.py,
 	# module V02) against the primitive's 0.18 diameter x 0.80 -- 50 mm taller and

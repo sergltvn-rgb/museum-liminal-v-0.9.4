@@ -20,7 +20,11 @@ is therefore at the wrong coordinates and carries pieces V2 deletes outright
 (far pavement, both crossings, both visitor pockets, the second lamp row).
 Filtering cannot fix a coordinate; the modules are rebuilt here instead.
 
-MODULE LIST -- eight, which is what STREET_SCHEME_V2 section 9 item 7 approved
+MODULE LIST -- twelve. The first eight are what STREET_SCHEME_V2 section 9
+item 7 approved; the last four are the car park, added 2026-08-13 on the
+owner's instruction that everything out here be modelled rather than built
+from code primitives. They are recorded as an addition to the scheme, not as
+something the scheme already asked for.
 ------------------------------------------------------------------------------
     lp_street_road_20      R01  20 m carriageway tile, 7.0 wide
     lp_street_walk_20      S01  20 m museum-side pavement tile, 3.1 wide
@@ -30,6 +34,11 @@ MODULE LIST -- eight, which is what STREET_SCHEME_V2 section 9 item 7 approved
     lp_street_bollard      V02  verge post
     lp_street_lamp              4.5 m cast-iron lamp, 1.83 m neck over the lane
     lp_street_shelter      B02  bus shelter, museum side
+    lp_park_deck                21.2 x 17.0 staff lot: asphalt, two kerbs,
+                                six bay separators and the wear, one mesh
+    lp_park_wheel_stop          1.45 m precast stop, one per bay
+    lp_park_sign                parking board on a 1.80 m post
+    lp_park_exit_sign           exit board on a 1.56 m post
 
 lp_street_bridge.glb (BG01) is NOT rebuilt. The P0 model is a bridge and stays
 correct as a shape; only its placement moves 2.5 m with the carriageway, which
@@ -414,9 +423,155 @@ def build_shelter(material):
     return p, p.finish(material)
 
 
+# =========================================================================
+# lp_park_deck -- 21.2 x 0.155 x 17.0, the staff lot: floor, kerbs, markings
+# =========================================================================
+# ADDED 2026-08-13 on the owner's instruction that the car park be modelled
+# rather than assembled from code boxes.
+#
+# WHY ONE MODULE AND NOT A TILE RUN. The lot is 21.2 x 17.0 and neither
+# dimension divides by any sane tile: 21.2 / 2.0 = 10.6. A tile run would
+# therefore need a part tile at one end, i.e. a second module built solely to
+# fill a remainder. The lot is also a one-off -- there is exactly one of them
+# in the game -- so a bespoke module costs nothing a tile would have saved.
+#
+# WHY THE MARKINGS ARE IN HERE. Six separators, two kerbs and the wear are all
+# flat dressing lying ON this surface. Shipping them as separate modules would
+# mean six more placements, six more hulls to strip and six more chances for a
+# 12 mm line to end up 0.5 mm inside the asphalt and z-fight it. As faces of
+# the same mesh their heights are fixed at author time and cannot drift.
+#
+# The bay tile lp_street_bay_2 was considered and REJECTED on measurement, not
+# taste: it is 2.000 x 0.040 x 2.500, a parallel-parking pocket on a 2.0 m
+# pitch, while this lot is perpendicular parking on a 3.0 m pitch and 5.6 m
+# deep. place() scales uniformly, so the tile cannot be stretched to fit
+# without also making it 4.48 m wide.
+#
+# Placed at y = -0.065 so the asphalt top lands on world y 0.005 and the kerb
+# tops on 0.090 -- exactly where the primitives they replace stood.
+LOT_W = 21.200
+LOT_D = 17.000
+
+
+def build_park_deck(material):
+    p = bb.Part("lp_park_deck")
+
+    slab = p.mark_faces()
+    p.box((0.0, 0.035, 0.0), (LOT_W, 0.070, LOT_D), "carcass_dark",
+          face_swatches={"py": "carcass_dark", "ny": "shadow",
+                         "pz": "carcass_side", "nz": "carcass_side"})
+    body = p.new_faces(slab)
+    p.bevel(p.facing(body, "py"), 0.014, "carcass_side")
+
+    # North kerb (world z 38.2) and east kerb (world x 52.8), both set 20 mm
+    # in from the slab edge so no face of the kerb shares a plane with the
+    # face of the slab it stands on, and both with their feet 12 mm down
+    # inside it. Lengths are 40 mm short of the slab for the same reason.
+    p.box((0.0, 0.1065, -8.280), (LOT_W - 0.040, 0.097, 0.400), "top_cap",
+          face_swatches={"py": "top_cap", "ny": "shadow"})
+    p.box((10.380, 0.1065, 0.0), (0.400, 0.097, 16.200), "top_cap",
+          face_swatches={"py": "top_cap", "ny": "shadow"})
+
+    # Six bay separators enclosing five bays, world x 36.0 + 3i at z 41.8.
+    # Local origin is the lot centre (42.4, 46.5), hence the offsets.
+    for i in range(6):
+        p.panel((36.0 + 3.0 * float(i) - 42.4, 0.0705, 41.8 - 46.5),
+                (0.120, 5.600), "stone_pale", "py")
+
+    # Wear. Asymmetric on purpose: the aisle is driven, the east margin is
+    # walked, and two identical halves would read as wallpaper.
+    p.panel((-1.200, 0.0703, 2.600), (16.000, 4.200), "grime", "py")
+    p.panel((7.400, 0.0702, -2.000), (4.600, 7.000), "grime", "py")
+
+    return p, p.finish(material)
+
+
+# =========================================================================
+# lp_park_wheel_stop -- 1.45 x 0.18 x 0.22 precast stop
+# =========================================================================
+# Five of them, one per bay, at world z 41.25. Tapered rather than a box: a
+# wheel stop is cast in a mould and has draft on every face, and the taper is
+# what stops it reading as the primitive it replaces.
+def build_park_wheel_stop(material):
+    p = bb.Part("lp_park_wheel_stop")
+
+    p.taper((0.0, 0.0, 0.0), (1.450, 0.220), (1.330, 0.150), 0.180,
+            "top_cap", cap_top=True, cap_bottom=False,
+            face_swatches={"py": "top_cap"})
+
+    # Anchor bolts and tyre scuff, both on the TOP face.
+    #
+    # They were first authored as prisms standing proud of the body and as a
+    # vertical quad on the front -- both wrong, and worth recording. Prisms
+    # tall enough to be seen push the bounding box past 0.180 and the module
+    # stops matching the 1.45 x 0.18 x 0.22 primitive it replaces, while a
+    # vertical quad cannot lie on this face at all: the sides have casting
+    # draft (0.220 at the foot, 0.150 at the head), so a flat panel at one z
+    # is inside the body at the bottom and floating off it at the top.
+    # Details go where the surface is level.
+    for x in (-0.480, 0.480):
+        p.panel((x, 0.1806, 0.0), (0.060, 0.060), "carcass_dark", "py")
+    p.panel((0.0, 0.1805, 0.0), (1.180, 0.075), "grime", "py")
+
+    return p, p.finish(material)
+
+
+# =========================================================================
+# lp_park_sign -- 0.82 x 2.28 x 0.08, the lot's parking board
+# =========================================================================
+# Stands at world (51.9, 40.0). The glyph is a painted face rather than a
+# separate slab: the primitive it replaces was a 25 mm box floating 50 mm off
+# the board, which is exactly the coplanar-ish pair the house style bans.
+def build_park_sign(material):
+    p = bb.Part("lp_park_sign")
+
+    # Post, head buried 60 mm up inside the board.
+    p.prism((0.0, 0.0, 0.0), 0.050, 1.620, 8, "carcass",
+            cap_swatch="carcass_side")
+
+    board = p.mark_faces()
+    p.box((0.0, 1.920, 0.0), (0.820, 0.720, 0.080), "handle_dark",
+          face_swatches={"nz": "handle_dark", "pz": "carcass_side"})
+    p.bevel(p.facing(p.new_faces(board), "nz"), 0.010, "carcass_side")
+
+    # The P, as a plate and two bars rather than a texture: this toolchain has
+    # no decals, and a blank blue board says nothing at all.
+    p.panel((0.0, 1.920, -0.0405), (0.360, 0.360), "stone_pale", "nz")
+    p.panel((-0.055, 1.955, -0.0410), (0.070, 0.220), "handle_dark", "nz")
+    p.panel((0.045, 2.010, -0.0410), (0.130, 0.110), "handle_dark", "nz")
+
+    return p, p.finish(material)
+
+
+# =========================================================================
+# lp_park_exit_sign -- 0.92 x 1.97 x 0.08, the way out
+# =========================================================================
+# Stands at world (33.2, 52.6), by the apron, facing the lot. Lower and wider
+# than the parking board because it is read from a car at walking pace.
+def build_park_exit_sign(material):
+    p = bb.Part("lp_park_exit_sign")
+
+    p.prism((0.0, 0.0, 0.0), 0.050, 1.420, 8, "carcass",
+            cap_swatch="carcass_side")
+
+    board = p.mark_faces()
+    p.box((0.0, 1.680, 0.0), (0.920, 0.580, 0.080), "wood",
+          face_swatches={"nz": "wood", "pz": "carcass_side"})
+    p.bevel(p.facing(p.new_faces(board), "nz"), 0.010, "carcass_side")
+
+    # Arrow: shaft plus two barbs, pointing at the apron.
+    p.panel((-0.040, 1.680, -0.0405), (0.480, 0.100), "stone_pale", "nz")
+    p.panel((0.235, 1.740, -0.0410), (0.170, 0.090), "stone_pale", "nz")
+    p.panel((0.235, 1.620, -0.0410), (0.170, 0.090), "stone_pale", "nz")
+
+    return p, p.finish(material)
+
+
 BUILDERS = (build_road_tile, build_walk_tile, build_verge_tile,
             build_bay_tile, build_drive_apron, build_bollard,
-            build_street_lamp, build_shelter)
+            build_street_lamp, build_shelter,
+            build_park_deck, build_park_wheel_stop, build_park_sign,
+            build_park_exit_sign)
 
 BUDGET = {
     "lp_street_road_20": 300,
@@ -427,6 +582,13 @@ BUDGET = {
     "lp_street_bollard": 300,
     "lp_street_lamp": 600,
     "lp_street_shelter": 900,
+    # The lot floor carries eight painted quads and two kerbs on one slab, so
+    # it is cheaper than it looks: a 21 x 17 m surface for roughly what a road
+    # tile costs.
+    "lp_park_deck": 300,
+    "lp_park_wheel_stop": 120,
+    "lp_park_sign": 200,
+    "lp_park_exit_sign": 200,
 }
 
 # Per-model house-style rules. floor_y is checked for every model; the two
@@ -444,6 +606,13 @@ RULES = {
     # hangs glass under the driven lane from a column standing at z 55.10.
     "lp_street_lamp": {"centre_x": True, "reach_z": 1.700},
     "lp_street_shelter": {"centre_x": True},
+    # The lot modules are all centred: the kerbs sit inside the slab's own
+    # footprint and the boards are centred on their posts, so nothing here
+    # needs the shelter's waiver.
+    "lp_park_deck": {"centre_x": True, "centre_z": True},
+    "lp_park_wheel_stop": {"centre_x": True, "centre_z": True},
+    "lp_park_sign": {"centre_x": True, "centre_z": True},
+    "lp_park_exit_sign": {"centre_x": True, "centre_z": True},
 }
 
 # Sizes StreetProps has to agree with. Checked here so a modelling change can
@@ -454,6 +623,24 @@ EXPECT_SIZE = {
     "lp_street_verge_20": (20.000, 0.040, 2.100),
     "lp_street_bay_2": (2.000, 0.040, 2.500),
     "lp_street_drive_apron": (5.500, 0.080, 5.000),
+    # The four car park modules, each locked to the primitive it replaces so
+    # the lot cannot quietly change shape when a model is re-authored:
+    #   deck        21.2 x 17.0 slab, 0.155 to the top of the kerbs
+    #   wheel stop  the precast 1.45 x 0.18 x 0.22
+    #   sign        0.82 x 0.72 board with its top at 2.28
+    #   exit sign   0.92 x 0.58 board with its top at 1.97
+    # Both boards measure 0.100 deep, NOT the 0.080 of the board itself. The
+    # first version of this table said 0.080 and the build refused it, which
+    # is the check doing its job: the deepest thing on a sign is the POST,
+    # an eight-sided prism of radius 0.050, and it stands 10 mm proud of the
+    # board behind it. The primitives being replaced measured the same way --
+    # a 0.05 m radius cylinder behind a 0.08 m board -- so 0.100 is the
+    # honest figure for both, and writing 0.080 here would have been a wish
+    # rather than a measurement.
+    "lp_park_deck": (21.200, 0.155, 17.000),
+    "lp_park_wheel_stop": (1.450, 0.180, 0.220),
+    "lp_park_sign": (0.820, 2.280, 0.100),
+    "lp_park_exit_sign": (0.920, 1.970, 0.100),
 }
 
 

@@ -104,7 +104,34 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# FirstMuseumMap._car_collider. A generated hull would be a second collider,
 	# would include the mirrors and wheel brows outside that surveyed body, and
 	# would block the DRIVER_EYE camera inside the cabin. The GLB is visual only.
-	"lp_player_car_shell"]
+	"lp_player_car_shell",
+	# The four car park modules, added 2026-08-13 when the lot went from code
+	# boxes to models. Every primitive they replace was built with
+	# with_collision = false, and that was deliberate: FirstMuseumMap says so in
+	# as many words -- the slab "carries no collider and stands outside the
+	# perimeter wall, so anyone handed control on it is standing on nothing
+	# behind a locked fence". Letting place() hull them would not be a
+	# modelling change, it would quietly add physics to a part of the world the
+	# author decided has none, and the player's own car parks at the street kerb
+	# precisely because this lot is not standable.
+	#
+	# The deck is the loudest case: one hull round a 21.2 x 17.0 m slab is a
+	# single box the size of the yard, and Recast would have to filter it back
+	# out again.
+	"lp_park_deck", "lp_park_wheel_stop",
+	# The two boards look like the exception and are not one. Their posts are
+	# _cylinder calls, and _cylinder defaults with_collision to true, so the
+	# obvious reading is "the posts are solid, keep them solid". They are not:
+	# FirstMuseumMap._primitive only builds a body when every dimension clears
+	# 0.12 x 0.08 x 0.12, and a 0.05 m radius post measures 0.10 x 1.80 x 0.10,
+	# so both signs have been walk-through dressing since they were written.
+	# Adding a post box on placement would not have preserved that, it would
+	# have introduced physics the author never put in.
+	#
+	# A hull would be wrong in the other direction: it wraps post AND board
+	# into one convex wedge, 0.82 m wide at head height down to a 0.10 m foot,
+	# turning a sign you walk past into a sign you walk into.
+	"lp_park_sign", "lp_park_exit_sign"]
 # Large, mostly hollow meshes whose convex hull would be vastly bigger than the
 # geometry it wraps. "portal_arch" is an inverted-L roughly 15 x 25 m in source
 # units: hulling it yields one solid wedge that swallows a big slice of Space

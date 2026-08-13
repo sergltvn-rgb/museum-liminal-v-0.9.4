@@ -355,10 +355,23 @@ func _verify_block3_landscape(generated: Node) -> void:
 ## and the broad east strip was empty. The authored plan explicitly asks for
 ## better markings, kerbs, signs, posts and more cars. Pin the finished dressing
 ## while leaving the player's centre bay and door-side exit position untouched.
-const BLOCK3_PARKING_REQUIRED := [
-	"Parking Kerb East", "Parking Bay Line 5",
-	"Parking Sign Pole", "Parking Sign Board",
-	"Parking Exit Pole", "Parking Exit Board",
+## REWRITTEN AGAIN 2026-08-13, same reason as the posts below, one step
+## further. The lot is models now: lp_park_deck carries the asphalt, BOTH
+## kerbs and all six bay separators in one mesh, and each sign is a single
+## mesh. So "Parking Kerb East", "Parking Bay Line 5", "Parking Sign Pole",
+## "Parking Sign Board", "Parking Exit Pole" and "Parking Exit Board" are not
+## nodes any more -- that list would now fail the finished lot while still
+## passing a bare asphalt slab, which is the wrong way round.
+##
+## What the list actually defended was: the lot is dressed at these three
+## spots, not empty. That is pinned directly instead -- something standing at
+## each authored position, carrying real geometry. The prefixes match both
+## branches on purpose: the model is "Parking Sign", the fallback primitive is
+## "Parking Sign Pole", and both begin with "Parking Sign".
+const BLOCK3_PARKING_FIXTURES := [
+	{"prefix": "Museum Parking Lot", "at": Vector2(42.4, 46.5)},
+	{"prefix": "Parking Sign", "at": Vector2(51.9, 40.0)},
+	{"prefix": "Parking Exit", "at": Vector2(33.2, 52.6)},
 ]
 const BLOCK3_PARKING_WHEEL_STOPS := 5
 const BLOCK3_PARKING_BOLLARDS := 3
@@ -378,11 +391,40 @@ const BLOCK3_EXTRA_CAR_POS := Vector2(49.5, 42.6)
 
 func _verify_block3_parking(generated: Node) -> void:
 	var missing: Array[String] = []
-	for node_name: String in BLOCK3_PARKING_REQUIRED:
-		if generated.find_child(node_name, true, false) == null:
-			missing.append(node_name)
-	var wheel_stops := generated.find_children(
-		"Parking Wheel Stop*", "MeshInstance3D", true, false)
+	var bare: Array[String] = []
+	for fixture: Dictionary in BLOCK3_PARKING_FIXTURES:
+		var prefix: String = fixture["prefix"]
+		var at: Vector2 = fixture["at"]
+		var standing := false
+		for candidate in generated.find_children(
+				"%s*" % prefix, "Node3D", true, false):
+			var piece := candidate as Node3D
+			if piece == null:
+				continue
+			var piece_xz := Vector2(piece.global_position.x, piece.global_position.z)
+			if piece_xz.distance_to(at) > BLOCK3_PROP_EPSILON:
+				continue
+			standing = true
+			# Same geometry rule as the posts: the primitive IS the mesh, the
+			# model keeps it in a child, a bare Node3D is neither.
+			if not (piece is MeshInstance3D) and piece.find_children(
+					"*", "MeshInstance3D", true, false).is_empty():
+				bare.append("%s carries no mesh" % piece.name)
+			break
+		if not standing:
+			missing.append("%s at %s" % [prefix, at])
+	# The wheel stops are models too, so the old "MeshInstance3D named Parking
+	# Wheel Stop*" filter would count zero of the five. Count nodes that carry
+	# geometry, either way round.
+	var wheel_stops: Array[Node3D] = []
+	for candidate in generated.find_children(
+			"Parking Wheel Stop*", "Node3D", true, false):
+		var stop := candidate as Node3D
+		if stop == null:
+			continue
+		if stop is MeshInstance3D or not stop.find_children(
+				"*", "MeshInstance3D", true, false).is_empty():
+			wheel_stops.append(stop)
 	var extra_car: Node3D = null
 	for candidate in generated.find_children("Parked Car*", "Node3D", true, false):
 		var car := candidate as Node3D
@@ -424,15 +466,17 @@ func _verify_block3_parking(generated: Node) -> void:
 		if not bollard_found[i]:
 			bollards_missing.append(str(BLOCK3_PARKING_BOLLARD_POSITIONS[i]))
 	if not missing.is_empty() \
+			or not bare.is_empty() \
 			or wheel_stops.size() < BLOCK3_PARKING_WHEEL_STOPS \
 			or not bollards_missing.is_empty() \
 			or not malformed.is_empty():
-		_fail("Block 3 parking: missing [%s], wheel stops %d/%d, bollard posts missing [%s] of %d, malformed [%s]"
-			% [", ".join(missing), wheel_stops.size(), BLOCK3_PARKING_WHEEL_STOPS,
+		_fail("Block 3 parking: missing [%s], empty [%s], wheel stops %d/%d, bollard posts missing [%s] of %d, malformed [%s]"
+			% [", ".join(missing), ", ".join(bare),
+				wheel_stops.size(), BLOCK3_PARKING_WHEEL_STOPS,
 				", ".join(bollards_missing), BLOCK3_PARKING_BOLLARDS,
 				", ".join(malformed)])
 	else:
-		_ok("Block 3 parking: five marked bays, four cars, kerbs, signs and three posts with geometry")
+		_ok("Block 3 parking: deck, five wheel stops, both signs, four cars and three posts, all carrying geometry")
 
 
 ## ARRIVAL: THE GROUND THE DRIVE HANDS CONTROL BACK ON MUST BE STANDABLE
