@@ -70,6 +70,11 @@ tools/tmp_*
 /_tmp_*
 tools/*_tmp.py
 
+# Scratch directory for agent runs: verify.cmd writes its full Godot log here
+# (.tmp\verify.log) and everything else disposable goes here too. Matched by
+# *.tmp already, spelled out so nobody has to reason about that.
+.tmp/
+
 # Qoder IDE workspace metadata, same class as .claude/.
 .qoder/
 
