@@ -166,6 +166,7 @@ func _init() -> void:
 		_verify_block3_landscape(generated)
 		_verify_block3_parking(generated)
 		_verify_arrival_exit(generated)
+		_verify_drive_alignment(map_root, generated)
 		_verify_court_composition(generated)
 		_verify_office_fixtures(generated)
 		_verify_entrance_approach(generated)
@@ -270,7 +271,18 @@ const BLOCK3_TREE_POSITIONS := [
 	Vector2(-25.0, 39.5), Vector2(-25.0, 50.5),
 	Vector2(25.0, 39.5), Vector2(25.0, 50.5),
 ]
-const BLOCK3_ROAD_CAR_POSITIONS := [Vector2(-17.0, 59.0), Vector2(15.5, 59.0)]
+## Both cars moved with the street, and this constant has now had to move with
+## them twice. z 59 was the centre of the old 64 x 8 m slab; P0 then put them
+## in far-side pockets at z 66.2, which parked two visitor cars on the opposite
+## bank of a seven-metre road with no crossing and no footway to reach them by.
+## STREET_SCHEME_V2 deletes those pockets outright and gives the museum side a
+## single 26 m kerbside strip at z 56.75, which is where they stand now --
+## both WEST of the player's own spot at x 8.5, because the arrival cut-scene
+## drives in from the east along that strip and would otherwise pass through
+## them on camera. What this check is for is unchanged: finished ExteriorProps
+## vehicles with a body, cabin and windshield, at the authored coordinates, and
+## no legacy box roots.
+const BLOCK3_ROAD_CAR_POSITIONS := [Vector2(-6.0, 56.75), Vector2(1.5, 56.75)]
 const BLOCK3_PROP_EPSILON := 0.02
 const BLOCK3_CAR_PARTS := ["Body", "Cabin", "Windshield"]
 const BLOCK3_TREE_PREFIXES := ["Oak Tree", "Pine Tree", "Birch Tree"]
@@ -477,6 +489,137 @@ func _verify_arrival_exit(generated: Node) -> void:
 			% found_floor)
 	else:
 		_fail("Arrival exit: %s" % ", ".join(problems))
+
+
+## THE ARRIVAL MUST DRIVE ON THE ROAD THAT WAS ACTUALLY BUILT
+##
+## This check exists because its absence cost us an entire street rebuild.
+## The first port shifted the carriageway and nobody compared the new slab to
+## `_drive_track`. The result: the arrival car spent the whole cut-scene
+## sliding along z 57.2 through what had become the pavement, while the road
+## sat at 58.0..65.0 two metres away. Every suite in this file was green.
+##
+## So every number below is READ from StreetProps and FirstMuseumMap, never
+## copied into this file. Move the road again and this fails the same day
+## instead of surviving until somebody looks at a screenshot.
+const DRIVE_STREET_SCRIPT := "res://game/props/StreetProps.gd"
+const DRIVE_LANE_HALF := 3.5
+const DRIVE_LANE_EPS := 0.35
+const DRIVE_CAR_HALF_WIDTH := 0.975
+const DRIVE_CAR_HALF_LENGTH := 2.40
+const DRIVE_BAY_HALF_DEPTH := 1.25
+const DRIVE_WALK_HALF := 1.55
+const DRIVE_BODY_RADIUS := 0.35
+
+
+func _verify_drive_alignment(map_root: Node, generated: Node) -> void:
+	var road: Variant = _script_constant(DRIVE_STREET_SCRIPT, "ROAD_Z")
+	var walk: Variant = _script_constant(DRIVE_STREET_SCRIPT, "WALK_Z")
+	var bay: Variant = _script_constant(DRIVE_STREET_SCRIPT, "BAY_Z")
+	var bay_x: Variant = _script_constant(DRIVE_STREET_SCRIPT, "CAR_BAY_X")
+	var bay_pitch: Variant = _script_constant(DRIVE_STREET_SCRIPT, "BAY_PITCH")
+	var bay_tiles: Variant = _script_constant(DRIVE_STREET_SCRIPT, "CAR_BAY_TILES")
+	for pair in [["ROAD_Z", road], ["WALK_Z", walk], ["BAY_Z", bay],
+			["CAR_BAY_X", bay_x], ["BAY_PITCH", bay_pitch],
+			["CAR_BAY_TILES", bay_tiles]]:
+		var probe: Variant = pair[1]
+		if not (probe is float or probe is int):
+			_fail("Drive alignment: StreetProps.%s is missing" % pair[0])
+			return
+
+	var road_z: float = float(road)
+	var walk_z: float = float(walk)
+	var bay_z: float = float(bay)
+	var bay_centre_x: float = float(bay_x)
+	var strip_half: float = float(bay_pitch) * float(bay_tiles) * 0.5
+	# The arrival comes in from the east, so it belongs in the museum-side lane:
+	# the near half of the slab, centred one half-lane in from the near kerb.
+	var lane_axis: float = road_z - DRIVE_LANE_HALF * 0.5
+	var road_near: float = road_z - DRIVE_LANE_HALF
+
+	var problems: Array[String] = []
+
+	# Constants agreeing with each other proves nothing if the scene disagrees.
+	var slab := generated.find_child("Street Floor Carriageway", true, false) as Node3D if generated != null else null
+	if slab == null:
+		problems.append("no Street Floor Carriageway was built")
+	elif absf(slab.global_position.z - road_z) > 0.01:
+		problems.append("carriageway stands at z %.2f but StreetProps.ROAD_Z claims %.2f"
+			% [slab.global_position.z, road_z])
+
+	var parked_at: Variant = _script_constant(ARRIVAL_MAP_SCRIPT, "DRIVE_CAR_PARKED_POS")
+	var exit_at: Variant = _script_constant(ARRIVAL_MAP_SCRIPT, "DRIVE_EXIT_POS")
+
+	# `_drive_track` is filled in by `_drive_shots()`, so it has to be called
+	# first -- it is a var, not a constant, and cannot be read off the script.
+	var shots: Variant = map_root.call("_drive_shots")
+	if not (shots is Array) or (shots as Array).is_empty():
+		problems.append("_drive_shots() produced no shots")
+	var track: Variant = map_root.get("_drive_track")
+	if not (track is Array) or (track as Array).is_empty():
+		problems.append("_drive_track is empty after _drive_shots()")
+	else:
+		var parked_ref := Vector3.ZERO
+		var has_parked: bool = parked_at is Vector3
+		if has_parked:
+			parked_ref = parked_at
+		var strays: int = 0
+		var worst_offset: float = 0.0
+		for segment in (track as Array):
+			if not (segment is Dictionary):
+				continue
+			var leg: Dictionary = segment
+			for key in ["from", "to"]:
+				if not leg.has(key):
+					continue
+				var sample: Variant = leg[key]
+				if not (sample is Vector3):
+					continue
+				var at: Vector3 = sample
+				# The last leg parks in the bay, which is off the running lane
+				# on purpose. Everything else is still driving.
+				if has_parked and at.distance_to(parked_ref) < 0.01:
+					continue
+				if at.z < road_near or at.z > road_z:
+					strays += 1
+				worst_offset = maxf(worst_offset, absf(at.z - lane_axis))
+		if strays > 0:
+			problems.append("%d drive-track samples sit outside the carriageway z %.2f..%.2f"
+				% [strays, road_near, road_z])
+		if worst_offset > DRIVE_LANE_EPS:
+			problems.append("drive track wanders %.2f m off the museum-side lane axis z %.2f"
+				% [worst_offset, lane_axis])
+
+	if parked_at is Vector3:
+		var parked: Vector3 = parked_at
+		if absf(parked.z - bay_z) > 0.01:
+			problems.append("parked car z %.2f is not on the marked strip z %.2f"
+				% [parked.z, bay_z])
+		if parked.z + DRIVE_CAR_HALF_WIDTH > bay_z + DRIVE_BAY_HALF_DEPTH + 0.01:
+			problems.append("parked car overhangs the strip back into the running lane")
+		if parked.x - DRIVE_CAR_HALF_LENGTH < bay_centre_x - strip_half - 0.01 \
+				or parked.x + DRIVE_CAR_HALF_LENGTH > bay_centre_x + strip_half + 0.01:
+			problems.append("parked car x %.2f runs off the strip %.2f..%.2f"
+				% [parked.x, bay_centre_x - strip_half, bay_centre_x + strip_half])
+	else:
+		problems.append("DRIVE_CAR_PARKED_POS is missing")
+
+	if exit_at is Vector3:
+		var door_at: Vector3 = exit_at
+		if absf(door_at.z - walk_z) + DRIVE_BODY_RADIUS > DRIVE_WALK_HALF:
+			problems.append("exit point z %.2f leaves the player hanging off the pavement"
+				% door_at.z)
+		if door_at.z >= road_near:
+			problems.append("exit point z %.2f drops the player onto the carriageway"
+				% door_at.z)
+	else:
+		problems.append("DRIVE_EXIT_POS is missing")
+
+	if problems.is_empty():
+		_ok("Drive alignment: track holds lane z %.2f, car parks on the strip, exit lands on the pavement"
+			% lane_axis)
+	else:
+		_fail("Drive alignment: %s" % ", ".join(problems))
 
 
 ## THE FORECOURT CORE IS A COMPOSITION, NOT A PROP DUMP

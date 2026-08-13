@@ -1,2 +1,10 @@
 # Normalize EOL for all files that Git considers text files.
 * text=auto eol=lf
+
+# Windows batch files are the exception: cmd.exe requires CRLF. With LF-only
+# endings it still runs "goto :label", but "call :label" fails with
+# "The system cannot find the batch label specified". That is why
+# run_tests.cmd died right after [PASS] project import and none of the seven
+# test scripts ever ran locally. Do not fold these back into the blanket rule.
+*.cmd text eol=crlf
+*.bat text eol=crlf

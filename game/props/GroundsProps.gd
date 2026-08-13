@@ -1216,38 +1216,65 @@ static func _parterre_hedge(parent: Node3D, tag: String, a: float, b: float,
 # --- street gate --------------------------------------------------------------
 
 
-## Two piers on the axis at the kerb, with their leaves standing open. No
-## railing runs off them on purpose: a solid fence across z 54 would cut the
-## player off from the street, and a fence without a collider is a fence you
-## walk through.
+## Two piers on the axis where the court meets the pavement ramp, with their
+## leaves standing open.
+##
+## They stood at z 54.2 until the V2 street was built. That put the 1.46 m
+## plinths across 53.47..54.93 -- squarely in the middle of the 3.10 m pavement
+## (52.40..55.50), so anyone walking the street had to detour around a gate that
+## belongs to the museum rather than to the road. At z 51.50 the plinths span
+## 50.77..52.23: clear of the ramp at 52.40, inside the court core (38.4..53.0),
+## and reading as the court's mouth instead of an obstacle on the footway.
+##
+## Moving them off the footway forced them wider apart as well. At the old
+## +/-4.7 the piers' inner faces stand at x 3.97, and 1.27 m short of the
+## fountain's z the walk from the car to the perron pinched to 0.90 m -- under
+## APPROACH_MIN_WIDTH. Sliding them along z cannot fix that: even at the last z
+## that stays off the pavement (51.67) the gap is only 1.16 m. The fountain's
+## collider is a 3.06 m cylinder on the axis at z 49.5, so the piers have to
+## move outward, not backward. At +/-5.9 the corner-to-cylinder gap is 2.26 m.
+##
+## No railing runs off them on purpose: a solid fence across the court mouth
+## would cut the player off from the street, and a fence without a collider is
+## a fence you walk through. The leaves are deliberately collider-free, so they
+## never enter the approach measurement -- only "Court Gate Collision *" does.
 static func _street_gate(root: Node3D) -> void:
 	var gate := Node3D.new()
 	gate.name = "Court Gate"
 	root.add_child(gate)
 
 	for side: float in [-1.0, 1.0]:
-		var sx: float = side * 4.7
+		var sx: float = side * 5.9
 		var tag: String = "West" if side < 0.0 else "East"
-		_box(gate, "Court Gate Plinth %s" % tag, Vector3(sx, 0.16, 54.2),
+		_box(gate, "Court Gate Plinth %s" % tag, Vector3(sx, 0.16, 51.50),
 			Vector3(1.46, 0.32, 1.46), "stone", COL_STONE_DARK, 0.0)
-		_box(gate, "Court Gate Pier %s" % tag, Vector3(sx, 1.62, 54.2),
+		_box(gate, "Court Gate Pier %s" % tag, Vector3(sx, 1.62, 51.50),
 			Vector3(1.16, 2.60, 1.16), "stone", COL_STONE, 0.0)
-		_box(gate, "Court Gate Cornice %s" % tag, Vector3(sx, 3.02, 54.2),
+		_box(gate, "Court Gate Cornice %s" % tag, Vector3(sx, 3.02, 51.50),
 			Vector3(1.40, 0.20, 1.40), "stone", COL_COPING, 0.0)
-		_cone(gate, "Court Gate Cap %s" % tag, Vector3(sx, 3.28, 54.2), 0.66,
+		_cone(gate, "Court Gate Cap %s" % tag, Vector3(sx, 3.28, 51.50), 0.66,
 			0.06, 0.32, "stone", COL_COPING, 0.0, 4)
-		_box(gate, "Court Gate Lantern %s" % tag, Vector3(sx, 3.66, 54.2),
+		_box(gate, "Court Gate Lantern %s" % tag, Vector3(sx, 3.66, 51.50),
 			Vector3(0.34, 0.46, 0.34), "plain", COL_GLOW, 0.0, false, 1.1)
-		_cone(gate, "Court Gate Lantern Cap %s" % tag, Vector3(sx, 3.96, 54.2),
+		_cone(gate, "Court Gate Lantern Cap %s" % tag, Vector3(sx, 3.96, 51.50),
 			0.26, 0.03, 0.18, "metal", COL_BRONZE, 0.0, 4)
 		_solid_box(gate, "Court Gate Collision %s" % tag,
-			Vector3(sx, 1.60, 54.2), Vector3(1.46, 3.20, 1.46))
+			Vector3(sx, 1.60, 51.50), Vector3(1.46, 3.20, 1.46))
 
 		# Leaf folded back against its pier, clear of the opening.
+		#
+		# The angle is mirrored, not offset. It used to read `90.0 - side * 12.0`,
+		# giving 102 deg west and 78 deg east -- which is not a mirror pair. The
+		# west leaf folded outward against its pier as intended, but the east one
+		# swung the other way and lay across the opening: its last bar landed at
+		# x 3.99 against a 5.32 m half-opening. Nothing caught it because the gate
+		# stood at z 54.2, outside the court core the mirror check looks at, and
+		# the leaves carry no colliders, so the approach walk passed straight
+		# through. Rotating by -side * 102 sends both leaves outward.
 		var leaf := Node3D.new()
 		leaf.name = "Court Gate Leaf %s" % tag
-		leaf.position = Vector3(sx + side * 0.62, 0.0, 54.2)
-		leaf.rotation.y = deg_to_rad(90.0 - side * 12.0)
+		leaf.position = Vector3(sx + side * 0.62, 0.0, 51.50)
+		leaf.rotation.y = deg_to_rad(-side * 102.0)
 		gate.add_child(leaf)
 		_box(leaf, "Rail Top", Vector3(0, 2.10, -1.35), Vector3(0.09, 0.13, 2.7),
 			"metal", COL_IRON, 0.0)

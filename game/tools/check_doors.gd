@@ -42,8 +42,10 @@ const JAMB_HALF := 0.92
 ## ручку, а случай, когда в проходе окажется само полотно.
 const OPEN_CLEAR_BODY := 0.86
 const OPEN_CLEAR_MESH := 0.78
-## Допуски закрытой пары: щель по центру и заход на косяк.
-const SHUT_GAP_MAX := 0.2
+## Допуски закрытой пары: автоматические полотна сохраняют прежний 80 мм
+## технический стык, но у парадной музейной пары допускается не более 12 мм.
+const SHUT_GAP_MAX := 0.09
+const MANUAL_SHUT_GAP_MAX := 0.012
 const JAMB_OVERRUN_MAX := 0.005
 ## Низ полотна и низ перемычки (WALL_HEIGHT - 0.7).
 const FLOOR_CLEAR_MIN := 0.02
@@ -105,6 +107,21 @@ func _audit(swing: Node) -> int:
 	var sep := hinges[1].global_position - hinges[0].global_position
 	var wall_axis := 0 if absf(sep.x) >= absf(sep.z) else 2
 	var thru_axis := 2 if wall_axis == 0 else 0
+	var half_gap := sep.length() * 0.5
+	var open_clear_body := half_gap - 0.04
+	var open_clear_mesh := half_gap - 0.12
+	var jamb_half := half_gap + 0.02
+	var manual := swing.has_method("is_interaction_required") \
+		and bool(swing.call("is_interaction_required"))
+	var header_y := 3.05 if manual else HEADER_Y
+	if manual:
+		if not bool(swing.call("is_closed")):
+			notes.append("manual entrance was not built shut")
+			problems += 1
+		if swing.get_node_or_null("Door Sensor") != null:
+			notes.append("manual entrance still has an automatic sensor")
+			problems += 1
+		_drive(swing, true)
 
 	var kids: Array[String] = []
 	for c in hinges[0].get_children():
@@ -158,13 +175,13 @@ func _audit(swing: Node) -> int:
 		open_clear[i] = clear
 		open_body[i] = solid
 		open_depth[i] = box.size[thru_axis]
-		if solid < OPEN_CLEAR_BODY:
+		if solid < open_clear_body:
 			notes.append("open leaf %d blocks the gap: collider %.3f m off the axis, need %.2f"
-				% [i, solid, OPEN_CLEAR_BODY])
+				% [i, solid, open_clear_body])
 			problems += 1
-		if clear < OPEN_CLEAR_MESH:
+		if clear < open_clear_mesh:
 			notes.append("open leaf %d hangs %.3f m into the gap, need %.2f"
-				% [i, clear, OPEN_CLEAR_MESH])
+				% [i, clear, open_clear_mesh])
 			problems += 1
 
 	# --- закрываем
@@ -184,9 +201,11 @@ func _audit(swing: Node) -> int:
 		top = maxf(top, box.position.y + box.size.y)
 		bottom = minf(bottom, box.position.y)
 	var centre_gap: float = float(inner[0]) + float(inner[1])
-	var overrun: float = maxf(float(outer[0]), float(outer[1])) - JAMB_HALF
-	if centre_gap > SHUT_GAP_MAX:
-		notes.append("shut pair leaves a %.3f m gap down the middle" % centre_gap)
+	var overrun: float = maxf(float(outer[0]), float(outer[1])) - jamb_half
+	var shut_gap_max := MANUAL_SHUT_GAP_MAX if manual else SHUT_GAP_MAX
+	if centre_gap > shut_gap_max:
+		notes.append("shut pair leaves a %.3f m gap down the middle (max %.3f)"
+			% [centre_gap, shut_gap_max])
 		problems += 1
 	if overrun > JAMB_OVERRUN_MAX:
 		notes.append("shut leaf runs %.3f m into the jamb" % overrun)
@@ -194,7 +213,7 @@ func _audit(swing: Node) -> int:
 	if bottom < FLOOR_CLEAR_MIN:
 		notes.append("shut leaf bottom at %.3f m sits in the threshold" % bottom)
 		problems += 1
-	if top > HEADER_Y:
+	if top > header_y:
 		notes.append("shut leaf top at %.3f m fouls the header" % top)
 		problems += 1
 
@@ -208,7 +227,9 @@ func _audit(swing: Node) -> int:
 				% [i, back[i], open_clear[i]])
 			problems += 1
 
-	print("[DOORS] %s | wall axis %s" % [label, "X" if wall_axis == 0 else "Z"])
+	print("[DOORS] %s | wall axis %s | %s | gap %.2f" % [
+		label, "X" if wall_axis == 0 else "Z",
+		"manual" if manual else "automatic", half_gap * 2.0])
 	print("        hinge 0: %s" % ", ".join(kids))
 	print("        built open  body %.3f / %.3f  mesh %.3f / %.3f  reach into room %.2f / %.2f m"
 		% [open_body[0], open_body[1], open_clear[0], open_clear[1],
@@ -225,8 +246,12 @@ func _audit(swing: Node) -> int:
 ## Гоняем дверь до упора без реального времени. _hold обнуляем, иначе первые
 ## пять секунд после постройки дверь по замыслу держит открытую позу.
 func _drive(swing: Node, want_open: bool) -> int:
-	swing.set("_inside", 1 if want_open else 0)
-	swing.set("_hold", 0.0)
+	if swing.has_method("is_interaction_required") \
+			and bool(swing.call("is_interaction_required")):
+		swing.call("set_open", want_open)
+	else:
+		swing.set("_inside", 1 if want_open else 0)
+		swing.set("_hold", 0.0)
 	var steps := 0
 	while steps < MAX_STEPS:
 		swing.call("_physics_process", STEP)

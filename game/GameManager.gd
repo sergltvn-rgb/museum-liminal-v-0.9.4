@@ -108,6 +108,11 @@ const POWER_CRITICAL_LEVEL := 12.0
 const DOOR_BUTTON_DISTANCE := 2.2
 ## Значение обязано совпадать с FirstMuseumMap.OFFICE_DOOR_GROUP.
 const OFFICE_DOOR_GROUP := "office_door"
+## The public museum entrance is a hand-operated swing door, not part of
+## the powered office-door economy. It still uses the same interact action.
+const MUSEUM_ENTRANCE_GROUP := "museum_entrance_door"
+const MUSEUM_ENTRANCE_DISTANCE := 2.75
+const MUSEUM_ENTRANCE_FACING_DOT := 0.55
 ## Имя узла створки — служебное и английское; игроку в окне питания показывается
 ## сторона света из каталога локализации.
 const DOOR_NAME_KEYS := {
@@ -1374,6 +1379,11 @@ func _interact() -> void:
 			_flash(tr("HUD_BELT_FULL"), UITheme.WARNING)
 		else:
 			_pick_up(str(target.get_meta("equipment_id")))
+		return
+	# Парадная дверь — ручная: E меняет её состояние только рядом и только
+	# когда камера действительно направлена на портал. Гермоcтворки ниже
+	# остаются отдельной, запитанной системой.
+	if _toggle_museum_entrance():
 		return
 	# Кнопка гермостворки проверяется ДО компьютера: если игрок тянется к кнопке,
 	# когда в коридоре шаги, он точно не садиться хотел.
@@ -2969,6 +2979,49 @@ func _hide_protocol() -> void:
 		_player.set("movement_locked", false)
 
 
+## Парадная дверь под рукой только когда совпали ОБА условия: расстояние и
+## направление взгляда. Один лишь радиус позволял бы открыть её спиной, а один
+## raycast терял бы цель, когда створки уже стоят вдоль стен.
+func _museum_entrance_at_hand() -> Node:
+	if _player == null or not is_instance_valid(_player):
+		return null
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return null
+	var forward: Vector3 = -camera.global_transform.basis.z.normalized()
+	var best: Node = null
+	var best_distance := MUSEUM_ENTRANCE_DISTANCE
+	for door in get_tree().get_nodes_in_group(MUSEUM_ENTRANCE_GROUP):
+		if not door.has_method("interaction_position") 				or not door.has_method("toggle_interaction"):
+			continue
+		var point: Vector3 = door.call("interaction_position")
+		var flat_delta := point - _player.global_position
+		flat_delta.y = 0.0
+		var distance := flat_delta.length()
+		if distance > best_distance:
+			continue
+		var sight := point - camera.global_position
+		if sight.length_squared() < 0.0001 				or forward.dot(sight.normalized()) < MUSEUM_ENTRANCE_FACING_DOT:
+			continue
+		best_distance = distance
+		best = door
+	return best
+
+
+func _toggle_museum_entrance() -> bool:
+	var door := _museum_entrance_at_hand()
+	if door == null:
+		return false
+	var opening: bool = bool(door.call("is_closed"))
+	if not bool(door.call("toggle_interaction")):
+		return true
+	_sfx("door_lock", -6.0)
+	_flash(tr("HUD_DOOR_OPEN") if opening else tr("HUD_DOOR_SHUT"),
+		UITheme.MUTED if opening else UITheme.WARNING)
+	_report_noise(door.call("interaction_position"), 0.35)
+	return true
+
+
 ## Все гермостворки офиса. Ищутся по группе, а не по именам узлов: карта вправе
 ## переставить или добавить дверь, и это не должно ломать ни кнопку, ни счёт питания.
 func _office_doors() -> Array:
@@ -3306,8 +3359,10 @@ func _update_hint() -> void:
 		# was not before, so the prompt used to be suppressed while carrying.
 		# One ray per frame, the same one _interact() would cast on the next press.
 		var target := _raycast_body()
-		# Один поиск кнопки на кадр, тот же, что сделает _interact() по нажатию.
-		var door_here := _door_at_hand()
+		# Один поиск каждой дверной системы на кадр. Парадная дверь получает
+		# приоритет: она не должна наследовать отказ питания от офисной кнопки.
+		var entrance_here := _museum_entrance_at_hand()
+		var door_here := _door_at_hand() if entrance_here == null else null
 		if target != null and target.is_in_group("equipment") and _free_belt_slot() >= 0:
 			hint = Loc.fmt("HUD_HINT_TAKE", [tr(str(target.get_meta("device_name")))])
 		elif _carried_id != "":
@@ -3316,6 +3371,9 @@ func _update_hint() -> void:
 				hint = Loc.fmt("HUD_HINT_APPLY", [carried_name])
 			else:
 				hint = Loc.fmt("HUD_HINT_CARRYING", [carried_name])
+		elif entrance_here != null:
+			hint = tr("HUD_HINT_DOOR_OPEN") if bool(entrance_here.call("is_closed")) \
+				else tr("HUD_HINT_DOOR_CLOSE")
 		elif door_here != null:
 			# Подсказка называет действие, а не состояние: состояние и так видно по
 			# створке и лампе перед глазами.

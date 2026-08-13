@@ -736,6 +736,65 @@ def build_reception_counter(material):
 
 
 # =========================================================================
+# lp_museum_door_leaf -- 1.195 x 2.58 m ceremonial glazed leaf.
+#
+# Origin is the hinge axis at stylobate level; FirstMuseumMap places that pivot
+# at y=0.36, so the 40 mm undercut lands the leaf bottom at world y=0.40. The
+# model runs along +X and is reused for both sides by the two shut yaw values.
+# Hardware is modelled on BOTH faces because the same door is read from the
+# forecourt in daylight and from the lobby after entering.
+# =========================================================================
+def build_museum_door_leaf(material):
+    p = Part("lp_museum_door_leaf")
+    # At the 1.20 m half-opening this leaves a 5 mm allowance per leaf: a
+    # believable 10 mm meeting joint instead of the visible 80 mm slot.
+    w, h, t = 1.195, 2.58, 0.10
+
+    body_mark = p.mark_faces()
+    # The 2.58 m panel hangs 40 mm above its local hinge floor: its visible
+    # top is therefore local y=2.62 and world y=2.98 on the porch stylobate.
+    p.box((w * 0.5, 0.04 + h * 0.5, 0.0),
+          (w, h, t), "wood",
+          face_swatches={"px": "wood_dark", "nx": "wood_dark",
+                         "py": "wood_light", "ny": "wood_dark"})
+    body = p.new_faces(body_mark)
+    p.bevel(body, 0.016, "wood_light")
+
+    # Three real hinge knuckles touch y=0 and keep the asset origin measurable.
+    for y in (0.0, 0.92, 2.18):
+        p.prism((0.035, y, 0.0), 0.035, 0.18, 8, "hinge")
+
+    # Recessed upper glazing and lower raised panel, on both public faces.
+    for side in (-1.0, 1.0):
+        z = side * 0.057
+        p.box((0.58, 1.92, z), (0.76, 0.90, 0.014), "glass_dead")
+        p.panel((0.44, 1.98, side * 0.065), (0.070, 0.68),
+                "glass_sheen", "nz" if side < 0 else "pz")
+        p.box((0.58, 0.88, side * 0.061), (0.72, 0.62, 0.022),
+              "wood_light")
+        p.box((0.58, 0.18, side * 0.062), (0.86, 0.22, 0.024), "lock")
+
+        # Heavy applied stiles and rails: the shallow depth is enough to cast
+        # a hard shadow without turning the silhouette into ornamental noise.
+        for x in (0.13, 1.03):
+            p.box((x, 1.50, side * 0.064), (0.12, 2.00, 0.028),
+                  "wood_light")
+        for y in (1.39, 2.43):
+            p.box((0.58, y, side * 0.064), (0.90, 0.13, 0.028),
+                  "wood_light")
+
+        # Vertical museum pull at the meeting stile, with two stand-offs.
+        # Keep the full two-sided hardware envelope at 240 mm. At 96 degrees
+        # this preserves the audited 1.08 m open clearance through each half.
+        handle_z = side * 0.100
+        p.box((1.015, 1.55, handle_z), (0.045, 0.48, 0.040), "lock")
+        for y in (1.36, 1.74):
+            p.box((1.015, y, side * 0.080), (0.055, 0.050, 0.080), "lock")
+
+    return p, p.finish(material)
+
+
+# =========================================================================
 # lp_blast_shutter -- 1.34 x 0.86 x 0.15 m curtain, public side faces -Z
 # =========================================================================
 # The south containment bay, jammed a third of the way down. The procedural
@@ -780,7 +839,8 @@ def build_blast_shutter(material):
 
 
 BUILDERS = (build_desk_monitor, build_pc_tower, build_keyboard,
-            build_stanchion, build_reception_counter, build_blast_shutter)
+            build_stanchion, build_reception_counter,
+            build_museum_door_leaf, build_blast_shutter)
 
 BUDGET = {
     "lp_desk_monitor": 400,
@@ -788,6 +848,7 @@ BUDGET = {
     "lp_keyboard": 400,
     "lp_stanchion": 400,
     "lp_reception_counter": 600,
+    "lp_museum_door_leaf": 650,
     "lp_blast_shutter": 400,
 }
 
@@ -818,7 +879,13 @@ def main():
         if abs(lo[1]) > 1e-4:
             failures.append("%s: floor is at y=%.4f, must be 0"
                             % (part.name, lo[1]))
-        if abs(lo[0] + hi[0]) > 2e-3:
+        if part.name == "lp_museum_door_leaf":
+            # Deliberate exception: a swinging leaf is hinge-origin, not
+            # footprint-centred. Its geometry must start on x=0.
+            if abs(lo[0]) > 2e-3 or abs(hi[0] - 1.195) > 2e-3:
+                failures.append("%s: hinge span is %.4f .. %.4f, expected 0 .. 1.195"
+                                % (part.name, lo[0], hi[0]))
+        elif abs(lo[0] + hi[0]) > 2e-3:
             failures.append("%s: not centred in X (%.4f .. %.4f)"
                             % (part.name, lo[0], hi[0]))
         if abs(lo[2] + hi[2]) > 2e-3:

@@ -61,14 +61,14 @@ const NON_BLOCKING := ["camera", "security_camera", "vents", "tactical_flashligh
 	# static body at that height is one more overhead obstacle Recast has to
 	# filter back out. Eleven posts, twenty-two hulls, nothing gained.
 	"lp_security_camera", "lp_camera_plate",
-	# The leaves of the three back-of-house double doors, and the only prop in
+	# The leaves of the back-of-house doors and the ceremonial entrance, moving props in
 	# the museum that MOVES. DoorSwing hangs each leaf on a frozen kinematic
 	# RigidBody3D and turns it, and the body that stops the player is a single
 	# box built next to the model in FirstMuseumMap._door_leaves. A hull
 	# generated here would be a second collider -- a StaticBody3D, bolted to a
 	# body that swings -- and a StaticBody3D across a doorway is precisely what
 	# the navigation bake must never see.
-	"lp_door_leaf",
+	"lp_door_leaf", "lp_museum_door_leaf",
 	# The shell of an archive rolling-stack carriage, placed five times per
 	# block. Same shape of argument as "lp_door_leaf" above: the body that stops
 	# the player is a single box built next to the model in

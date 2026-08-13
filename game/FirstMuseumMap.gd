@@ -20,6 +20,10 @@ const WALL_THICKNESS := 0.35
 # player capsule (diameter 0.7) to pass comfortably, tight enough to feel
 # like a liminal threshold rather than an open corridor.
 const DOOR_GAP := 1.8
+## The moulded FacadeProps portal was already authored with 2.40 m clear
+## between its jamb faces. Only the public street entrance uses that span;
+## every interior doorway keeps the navmesh-audited 1.80 m contract.
+const ENTRANCE_DOOR_GAP := 2.4
 ## Торцы стеновых сегментов отводятся на этот зазор и прячутся внутри тела
 ## косяка, а низ хедера опускается на столько же ниже низа перемычки.
 ## Без этого в каждом проёме остаются две грани в одной плоскости (0.945 м2
@@ -516,15 +520,18 @@ func _wall_segment(parent: Node, seg_name: String, center: Vector3,
 # `leaves` hangs a working pair of doors in the opening; `open_towards` picks
 # which side of the wall they swing out into -- see _door_leaves().
 func _add_door_frame(parent: Node, center: Vector3, axis: String,
-		leaves := false, open_towards := 1.0) -> void:
+		leaves := false, open_towards := 1.0, gap := DOOR_GAP,
+		interaction_required := false, model_name := "lp_door_leaf") -> void:
 	var frame_color := Color(0.06, 0.06, 0.058)
 	# Frames span both back-to-back walls (2 x WALL_THICKNESS) plus a lip.
 	var frame_depth := WALL_THICKNESS * 2.0 + 0.14
 	var jamb_thick := 0.18
-	var jamb_height := WALL_HEIGHT - 0.7
+	# The public leaves start on the 0.36 m stylobate and reach 2.98 m, so
+	# their frame rises to the room lintel. Interior frames keep the old head.
+	var jamb_height: float = WALL_HEIGHT - (0.35 if interaction_required else 0.7)
 	var jamb_y := jamb_height * 0.5
-	var jamb_offset := DOOR_GAP * 0.5 + jamb_thick * 0.5
-	var span := DOOR_GAP + jamb_thick * 2.0
+	var jamb_offset := gap * 0.5 + jamb_thick * 0.5
+	var span := gap + jamb_thick * 2.0
 	var header_y := jamb_height + 0.15
 	var sign_color := Color(0.2, 0.78, 0.42)
 	if axis == "x":
@@ -543,11 +550,13 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 		_box(parent, "Door Frame Threshold %s" % [center], center + Vector3(0, 0.02, 0),
 			Vector3(span, 0.04, frame_depth), frame_color.darkened(0.1),
 			0.0, 0.0, false)
-		for i in range(2):
-			var s: float = -1.0 if i == 0 else 1.0
-			_box(parent, "Doorway Sign %s %d" % [center, i],
-				center + Vector3(0, header_y, s * (frame_depth * 0.5 + 0.03)),
-				Vector3(0.85, 0.22, 0.05), sign_color, 0.9, 0.0, false)
+		# Generic green room plaques do not belong on the classical street portal.
+		if not interaction_required:
+			for i in range(2):
+				var s: float = -1.0 if i == 0 else 1.0
+				_box(parent, "Doorway Sign %s %d" % [center, i],
+					center + Vector3(0, header_y, s * (frame_depth * 0.5 + 0.03)),
+					Vector3(0.85, 0.22, 0.05), sign_color, 0.9, 0.0, false)
 	else:
 		# Wall runs along Z: jambs sit either side of the gap along Z.
 		_box(parent, "Door Frame Jamb -Z %s" % [center], center + Vector3(0, jamb_y, -jamb_offset),
@@ -562,13 +571,15 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 		_box(parent, "Door Frame Threshold %s" % [center], center + Vector3(0, 0.02, 0),
 			Vector3(frame_depth, 0.04, span), frame_color.darkened(0.1),
 			0.0, 0.0, false)
-		for i in range(2):
-			var s: float = -1.0 if i == 0 else 1.0
-			_box(parent, "Doorway Sign %s %d" % [center, i],
-				center + Vector3(s * (frame_depth * 0.5 + 0.03), header_y, 0),
-				Vector3(0.05, 0.22, 0.85), sign_color, 0.9, 0.0, false)
+		if not interaction_required:
+			for i in range(2):
+				var s: float = -1.0 if i == 0 else 1.0
+				_box(parent, "Doorway Sign %s %d" % [center, i],
+					center + Vector3(s * (frame_depth * 0.5 + 0.03), header_y, 0),
+					Vector3(0.05, 0.22, 0.85), sign_color, 0.9, 0.0, false)
 	if leaves:
-		_door_leaves(parent, center, axis, open_towards)
+		_door_leaves(parent, center, axis, open_towards, gap,
+			interaction_required, model_name)
 
 
 # Museum double doors that actually open. Each leaf is lp_door_leaf.glb hung
@@ -595,17 +606,25 @@ func _add_door_frame(parent: Node, center: Vector3, axis: String,
 # lobby side is guaranteed clear (LobbyProps keeps every collider out of
 # |x| < 2.6, the spine from the street door to the atrium door).
 func _door_leaves(parent: Node, center: Vector3, axis: String,
-		open_towards := 1.0) -> void:
-	var leaf_h := WALL_HEIGHT - 0.98
-	var leaf_w := DOOR_GAP * 0.5 - 0.04
+		open_towards := 1.0, gap := DOOR_GAP, interaction_required := false,
+		model_name := "lp_door_leaf") -> void:
+	var leaf_h: float = 2.58 if interaction_required else WALL_HEIGHT - 0.98
+	# The automatic interior pair keeps its established 80 mm meeting gap. The
+	# ceremonial entrance gets a real 10 mm joint: 5 mm allowance on each leaf.
+	var centre_clear: float = 0.005 if interaction_required else 0.04
+	var leaf_w: float = gap * 0.5 - centre_clear
+	var leaf_clear: float = 0.04 if interaction_required else 0.05
+	var hinge_y: float = 0.36 if interaction_required else 0.0
 	var leaf_color := Color(0.15, 0.11, 0.075)
 	# Past 100 degrees the leaves stand clear of the walkable gap, which is how
 	# a doorway keeps its 0.9 m of navmesh with both doors thrown wide.
-	var swings := [104.0, 100.0]
+	var swings := [96.0, 96.0] if interaction_required else [104.0, 100.0]
 	var shut := [0.0, 180.0] if axis == "x" else [-90.0, 90.0]
 	var swing := Node3D.new()
 	swing.name = "Door Swing %s" % [center]
 	swing.position = center
+	swing.set_meta("door_gap", gap)
+	swing.set_meta("door_model", model_name)
 	swing.set_script(DoorSwing)
 	parent.add_child(swing)
 	var hinges: Array[Node3D] = []
@@ -623,42 +642,43 @@ func _door_leaves(parent: Node, center: Vector3, axis: String,
 		hinge.gravity_scale = 0.0
 		hinge.can_sleep = false
 		if axis == "x":
-			hinge.position = Vector3(s * DOOR_GAP * 0.5, 0, 0)
+			hinge.position = Vector3(s * gap * 0.5, hinge_y, 0)
 		else:
-			hinge.position = Vector3(0, 0, s * DOOR_GAP * 0.5)
+			hinge.position = Vector3(0, hinge_y, s * gap * 0.5)
 		var shut_deg: float = shut[i]
 		var open_deg: float = shut_deg + s * float(swings[i]) * open_towards
-		hinge.rotation_degrees = Vector3(0, open_deg, 0)
+		var built_deg: float = shut_deg if interaction_required else open_deg
+		hinge.rotation_degrees = Vector3(0, built_deg, 0)
 		swing.add_child(hinge)
-		if MuseumModels.place(hinge, "lp_door_leaf", Vector3.ZERO) == null:
+		if MuseumModels.place(hinge, model_name, Vector3.ZERO) == null:
 			# Fallback for a missing import: the flat panel this replaced, in
 			# the same place. Carries no collision of its own -- the pivot body
 			# holds the only collider either way.
 			_box(hinge, "Door Leaf %d" % i,
-				Vector3(leaf_w * 0.5, leaf_h * 0.5 + 0.05, 0),
+				Vector3(leaf_w * 0.5, leaf_h * 0.5 + leaf_clear, 0),
 				Vector3(leaf_w, leaf_h, 0.06), leaf_color, 0.0, 0.0, false)
 			_box(hinge, "Door Handle %d" % i,
 				Vector3(leaf_w - 0.12, leaf_h * 0.45, 0.06),
 				Vector3(0.16, 0.04, 0.05), Color(0.35, 0.3, 0.2), 0.0, 0.6, false)
-		_door_leaf_collider(hinge, i, leaf_w, leaf_h)
+		_door_leaf_collider(hinge, i, leaf_w, leaf_h, leaf_clear)
 		hinges.append(hinge)
 		open_yaw.append(open_deg)
 		shut_yaw.append(shut_deg)
-	swing.call("setup", hinges, open_yaw, shut_yaw)
+	swing.call("setup", hinges, open_yaw, shut_yaw, interaction_required)
 
 
-## The one collider a leaf gets, sitting on the pivot body itself. Sized off
-## the model -- 0.86 x 2.42 m of panel, 55 mm thick, hanging 50 mm clear of
-## the threshold -- and squared up to 60 mm so the lever handles, which stand
-## 45 mm proud of each face, get no geometry of their own to snag on.
+## The one collider a leaf gets, sitting on the pivot body itself. Its width is
+## the authored span passed above: 0.86 m on the automatic interior leaves and
+## 1.195 m on the ceremonial entrance. It is squared to 60 mm thickness so the
+## lever/pull hardware gets no separate geometry to snag on.
 func _door_leaf_collider(hinge: RigidBody3D, index: int, leaf_w: float,
-		leaf_h: float) -> void:
+		leaf_h: float, floor_clear := 0.05) -> void:
 	var shape := CollisionShape3D.new()
 	shape.name = "Door Leaf Collider %d" % index
 	var box := BoxShape3D.new()
 	box.size = Vector3(leaf_w, leaf_h, 0.06)
 	shape.shape = box
-	shape.position = Vector3(leaf_w * 0.5, leaf_h * 0.5 + 0.05, 0)
+	shape.position = Vector3(leaf_w * 0.5, leaf_h * 0.5 + floor_clear, 0)
 	hinge.add_child(shape)
 
 
@@ -2492,17 +2512,21 @@ func _add_model_archive(parent: Node) -> void:
 	# is exactly what makes a symmetrical court look thrown together, and
 	# _verify_court_composition now fails if any of them stands there.
 	#
-	# A street lamp belongs beside the road. Street Road spans z 55..63 and the
-	# billboard already marks its far edge at z 62.9, so the lamp joins that far
-	# line at (12, 62.6): clear of the billboard's 7.2 m face at x +-3.6, of the
-	# road cars at z 59 and of the lane line at z 60.6. 1.0 makes it 3.23 m,
-	# base on origin.
-	MuseumModels.place(parent, "уличная лампа", Vector3(12.0, 0.0, 62.6), 1.0, 0.0)
-	# The shelter (25.0 makes it 1.42 x 3.00 x 2.96, so 0.71 m deep either side
-	# at yaw 90) belongs at a stop on the far pavement: (-20, 62.4) spans
-	# z 61.69..63.11, which keeps it 19 cm short of Lot Wall South at z 63.3 and
-	# well west of the billboard.
-	MuseumModels.place(parent, "отсановка", Vector3(-20.0, 0.0, 62.4), 25.0, 90.0)
+	# A street lamp used to stand at (20, 68.9). REMOVED as a P0 leftover: that
+	# is across the carriageway, inside the tree band (z 66.00..72.00) and 4.3 m
+	# past the bollard line at z 64.60 -- it lit nothing anyone walks on and it
+	# answered nothing across the axis. The street has exactly one authored lamp
+	# row and StreetProps owns it: LAMP_Z 55.10 on the museum pavement
+	# (z 52.40..55.50), x -40..60 at 18 m pitch. Do not re-add a one-off here.
+	# The shelter is NOT PLACED here. It used to stand at z 62.4, which V2 turned
+	# into carriageway (z 55.50..62.50), and the "far pavement" it was written for
+	# no longer exists: z 52.40..55.50 on the museum side is the only pavement on
+	# the street now. The old note also keyed itself to Lot Wall South at z 63.3;
+	# that wall stands at z 70.9.
+	# The one stop the scheme allows is StreetProps.SHELTER_POS (26.0, 0.140,
+	# 53.00), museum side, backed by the B01 lay-by at BUS_BAY_X 26.0 -- same x,
+	# so the shelter has a bay in front of it and reads as a stop. A second
+	# shelter with no bay does not read as one at all.
 	# The skip is refuse handling, so it goes to the service corner behind the
 	# west birch at x -25, hard against the west lot wall (inner face x -31.3)
 	# and out of the court on both axes at (-28.5, 53.4). At 0.65 the group is
@@ -3143,9 +3167,12 @@ func _add_outdoor(parent: Node) -> void:
 	# centred at z 45 with depth 22, i.e. they stopped at z 56 and left the
 	# whole road frontage open; run them from z 34 to z 63.5 instead, where they
 	# meet "Lot Wall South" (z 63.3..63.7).
-	_box(parent, "Lot Wall East", Vector3(31.5, 0.6, 48.75), Vector3(0.4, 1.2, 29.5),
+	# z 34..70.9 now, not z 34..63.5: Lot Wall South moved to the far side of
+	# the new street and these have to reach it or the player walks out through
+	# a 7.4 m gap at either end of the far pavement.
+	_box(parent, "Lot Wall East", Vector3(31.5, 0.6, 52.45), Vector3(0.4, 1.2, 36.9),
 		Color(0.26, 0.27, 0.25))
-	_box(parent, "Lot Wall West", Vector3(-31.5, 0.6, 48.75), Vector3(0.4, 1.2, 29.5),
+	_box(parent, "Lot Wall West", Vector3(-31.5, 0.6, 52.45), Vector3(0.4, 1.2, 36.9),
 		Color(0.26, 0.27, 0.25))
 
 	# North edge. The Entrance Zone facade is only 22 m wide: its south wall
@@ -3185,29 +3212,44 @@ func _car_collider(car: Node3D, size: Vector3) -> void:
 
 
 func _add_street_extras(parent: Node) -> void:
-	# Proper road edge, pedestrian crossing and drainage line.
-	_box(parent, "Street Road", Vector3(0, -0.095, 59), Vector3(64, 0.21, 8),
-		Color(0.16, 0.17, 0.19))
-	_box(parent, "Street Curb", Vector3(0, 0.05, 54.8), Vector3(64, 0.12, 0.5),
-		Color(0.62, 0.62, 0.60))
-	for i in range(8):
-		_plane(parent, "Road Line %d" % i,
-			Vector3(-28.0 + float(i) * 8.0, 0.012, 60.6), Vector2(2.4, 0.18),
-			Color(0.88, 0.84, 0.65), true, false, 0.0, false)
-	for i in range(6):
-		_plane(parent, "Crosswalk Stripe %d" % i,
-			Vector3(-2.5 + float(i), 0.016, 57.2), Vector2(0.55, 3.0),
-			Color(0.82, 0.82, 0.79), true, false, 0.0, false)
+	# THE STREET IS THE APPROVED P0 GEOMETRY, PORTED OUT OF BLENDER
+	#
+	# What used to stand here was a 64 x 8 m slab at z 55..63 with a kerb at
+	# z 54.8, eight lane dashes and a six-stripe crossing -- the composition the
+	# user rejected on 2026-08-10. It is gone. StreetProps places the modules
+	# exported from models/street/street_master.blend instead: a 7.0 m
+	# carriageway at z 58..65, a 3.2 m museum pavement, a 3.0 m far pavement,
+	# both crossings, both visitor pockets, the bus bay and shelter, the staff
+	# lot with its access road, twenty lamps and the river bridge.
+	#
+	# The corridor MOVED 3 m south, so everything that used to be keyed to the
+	# old slab had to move with it: the visitor cars below, the player's sedan
+	# (DRIVE_CAR_PARKED_POS), Lot Wall South, and the drive set's road, bridge,
+	# bus stop and lamp rows in _add_drive_set(). Anything still sitting on
+	# z 59 is now standing in a live traffic lane.
+	StreetProps.build_street(parent as Node3D)
 
 	# Finished silhouettes are parked parallel to the road in distinct
 	# visitor/service bays. The road top is y 0.01, so each wheel meets it.
 	# Every one of them carries a collider: this street is walking ground inside
 	# the perimeter walls, not scenery seen from a car window.
+	# These two moved twice. They stood at z 59 until the carriageway moved on
+	# top of them, and P0 then put them in two marked pockets on the FAR side
+	# at z 66.2 -- opposite the museum, across seven metres of road, reachable
+	# only by walking down the middle of it. V2 deletes both pockets: nothing
+	# stands on that side of the street and nothing ever will.
+	#
+	# They park where a visitor would actually park: the kerbside strip L01 on
+	# the museum side, yaw 90 like the player's own car, both at LOWER x than
+	# the player's spot at x 8.5. That matters -- the arrival drives in from high
+	# x down this strip, so a car parked at x > 8.5 would be driven straight
+	# through on camera. Spans x -8.4..-3.6 and -0.9..3.9,
+	# inside StreetProps' 26 m strip, with 2.2 m of gap to the player's sedan.
 	_car_collider(ExteriorProps.build_parked_car(parent as Node3D,
-		Vector3(15.5, 0.01, 59.0), Color(0.31, 0.39, 0.48), 90.0),
+		Vector3(1.5, 0.0, 56.75), Color(0.31, 0.39, 0.48), 90.0),
 		Vector3(1.78, 1.32, 4.30))
 	_car_collider(ExteriorProps.build_parked_car(parent as Node3D,
-		Vector3(-17.0, 0.01, 59.0), Color(0.70, 0.70, 0.68), -90.0),
+		Vector3(-6.0, 0.0, 56.75), Color(0.70, 0.70, 0.68), 90.0),
 		Vector3(1.78, 1.32, 4.30))
 	# The player's own sedan, at the kerb in the lane it drove in on. It stands
 	# here and not in the staff lot (_add_drive_set) because the arrival cutscene
@@ -3286,16 +3328,16 @@ func _add_street_extras(parent: Node) -> void:
 	# same thing the imported skip says, and the skip now stands in that very
 	# corner (see _add_models). Refuse handling reads once, not twice.
 
-	# The billboard closes the long vista without competing with the facade.
-	_box(parent, "Lot Wall South", Vector3(0, 0.6, 63.5), Vector3(64, 1.2, 0.4),
+	# The perimeter closes SOUTH of the far pavement now. It used to stand at
+	# z 63.5, which the new carriageway (z 58..65) runs straight through; the
+	# far pavement ends at z 70.4, so the wall goes to z 70.9 and the street is
+	# enclosed for its full new width.
+	_box(parent, "Lot Wall South", Vector3(0, 0.6, 70.9), Vector3(64, 1.2, 0.4),
 		Color(0.26, 0.27, 0.25))
-	for bx: float in [-3.2, 3.2]:
-		_cylinder(parent, "Billboard Post %s" % ("West" if bx < 0.0 else "East"), Vector3(bx, 0.7, 62.9), 0.08, 1.4,
-			Color(0.12, 0.13, 0.14))
-	_box(parent, "Street Billboard", Vector3(0, 2.2, 62.9), Vector3(7.2, 2.2, 0.2),
-		Color(0.13, 0.15, 0.19))
-	_add_label(parent, "SPECIAL EXHIBIT: OBJECT 01", Vector3(0, 2.4, 62.7),
-		Color(0.86, 0.90, 0.80))
+	# The billboard and its two posts are deleted rather than moved. They stood
+	# at z 62.9 -- dead centre of the new carriageway -- and STREET_SCHEME.md
+	# 10.4 drops the roadside advertising from the approved composition: the
+	# long vista is closed by the bus shelter and the bridge instead.
 
 
 ## The countryside the arrival drive (see _drive_shots) is filmed in: a
@@ -3329,34 +3371,21 @@ func _add_drive_set(parent: Node) -> void:
 		Vector3(236, 0.12, 52), ExteriorProps.COL_GRASS, 0.0, 0.0, false)
 	meadow_north.visibility_range_end = 0.0
 
-	# The road continues Street Road's centreline (z 59, 8 m wide, top 0.01)
-	# east in two spans with the bridge carrying the x 146..154 gap.
-	for span: Array in [[89.0, 114.0, "West"], [208.0, 108.0, "East"]]:
-		var road := _box(set_root, "Drive Road %s" % span[2],
-			Vector3(span[0], -0.095, 59), Vector3(span[1], 0.21, 8),
-			ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
-		road.visibility_range_end = 0.0
-		for side: float in [-1.0, 1.0]:
-			var shoulder := _box(set_root,
-				"Drive Shoulder %s %s" % [span[2], "North" if side < 0.0 else "South"],
-				Vector3(span[0], -0.06, 59.0 + side * 4.35),
-				Vector3(span[1], 0.12, 0.7), ExteriorProps.COL_SHOULDER,
-				0.0, 0.0, false)
-			shoulder.visibility_range_end = 0.0
-	# Centreline dashes float 6 mm over the road surface; none on the bridge.
-	var dash_index := 0
-	var dash_x := 40.0
-	while dash_x < 256.0:
-		if dash_x < 144.0 or dash_x > 156.0:
-			_box(set_root, "Drive Road Dash %d" % dash_index,
-				Vector3(dash_x, 0.022, 59), Vector3(2.4, 0.012, 0.18),
-				ExteriorProps.COL_MARKING, 0.0, 0.0, false)
-			dash_index += 1
-		dash_x += 10.0
+	# NO ROAD IS BUILT HERE ANY MORE.
+	#
+	# This used to lay its own 8 m slab at z 55..63 with gravel shoulders and
+	# 10 m dashes, continuing the old Street Road east. StreetProps now tiles
+	# the approved carriageway from x -70 all the way to x 250 -- past the
+	# bridge and out to the far mountains -- so the drive is filmed over the
+	# same surface the player walks on, with the same lane markings, instead of
+	# over a second road 3 m to the north of it. Keeping both would z-fight
+	# across the whole overlap band z 58..63.
 
 	# River south from the road, under the bridge; banks and rocks come with it.
 	ExteriorProps.build_river(set_root, Vector3(150, -0.02, 24), 82.0, 5.6, 71)
-	ExteriorProps.build_bridge(set_root, Vector3(150, 0, 59), 8.0, 8.0)
+	# The bridge moved with the road: StreetProps places lp_street_bridge at
+	# (150, -0.13, 61.5). The old 8 x 8 deck sat on the retired z 59 centreline
+	# and would now cross the carriageway at an angle to it.
 
 	# Mountain backdrop: three southern planes and two northern, each further
 	# one taller, lighter and hazier (tone 2 carries snow caps). The northern
@@ -3381,7 +3410,10 @@ func _add_drive_set(parent: Node) -> void:
 		tree_index += 1
 	for i in range(24):  # south band, between road and the near ridge
 		var tx := 60.0 + float(i) * 8.0 + scatter.randf_range(-2.5, 2.5)
-		var tz := scatter.randf_range(66.0, 86.0)
+		# Was 66.0: the far pavement occupies z 67.4..70.4 and three or four of
+		# these trees stood in it. randf_range consumes one draw whatever its
+		# bounds, so narrowing it does not reshuffle the rest of the band.
+		var tz := scatter.randf_range(72.0, 86.0)
 		if tx < 143.0 or tx > 157.0:
 			_add_drive_tree(set_root, tree_index, Vector3(tx, -0.05, tz))
 		tree_index += 1
@@ -3389,18 +3421,14 @@ func _add_drive_set(parent: Node) -> void:
 	ExteriorProps.build_birch(set_root, Vector3(54.5, -0.05, 44.0), 300)
 	ExteriorProps.build_birch(set_root, Vector3(56.5, -0.05, 50.0), 301)
 
-	# Lamp rows, lanterns turned to face the road from either side. The two
-	# westernmost northern posts stand on the parking slab (top 0.005).
-	for i in range(7):
-		var lx := 38.0 + float(i) * 15.0
-		ExteriorProps.build_lamp_post(set_root,
-			Vector3(lx, 0.005 if lx <= 53.0 else -0.05, 53.9), 180.0)
-	for i in range(7):
-		ExteriorProps.build_lamp_post(set_root,
-			Vector3(45.0 + float(i) * 15.0, -0.05, 64.1), 0.0)
-
-	# Bus stop on the museum side of the road, opening turned to the kerb.
-	ExteriorProps.build_bus_stop(set_root, Vector3(75, -0.05, 51.6), 180.0)
+	# Lamps and the bus stop come from StreetProps now. There is ONE lamp row,
+	# not the three an earlier version of this comment claimed: LAMP_Z 55.10,
+	# x -40..60 at 18 m pitch, on the museum pavement (z 52.40..55.50). The
+	# z 57.25 it used to list is the westbound LANE axis, not a pavement line --
+	# a lamp there would stand in the running lane. The stop moved from
+	# (75, 51.6), out in the meadow with no bay in front of it, to SHELTER_POS
+	# (26.0, 53.00) on the museum side, behind the B01 lay-by at BUS_BAY_X 26.0
+	# that gives it a reason to be there.
 
 	# Staff parking, butted against Lot Wall East (x 31.5) so it reads as the
 	# museum's own yard. Six separators enclose five real bays, three of them
@@ -3409,6 +3437,10 @@ func _add_drive_set(parent: Node) -> void:
 	# handed control on it is standing on nothing behind a locked fence. It parks
 	# at the street kerb instead (_add_street_extras). Kerbs, wheel stops, signs
 	# and bollards finish the lot edges.
+	# KEPT, and lp_street_staff_lot is the module that was dropped instead. The
+	# master's staff lot is a blockout of this lot; this one is the finished
+	# composition, with the kerbs, wheel stops, signs, bollards and cars below
+	# all set out around bays at z 41.8. See StreetProps for the full reasoning.
 	var lot := _box(set_root, "Museum Parking Lot", Vector3(42.4, -0.03, 46.5),
 		Vector3(21.2, 0.07, 17.0), ExteriorProps.COL_ASPHALT, 0.0, 0.0, false)
 	lot.visibility_range_end = 0.0
@@ -3530,7 +3562,19 @@ var _drive_playing := false
 #
 # _add_street_extras builds it here and _on_drive_finished snaps it back here,
 # so a skipped cutscene cannot strand it mid-road.
-const DRIVE_CAR_PARKED_POS := Vector3(8.5, 0.01, 56.2)
+# z 56.2 put the car on the museum pavement once the street moved -- a sedan
+# sunk 140 mm into a 3.2 m footway. P0 then answered that with z 59.6, which
+# was worse rather than better: in V2 the carriageway spans z 55.50..62.50, so
+# 59.6 is the middle of the running lane the car had just driven down, and it
+# stood there abandoned for the rest of the game.
+#
+# V2 gives it somewhere to stop. StreetProps lays L01, an 18 m kerbside
+# parking strip at z 55.50..58.00, flush with the road and marked off from the
+# running lane by its outer edge line. The sedan is 1.95 m wide and stands at
+# yaw 90, so at z 56.75 it spans 55.775..57.725: inside the strip, hard by the
+# kerb, 1.25 m of clear gutter behind it. StreetProps.CAR_BAY_X and BAY_Z are
+# these same two numbers -- if one moves the other moves with it.
+const DRIVE_CAR_PARKED_POS := Vector3(8.5, 0.0, 56.75)
 const DRIVE_CAR_PARKED_YAW := 90.0
 
 # Where the player stands once the drive is over: out of the car, by the
@@ -3547,21 +3591,28 @@ const DRIVE_CAR_PARKED_YAW := 90.0
 # car's centre leaves 0.25 m between the door and a player capsule of radius
 # 0.35. x 8.5 is level with the cabin, i.e. beside the door, not the trunk.
 #
-# The spot stands on Street Road (x +-32, z 55..63, top y 0.01), which carries
-# a collider like every other surface the player is meant to walk on, and it is
-# inside the perimeter walls -- so the way in is a walk and not a search for a
-# gate: north over the 12 cm kerb at z 54.8, across the forecourt, between the
-# Court Gate piers at x +-4.7, up the axis to the doors.
+# The spot stands on the museum pavement -- S01, z 52.40..55.50, top +0.150 --
+# which "Street Floor Pavement" gives a real collider like every other surface
+# the player is meant to walk on, and it is inside the perimeter walls, so the
+# way in is a walk and not a search for a gate: across the forecourt, between
+# the Court Gate piers at x +-4.7, up the axis to the doors.
 #
-# y 0.05 is the same drop height _add_player_spawn uses: 4 cm of air over the
-# road, with the capsule's own centre 0.9 up, so this is standing, not sinking.
-const DRIVE_EXIT_POS := Vector3(8.5, 0.05, 57.7)
-# Facing the entrance: from (8.5, 57.7) towards the doors at (0, 40) the heading
-# is mostly -z with a quarter of -x in it, and a yaw of 26 deg turns the
-# player's -z forward axis onto it. So the first thing on screen after the
-# cutscene is the building they came to work in, framed between the gate piers,
-# with the car just behind their shoulder.
-const DRIVE_EXIT_YAW := 26.0
+# z 54.6 puts the player 0.9 m in from the kerb face and 2.15 m from the car's
+# centre -- inside _verify_arrival_exit's ARRIVAL_CAR_REACH of 3.2 m, so the
+# car they just parked is still at their shoulder, and they are on the footway
+# rather than in the lane it is parked beside.
+#
+# y 0.20 is the pavement top (+0.150) plus the same 0.05 drop height
+# _add_player_spawn uses: 5 cm of air, with the capsule's own centre 0.9 up,
+# so this is standing, not sinking.
+const DRIVE_EXIT_POS := Vector3(8.5, 0.20, 54.6)
+# Facing the entrance: from (8.5, 54.6) towards the doors at (0, 40) the
+# heading is (-8.5, -14.6), and a yaw of 30 deg turns the player's -z forward
+# axis onto it to within a third of a degree. So the first thing on screen
+# after the cutscene is the building they came to work in, framed between the
+# gate piers, with the car just behind their shoulder. The old 26 deg was
+# derived from the old exit point and is 4 deg off from this one.
+const DRIVE_EXIT_YAW := 30.0
 
 # --- When a cutscene is allowed to play --------------------------------------
 # Both files belong to other scripts and are only read here (the two seen flags
@@ -3827,10 +3878,18 @@ func _on_intro_finished(_skipped: bool) -> void:
 ##
 ## Track geography (see _add_drive_set): the car rolls west down the road
 ## lane at z 57.2 from deep in the forest (x 236), crosses the river bridge
-## at x 150 during the second shot, passes the bus stop (x 75) and the lamp
-## rows in the third, then comes in past the lot wall and pulls up at the kerb
-## opposite the museum gate, which is where the player gets out: on collider
-## floor, inside the walls, with the forecourt open in front of them.
+## at x 150 during the second shot, passes the lamp row and the bus stop at
+## x 26 in the third, then comes in past the lot wall and pulls into the
+## kerbside parking strip opposite the museum gate, which is where the player
+## gets out: on collider floor, inside the walls, with the forecourt open in
+## front of them.
+##
+## THE z 57.2 IN THIS LIST IS LOAD-BEARING. STREET_SCHEME_V2 puts the
+## carriageway at z 55.50..62.50, which makes the westbound lane axis 57.25 --
+## this track, to within 50 mm. The street was rebuilt around the cut-scene
+## rather than the other way round, because P0 had moved the road to z 58..65
+## and left this list untouched, so the car drove the entire arrival down the
+## footway and then swerved into the live lane to park.
 ## Shot cuts hide the two small pose jumps between segments 2->3 and 3->4.
 func _drive_shots() -> Array:
 	_drive_track = [
@@ -3867,8 +3926,8 @@ func _drive_shots() -> Array:
 			"to": (_drive_track[1]["to"] as Vector3) + eye,
 			"look": Vector3(60, 2.0, 78.0), "text": "STORY_DRIVE_02",
 			"time": 6.5, "card": false},
-		# Past the bus stop (x 75) and down both lamp rows, museum end of the
-		# road. Eyes back on the road: the look point is the street ahead.
+		# Down the single lamp row and past the bus stop at x 26, museum end of
+		# the road. Eyes back on the road: the look point is the street ahead.
 		{"from": (_drive_track[2]["from"] as Vector3) + eye,
 			"to": (_drive_track[2]["to"] as Vector3) + eye,
 			"look": Vector3(0, 1.2, 57.0), "text": "STORY_DRIVE_03",
@@ -4215,7 +4274,7 @@ func build_map() -> void:
 	# name on the wall and the name on the mini-map are one row of game.csv.
 	_add_room(map_root, "Entrance Zone", "CAM_ENTRANCE",
 		Vector3(0, 0, 25), Vector2(22, 20),
-		Color(0.85, 0.84, 0.81), {"N": DOOR_GAP, "S": DOOR_GAP})
+		Color(0.85, 0.84, 0.81), {"N": DOOR_GAP, "S": ENTRANCE_DOOR_GAP})
 	_add_room(map_root, "Central Atrium", "CAM_ROOM_ATRIUM",
 		Vector3(0, 0, 0), Vector2(30, 30),
 		Color(0.88, 0.87, 0.85),
@@ -4267,7 +4326,8 @@ func build_map() -> void:
 	_add_door_frame(map_root, Vector3(-25, 0, -7), "x", true)   # Office <-> Archive
 	_add_door_frame(map_root, Vector3(0, 0, -33), "x", true)    # Time Wing <-> Planetarium
 	_add_door_frame(map_root, Vector3(-25, 0, 17), "x", true)   # Storage <-> Restoration Lab
-	_add_door_frame(map_root, Vector3(0, 0, 35), "x", true, -1.0)  # Entrance <-> Street, opens inward
+	_add_door_frame(map_root, Vector3(0, 0, 35), "x", true, -1.0,
+		ENTRANCE_DOOR_GAP, true, "lp_museum_door_leaf")  # E-only public entrance
 	_add_door_frame(map_root, Vector3(13, 0, -24), "z")         # Time Wing <-> Space Wing C
 	_add_door_frame(map_root, Vector3(41, 0, 0), "z")           # Gravity Wing <-> Mass Wing D
 
